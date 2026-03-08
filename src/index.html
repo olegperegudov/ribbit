@@ -26,10 +26,19 @@
           <div class="app-title">Ribbit</div>
           <div id="status-detail">Ready</div>
         </div>
-        <div class="hotkey-hint"><kbd>Ctrl+Alt+Space</kbd></div>
+        <div class="hotkey-hint"><kbd>Ctrl+Win+Space</kbd></div>
+        <button id="debug-btn" title="Debug log">&#x1f41b;</button>
       </div>
 
       <div id="log-entries"></div>
+
+      <div id="debug-panel" style="display:none">
+        <div class="debug-header">
+          <span>Debug Log</span>
+          <button id="debug-close">&times;</button>
+        </div>
+        <pre id="debug-content"></pre>
+      </div>
 
       <div id="setup" style="display:none">
         <p>Enter your OpenAI API key:</p>

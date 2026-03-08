@@ -1,4 +1,3 @@
-use reqwest::multipart;
 use std::io::Cursor;
 
 /// Encode f32 PCM audio data as WAV bytes
@@ -41,40 +40,39 @@ fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Vec<u8> {
     buf
 }
 
-pub async fn transcribe_audio(audio_data: &[f32], sample_rate: u32) -> Result<String, String> {
+/// Blocking version — runs on a std::thread, no tokio needed.
+pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32) -> Result<String, String> {
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| "OPENAI_API_KEY not set. Please configure your API key.".to_string())?;
 
     let wav_bytes = encode_wav(audio_data, sample_rate);
 
-    let file_part = multipart::Part::bytes(wav_bytes)
+    let file_part = reqwest::blocking::multipart::Part::bytes(wav_bytes)
         .file_name("audio.wav")
         .mime_str("audio/wav")
         .map_err(|e| e.to_string())?;
 
-    let form = multipart::Form::new()
+    let form = reqwest::blocking::multipart::Form::new()
         .part("file", file_part)
         .text("model", "whisper-1")
         .text("prompt", "Transcribe accurately, preserving both Russian and English words as spoken.");
 
-    let client = reqwest::Client::new();
+    let client = reqwest::blocking::Client::new();
     let response = client
         .post("https://api.openai.com/v1/audio/transcriptions")
         .header("Authorization", format!("Bearer {}", api_key))
         .multipart(form)
         .send()
-        .await
         .map_err(|e| format!("Network error: {}", e))?;
 
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+        let body = response.text().unwrap_or_default();
         return Err(format!("OpenAI API error {}: {}", status, body));
     }
 
     let result: serde_json::Value = response
         .json()
-        .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     Ok(result["text"].as_str().unwrap_or("").to_string())

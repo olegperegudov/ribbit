@@ -170,14 +170,68 @@ kbd {
   background: #5a9c69;
 }
 
+/* Debug button */
+#debug-btn {
+  background: none;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #666;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+#debug-btn:hover { color: #aaa; border-color: #555; }
+
+/* Debug panel */
+#debug-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0;
+  font-size: 0.8rem;
+  color: #888;
+  font-weight: 600;
+}
+
+.debug-header button {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.debug-header button:hover { color: #ccc; }
+
+#debug-content {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 0.7rem;
+  font-family: "Consolas", "Courier New", monospace;
+  color: #8a8;
+  background: #111;
+  border-radius: 4px;
+  padding: 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
 /* Scrollbar */
-#log-entries::-webkit-scrollbar {
+#log-entries::-webkit-scrollbar, #debug-content::-webkit-scrollbar {
   width: 4px;
 }
-#log-entries::-webkit-scrollbar-track {
+#log-entries::-webkit-scrollbar-track, #debug-content::-webkit-scrollbar-track {
   background: transparent;
 }
-#log-entries::-webkit-scrollbar-thumb {
+#log-entries::-webkit-scrollbar-thumb, #debug-content::-webkit-scrollbar-thumb {
   background: #333;
   border-radius: 2px;
 }

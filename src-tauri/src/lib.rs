@@ -2,6 +2,7 @@ mod audio;
 mod transcribe;
 mod inserter;
 mod logger;
+mod debug_log;
 
 use std::sync::{Arc, Mutex};
 use tauri::{
@@ -38,6 +39,23 @@ fn get_log_history(limit: usize) -> Vec<serde_json::Value> {
 }
 
 #[tauri::command]
+fn get_debug_log() -> String {
+    let log_path = match dirs::config_dir() {
+        Some(d) => d.join("ribbit").join("logs").join("debug.log"),
+        None => return "Cannot find config directory".to_string(),
+    };
+    match std::fs::read_to_string(&log_path) {
+        Ok(contents) => {
+            // Return last 200 lines max
+            let lines: Vec<&str> = contents.lines().collect();
+            let start = if lines.len() > 200 { lines.len() - 200 } else { 0 };
+            lines[start..].join("\n")
+        }
+        Err(_) => "No debug log found.".to_string(),
+    }
+}
+
+#[tauri::command]
 async fn set_api_key(key: String) -> Result<(), String> {
     let env_path = dirs::config_dir()
         .ok_or("Cannot find config directory")?
@@ -55,8 +73,10 @@ async fn set_api_key(key: String) -> Result<(), String> {
 }
 
 fn start_recording(state: &Arc<Mutex<RecordingState>>, app: &AppHandle) {
+    debug_log::log("start_recording called");
     let mut s = state.lock().unwrap();
     if s.is_recording {
+        debug_log::log("already recording, ignoring");
         return;
     }
     s.is_recording = true;
@@ -68,14 +88,18 @@ fn start_recording(state: &Arc<Mutex<RecordingState>>, app: &AppHandle) {
 
     let state_clone = Arc::clone(state);
     std::thread::spawn(move || {
+        debug_log::log("audio thread started");
         audio::record_audio(state_clone);
+        debug_log::log("audio thread finished");
     });
 }
 
 fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHandle) {
+    debug_log::log("stop_recording called");
     let (audio_data, sample_rate) = {
         let mut s = state.lock().unwrap();
         if !s.is_recording {
+            debug_log::log("not recording, ignoring");
             return;
         }
         s.is_recording = false;
@@ -85,6 +109,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     let _ = app.emit("recording-status", false);
 
     let duration_secs = audio_data.len() as f32 / sample_rate as f32;
+    debug_log::log(&format!("audio: {} samples, {:.1}s", audio_data.len(), duration_secs));
 
     if audio_data.is_empty() || duration_secs < 0.3 {
         let _ = app.emit("status-detail", "Too short, try again.");
@@ -94,20 +119,32 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     let _ = app.emit("status-detail",
         format!("Ribbiting... ({:.1}s of audio)", duration_secs));
 
+    // Use a dedicated thread for the whole transcribe+insert flow.
+    // Avoids tokio runtime issues and ensures enigo runs on a proper thread.
     let app_handle = app.clone();
-    tokio::spawn(async move {
+    std::thread::spawn(move || {
         let _ = app_handle.emit("transcribing", true);
 
-        match transcribe::transcribe_audio(&audio_data, sample_rate).await {
+        // Create a blocking reqwest client instead of async
+        let result = transcribe::transcribe_audio_blocking(&audio_data, sample_rate);
+
+        match result {
             Ok(text) => {
+                debug_log::log(&format!("transcription OK: {:?}", &text[..text.len().min(80)]));
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
                     let _ = app_handle.emit("status-detail", "Inserting text...");
 
+                    // Small delay to let the UI update and the previous app regain focus
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+
                     if let Err(e) = inserter::insert_text(&text) {
+                        debug_log::log(&format!("insert error: {}", e));
                         let _ = app_handle.emit("error",
-                            format!("Paste failed ({}). Text copied to clipboard.", e));
+                            format!("Paste failed: {}", e));
+                    } else {
+                        debug_log::log("text inserted OK");
                     }
 
                     logger::log_transcription(&text);
@@ -116,7 +153,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 }
             }
             Err(e) => {
-                eprintln!("Transcription error: {}", e);
+                debug_log::log(&format!("transcription error: {}", e));
                 let _ = app_handle.emit("error", e.clone());
                 let _ = app_handle.emit("status-detail", format!("Error: {}", e));
             }
@@ -144,13 +181,20 @@ fn load_env_file(path: &std::path::Path, overwrite: bool) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    debug_log::log("=== Ribbit starting ===");
+
     // Load .env from config dir (primary)
     if let Some(config_dir) = dirs::config_dir() {
-        load_env_file(&config_dir.join("ribbit").join(".env"), true);
+        let env_path = config_dir.join("ribbit").join(".env");
+        debug_log::log(&format!("loading env from {:?}", env_path));
+        load_env_file(&env_path, true);
     }
 
     // Also try .env in current directory (development fallback)
     load_env_file(std::path::Path::new(".env"), false);
+
+    let has_key = std::env::var("OPENAI_API_KEY").is_ok();
+    debug_log::log(&format!("API key present: {}", has_key));
 
     let state = Arc::new(Mutex::new(RecordingState {
         is_recording: false,
@@ -161,7 +205,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -179,9 +223,11 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Global shortcut: Ctrl+Alt+Space (toggle)
-            let shortcut: Shortcut = "ctrl+alt+space".parse().unwrap();
+            // Global shortcut: Ctrl+Super (Win key)
+            let shortcut: Shortcut = "ctrl+super+space".parse().unwrap();
             let state_for_shortcut = Arc::clone(&state);
+
+            debug_log::log("registering hotkey: ctrl+super+space");
 
             handle.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, _event| {
                 let is_recording = {
@@ -196,6 +242,7 @@ pub fn run() {
                 }
             })?;
 
+            debug_log::log("setup complete");
             Ok(())
         })
         .run(tauri::generate_context!())

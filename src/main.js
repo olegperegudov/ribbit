@@ -157,4 +157,25 @@ window.addEventListener("DOMContentLoaded", async () => {
       $("#status-detail").textContent = "Ready";
     }, 8000);
   });
+
+  // Debug log panel
+  $("#debug-btn").addEventListener("click", async () => {
+    const panel = $("#debug-panel");
+    if (panel.style.display === "none") {
+      const log = await invoke("get_debug_log");
+      $("#debug-content").textContent = log;
+      panel.style.display = "flex";
+      $("#log-entries").style.display = "none";
+      // Scroll to bottom
+      $("#debug-content").scrollTop = $("#debug-content").scrollHeight;
+    } else {
+      panel.style.display = "none";
+      $("#log-entries").style.display = "";
+    }
+  });
+
+  $("#debug-close").addEventListener("click", () => {
+    $("#debug-panel").style.display = "none";
+    $("#log-entries").style.display = "";
+  });
 });
