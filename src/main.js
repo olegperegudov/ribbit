@@ -29,7 +29,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const icon = statusIcon();
     if (event.payload) {
       icon.className = "recording";
-      statusText().textContent = "Recording... Release keys to stop.";
+      statusText().textContent = "Recording... Press Ctrl+Alt+Space to stop.";
     } else {
       icon.className = "idle";
       statusText().textContent = "Ready. Press Ctrl+Alt+Space to dictate.";

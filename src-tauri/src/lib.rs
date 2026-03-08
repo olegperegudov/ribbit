@@ -8,9 +8,8 @@ use tauri::{
     AppHandle, Manager, Emitter,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    image::Image,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 struct RecordingState {
     is_recording: bool,
@@ -28,7 +27,6 @@ fn get_config() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn set_api_key(key: String) -> Result<(), String> {
-    // For MVP: save to .env file next to the executable
     let env_path = dirs::config_dir()
         .ok_or("Cannot find config directory")?
         .join("ribbit")
@@ -40,7 +38,7 @@ async fn set_api_key(key: String) -> Result<(), String> {
     std::fs::write(&env_path, format!("OPENAI_API_KEY={}\n", key))
         .map_err(|e| e.to_string())?;
 
-    std::env::set_var("OPENAI_API_KEY", &key);
+    unsafe { std::env::set_var("OPENAI_API_KEY", &key); }
     Ok(())
 }
 
@@ -84,15 +82,11 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
         match transcribe::transcribe_audio(&audio_data, sample_rate).await {
             Ok(text) => {
                 if !text.is_empty() {
-                    // Insert text at cursor position
                     if let Err(e) = inserter::insert_text(&text) {
                         eprintln!("Failed to insert text: {}", e);
                         let _ = app_handle.emit("error", format!("Insert failed: {}", e));
                     }
-
-                    // Log transcription
                     logger::log_transcription(&text);
-
                     let _ = app_handle.emit("transcription", &text);
                 }
             }
@@ -106,41 +100,31 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     });
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    // Load .env from config dir
-    if let Some(config_dir) = dirs::config_dir() {
-        let env_path = config_dir.join("ribbit").join(".env");
-        if env_path.exists() {
-            if let Ok(contents) = std::fs::read_to_string(&env_path) {
-                for line in contents.lines() {
-                    if let Some((key, value)) = line.split_once('=') {
-                        let key = key.trim();
-                        let value = value.trim();
-                        if !key.is_empty() && !key.starts_with('#') {
-                            std::env::set_var(key, value);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Also try .env in current directory (for development)
-    if let Ok(contents) = std::fs::read_to_string(".env") {
+fn load_env_file(path: &std::path::Path, overwrite: bool) {
+    if let Ok(contents) = std::fs::read_to_string(path) {
         for line in contents.lines() {
             if let Some((key, value)) = line.split_once('=') {
                 let key = key.trim();
                 let value = value.trim();
                 if !key.is_empty() && !key.starts_with('#') {
-                    // Don't override if already set from config dir
-                    if std::env::var(key).is_err() {
-                        std::env::set_var(key, value);
+                    if overwrite || std::env::var(key).is_err() {
+                        unsafe { std::env::set_var(key, value); }
                     }
                 }
             }
         }
     }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    // Load .env from config dir (primary)
+    if let Some(config_dir) = dirs::config_dir() {
+        load_env_file(&config_dir.join("ribbit").join(".env"), true);
+    }
+
+    // Also try .env in current directory (development fallback)
+    load_env_file(std::path::Path::new(".env"), false);
 
     let state = Arc::new(Mutex::new(RecordingState {
         is_recording: false,
@@ -169,23 +153,22 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Global shortcut: Ctrl+Alt+Space
+            // Global shortcut: Ctrl+Alt+Space (toggle: press to start, press again to stop)
             let shortcut: Shortcut = "ctrl+alt+space".parse().unwrap();
             let state_for_shortcut = Arc::clone(&state);
 
-            handle.plugin_global_shortcut().on_shortcut(
-                shortcut,
-                move |app, _shortcut, event| {
-                    match event.state() {
-                        ShortcutState::Pressed => {
-                            start_recording(&state_for_shortcut, app);
-                        }
-                        ShortcutState::Released => {
-                            stop_recording_and_transcribe(&state_for_shortcut, app);
-                        }
-                    }
-                },
-            )?;
+            handle.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, _event| {
+                let is_recording = {
+                    let s = state_for_shortcut.lock().unwrap();
+                    s.is_recording
+                };
+
+                if is_recording {
+                    stop_recording_and_transcribe(&state_for_shortcut, app);
+                } else {
+                    start_recording(&state_for_shortcut, app);
+                }
+            })?;
 
             Ok(())
         })
