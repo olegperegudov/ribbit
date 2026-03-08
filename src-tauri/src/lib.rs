@@ -109,10 +109,21 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     let _ = app.emit("recording-status", false);
 
     let duration_secs = audio_data.len() as f32 / sample_rate as f32;
-    debug_log::log(&format!("audio: {} samples, {:.1}s", audio_data.len(), duration_secs));
+    let rms = if audio_data.is_empty() {
+        0.0
+    } else {
+        (audio_data.iter().map(|s| s * s).sum::<f32>() / audio_data.len() as f32).sqrt()
+    };
+    debug_log::log(&format!("audio: {} samples, {:.1}s, RMS={:.6}", audio_data.len(), duration_secs, rms));
 
     if audio_data.is_empty() || duration_secs < 0.3 {
         let _ = app.emit("status-detail", "Too short, try again.");
+        return;
+    }
+
+    if rms < 0.001 {
+        debug_log::log("WARNING: audio is silence (RMS < 0.001), check mic permissions");
+        let _ = app.emit("status-detail", "Mic silent — check Windows mic permissions");
         return;
     }
 

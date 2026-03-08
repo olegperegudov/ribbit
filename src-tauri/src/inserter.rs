@@ -1,5 +1,5 @@
 use arboard::Clipboard;
-use enigo::{Enigo, Keyboard, Settings, Direction};
+use enigo::{Enigo, Key, Keyboard, Settings, Direction};
 use std::thread;
 use std::time::Duration;
 
@@ -12,24 +12,32 @@ pub fn insert_text(text: &str) -> Result<(), String> {
 
     // Set our text to clipboard
     clipboard.set_text(text).map_err(|e| e.to_string())?;
-
-    // Small delay to ensure clipboard is ready
     thread::sleep(Duration::from_millis(50));
 
-    // Simulate Ctrl+V using raw virtual key codes (layout-independent)
-    // Key::Unicode('v') fails on non-Latin layouts (e.g. Russian)
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
 
-    // VK_CONTROL = 0x11, VK_V = 0x56
-    enigo.raw(0x11, Direction::Press).map_err(|e| format!("ctrl press: {}", e))?;
-    thread::sleep(Duration::from_millis(10));
-    enigo.raw(0x56, Direction::Press).map_err(|e| format!("v press: {}", e))?;
-    thread::sleep(Duration::from_millis(10));
-    enigo.raw(0x56, Direction::Release).map_err(|e| format!("v release: {}", e))?;
-    thread::sleep(Duration::from_millis(10));
-    enigo.raw(0x11, Direction::Release).map_err(|e| format!("ctrl release: {}", e))?;
+    // Simulate Ctrl+V using Key::Control + Key::Other(VK_V)
+    // Key::Control uses proper modifier handling
+    // Key::Other(0x56) sends virtual key code VK_V (layout-independent)
+    // NOTE: raw() sends SCAN CODES not VK codes — don't use it for this!
+    let paste_result = (|| -> Result<(), String> {
+        enigo.key(Key::Control, Direction::Press).map_err(|e| format!("ctrl press: {}", e))?;
+        thread::sleep(Duration::from_millis(20));
+        enigo.key(Key::Other(0x56), Direction::Press).map_err(|e| format!("v press: {}", e))?;
+        thread::sleep(Duration::from_millis(20));
+        enigo.key(Key::Other(0x56), Direction::Release).map_err(|e| format!("v release: {}", e))?;
+        thread::sleep(Duration::from_millis(20));
+        enigo.key(Key::Control, Direction::Release).map_err(|e| format!("ctrl release: {}", e))?;
+        debug_log::log("Ctrl+V simulated via Key::Control + Key::Other(VK_V)");
+        Ok(())
+    })();
 
-    debug_log::log("Ctrl+V simulated via raw keycodes");
+    if let Err(e) = &paste_result {
+        debug_log::log(&format!("Ctrl+V failed ({}), falling back to direct typing", e));
+        // Fallback: type text directly using Unicode input events
+        enigo.text(text).map_err(|e| format!("text fallback: {}", e))?;
+        debug_log::log("text typed via enigo.text() fallback");
+    }
 
     // Wait for paste to complete, then restore clipboard
     thread::sleep(Duration::from_millis(100));
@@ -37,5 +45,5 @@ pub fn insert_text(text: &str) -> Result<(), String> {
         let _ = clipboard.set_text(old);
     }
 
-    Ok(())
+    paste_result
 }
