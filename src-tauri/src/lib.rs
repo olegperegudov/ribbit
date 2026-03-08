@@ -223,11 +223,12 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Global shortcut: Ctrl+Super (Win key)
-            let shortcut: Shortcut = "ctrl+super+space".parse().unwrap();
+            // Global shortcut: Ctrl+Alt+Space (toggle recording)
+            let shortcut: Shortcut = "ctrl+alt+space".parse()
+                .map_err(|e| format!("Failed to parse shortcut: {}", e))?;
             let state_for_shortcut = Arc::clone(&state);
 
-            debug_log::log("registering hotkey: ctrl+super+space");
+            debug_log::log("registering hotkey: ctrl+alt+space");
 
             handle.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, _event| {
                 let is_recording = {
@@ -240,6 +241,9 @@ pub fn run() {
                 } else {
                     start_recording(&state_for_shortcut, app);
                 }
+            }).map_err(|e| {
+                debug_log::log(&format!("hotkey registration failed: {}", e));
+                e
             })?;
 
             debug_log::log("setup complete");
