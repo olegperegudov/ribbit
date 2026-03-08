@@ -1,24 +1,72 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-// Audio feedback — short click sounds via Web Audio API
+// Frog sounds via Web Audio API
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-function playBeep(freq, durationMs) {
+function playRibbit() {
+  const now = audioCtx.currentTime;
+  [0, 0.12].forEach((offset, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const lfo = audioCtx.createOscillator();
+    const lfoGain = audioCtx.createGain();
+    lfo.frequency.value = 30;
+    lfoGain.gain.value = 40;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = "triangle";
+    const t = now + offset;
+    osc.frequency.setValueAtTime(480 - i * 40, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.09);
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+    osc.start(t);
+    osc.stop(t + 0.11);
+    lfo.start(t);
+    lfo.stop(t + 0.11);
+  });
+}
+
+function playCroak() {
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const lfo = audioCtx.createOscillator();
+  const lfoGain = audioCtx.createGain();
+  lfo.frequency.value = 25;
+  lfoGain.gain.value = 30;
+  lfo.connect(lfoGain);
+  lfoGain.connect(osc.frequency);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(320, now);
+  osc.frequency.exponentialRampToValueAtTime(140, now + 0.15);
+  gain.gain.setValueAtTime(0.12, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+  osc.start(now);
+  osc.stop(now + 0.18);
+  lfo.start(now);
+  lfo.stop(now + 0.18);
+}
+
+function playChirp() {
+  const now = audioCtx.currentTime;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.connect(gain);
   gain.connect(audioCtx.destination);
-  osc.frequency.value = freq;
   osc.type = "sine";
-  gain.gain.value = 0.15;
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + durationMs / 1000);
-  osc.start();
-  osc.stop(audioCtx.currentTime + durationMs / 1000);
+  osc.frequency.setValueAtTime(600, now);
+  osc.frequency.exponentialRampToValueAtTime(900, now + 0.06);
+  gain.gain.setValueAtTime(0.08, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+  osc.start(now);
+  osc.stop(now + 0.08);
 }
-
-function playStartSound() { playBeep(880, 120); } // high short beep
-function playStopSound() { playBeep(440, 150); }  // lower beep
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -43,7 +91,6 @@ function addLogEntry(text, ts) {
   const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const dateLabel = ts ? formatDate(ts) : "TODAY";
 
-  // Check if we need a date separator
   const lastDateSep = log.querySelector(".date-sep:first-child");
   if (!lastDateSep || lastDateSep.textContent !== dateLabel) {
     const sep = document.createElement("div");
@@ -56,7 +103,6 @@ function addLogEntry(text, ts) {
   entry.className = "log-entry";
   entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span>`;
 
-  // Insert after the date separator
   const firstSep = log.querySelector(".date-sep");
   if (firstSep && firstSep.nextSibling) {
     log.insertBefore(entry, firstSep.nextSibling);
@@ -72,22 +118,19 @@ function escapeHtml(text) {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  // Check config
   const config = await invoke("get_config");
   if (!config.has_api_key) {
     $("#setup").style.display = "block";
-    $("#status-detail").textContent = "API key required";
+    $("#status-detail").textContent = "api key required";
   } else {
-    $("#status-detail").textContent = `Key: ${config.api_key_preview}`;
+    $("#status-detail").textContent = `key: ${config.api_key_preview}`;
     setTimeout(() => {
-      $("#status-detail").textContent = "Ready";
+      $("#status-detail").textContent = "ready";
     }, 2000);
   }
 
-  // Load history from log files
   try {
     const history = await invoke("get_log_history", { limit: 50 });
-    // history is newest-first, but we want to add oldest-first so newest ends up on top
     for (const entry of history.reverse()) {
       addLogEntry(entry.text, entry.ts);
     }
@@ -95,35 +138,31 @@ window.addEventListener("DOMContentLoaded", async () => {
     console.error("Failed to load history:", e);
   }
 
-  // API key form
   $("#key-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const key = $("#api-key-input").value.trim();
     if (key) {
       await invoke("set_api_key", { key });
       $("#setup").style.display = "none";
-      $("#status-detail").textContent = "Key saved. Ready!";
+      $("#status-detail").textContent = "key saved. ready";
     }
   });
 
-  // Recording status
   await listen("recording-status", (event) => {
     const icon = $("#status-icon");
     if (event.payload) {
       icon.className = "recording";
-      playStartSound();
+      playRibbit();
     } else {
       icon.className = "idle";
-      playStopSound();
+      playCroak();
     }
   });
 
-  // Detailed status messages
   await listen("status-detail", (event) => {
-    $("#status-detail").textContent = event.payload;
+    $("#status-detail").textContent = event.payload.toLowerCase();
   });
 
-  // Transcribing animation
   let ribbitInterval = null;
   await listen("transcribing", (event) => {
     if (event.payload) {
@@ -132,8 +171,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       ribbitInterval = setInterval(() => {
         dots = (dots + 1) % 4;
         const base = $("#status-detail").textContent.split("...")[0].split("..")[0].split(".")[0];
-        if (base.includes("Ribbit")) {
-          $("#status-detail").textContent = "Ribbiting" + ".".repeat(dots + 1);
+        if (base.includes("ribbit")) {
+          $("#status-detail").textContent = "ribbiting" + ".".repeat(dots + 1);
         }
       }, 400);
     } else {
@@ -142,23 +181,20 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Transcription result — add to visible log
   await listen("transcription", (event) => {
     addLogEntry(event.payload);
-    playBeep(660, 80); // success chirp
+    playChirp();
   });
 
-  // Errors — show prominently
   await listen("error", (event) => {
-    $("#status-detail").textContent = event.payload;
+    $("#status-detail").textContent = event.payload.toLowerCase();
     $("#status-detail").classList.add("error");
     setTimeout(() => {
       $("#status-detail").classList.remove("error");
-      $("#status-detail").textContent = "Ready";
+      $("#status-detail").textContent = "ready";
     }, 8000);
   });
 
-  // Debug log panel
   $("#debug-btn").addEventListener("click", async () => {
     const panel = $("#debug-panel");
     if (panel.style.display === "none") {
@@ -166,7 +202,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       $("#debug-content").textContent = log;
       panel.style.display = "flex";
       $("#log-entries").style.display = "none";
-      // Scroll to bottom
       $("#debug-content").scrollTop = $("#debug-content").scrollHeight;
     } else {
       panel.style.display = "none";
