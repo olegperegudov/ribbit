@@ -9,28 +9,30 @@
   </head>
   <body>
     <main class="container">
-      <div id="status-icon" class="idle">
-        <svg viewBox="0 0 100 100" width="80" height="80">
-          <!-- Simple frog face -->
-          <circle cx="50" cy="55" r="40" fill="currentColor" />
-          <!-- Eyes -->
-          <circle cx="32" cy="35" r="12" fill="currentColor" />
-          <circle cx="68" cy="35" r="12" fill="currentColor" />
-          <circle cx="32" cy="35" r="6" fill="white" />
-          <circle cx="68" cy="35" r="6" fill="white" />
-          <circle cx="33" cy="34" r="3" fill="#333" />
-          <circle cx="69" cy="34" r="3" fill="#333" />
-          <!-- Mouth -->
-          <path d="M 30 65 Q 50 80 70 65" stroke="#333" stroke-width="2" fill="none" />
-        </svg>
+      <div class="header">
+        <div id="status-icon" class="idle">
+          <svg viewBox="0 0 100 100" width="48" height="48">
+            <circle cx="50" cy="55" r="40" fill="currentColor" />
+            <circle cx="32" cy="35" r="12" fill="currentColor" />
+            <circle cx="68" cy="35" r="12" fill="currentColor" />
+            <circle cx="32" cy="35" r="6" fill="white" />
+            <circle cx="68" cy="35" r="6" fill="white" />
+            <circle cx="33" cy="34" r="3" fill="#333" />
+            <circle cx="69" cy="34" r="3" fill="#333" />
+            <path d="M 30 65 Q 50 80 70 65" stroke="#333" stroke-width="2" fill="none" />
+          </svg>
+        </div>
+        <div class="header-text">
+          <div class="app-title">Ribbit</div>
+          <div id="status-detail">Ready</div>
+        </div>
+        <div class="hotkey-hint"><kbd>Ctrl+Alt+Space</kbd></div>
       </div>
 
-      <p id="status-text">Ready. Press <kbd>Ctrl+Alt+Space</kbd> to dictate.</p>
-
-      <div id="last-transcription"></div>
+      <div id="log-entries"></div>
 
       <div id="setup" style="display:none">
-        <p>Enter your OpenAI API key to get started:</p>
+        <p>Enter your OpenAI API key:</p>
         <form id="key-form">
           <input type="password" id="api-key-input" placeholder="sk-..." />
           <button type="submit">Save</button>

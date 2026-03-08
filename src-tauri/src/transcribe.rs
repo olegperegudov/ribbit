@@ -55,8 +55,7 @@ pub async fn transcribe_audio(audio_data: &[f32], sample_rate: u32) -> Result<St
     let form = multipart::Form::new()
         .part("file", file_part)
         .text("model", "whisper-1")
-        .text("language", "") // auto-detect (handles RU + EN)
-        .text("prompt", "Transcribe accurately. The text may contain both Russian and English words.");
+        .text("prompt", "Transcribe accurately, preserving both Russian and English words as spoken.");
 
     let client = reqwest::Client::new();
     let response = client

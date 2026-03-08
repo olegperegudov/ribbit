@@ -1,10 +1,14 @@
 use chrono::Local;
-use std::fs::{OpenOptions, create_dir_all};
+use std::fs::{self, OpenOptions, create_dir_all};
 use std::io::Write;
 
+fn log_dir() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("ribbit").join("logs"))
+}
+
 pub fn log_transcription(text: &str) {
-    let log_dir = match dirs::config_dir() {
-        Some(d) => d.join("ribbit").join("logs"),
+    let log_dir = match log_dir() {
+        Some(d) => d,
         None => return,
     };
 
@@ -27,4 +31,42 @@ pub fn log_transcription(text: &str) {
     {
         let _ = writeln!(file, "{}", entry);
     }
+}
+
+pub fn read_recent_entries(limit: usize) -> Vec<serde_json::Value> {
+    let log_dir = match log_dir() {
+        Some(d) => d,
+        None => return vec![],
+    };
+
+    if !log_dir.exists() {
+        return vec![];
+    }
+
+    // Collect log files, sorted by name descending (newest first)
+    let mut files: Vec<_> = fs::read_dir(&log_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
+        .collect();
+    files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+    let mut entries = Vec::new();
+    for file in files {
+        if entries.len() >= limit {
+            break;
+        }
+        if let Ok(contents) = fs::read_to_string(file.path()) {
+            let mut file_entries: Vec<serde_json::Value> = contents
+                .lines()
+                .filter_map(|line| serde_json::from_str(line).ok())
+                .collect();
+            file_entries.reverse(); // newest first
+            entries.extend(file_entries);
+        }
+    }
+
+    entries.truncate(limit);
+    entries
 }

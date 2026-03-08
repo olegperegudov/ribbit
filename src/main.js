@@ -1,71 +1,160 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const statusIcon = () => document.getElementById("status-icon");
-const statusText = () => document.getElementById("status-text");
-const lastTranscription = () => document.getElementById("last-transcription");
-const setupDiv = () => document.getElementById("setup");
+// Audio feedback — short click sounds via Web Audio API
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playBeep(freq, durationMs) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.frequency.value = freq;
+  osc.type = "sine";
+  gain.gain.value = 0.15;
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + durationMs / 1000);
+  osc.start();
+  osc.stop(audioCtx.currentTime + durationMs / 1000);
+}
+
+function playStartSound() { playBeep(880, 120); } // high short beep
+function playStopSound() { playBeep(440, 150); }  // lower beep
+
+const $ = (sel) => document.querySelector(sel);
+
+function formatTime(isoString) {
+  const d = new Date(isoString);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDate(isoString) {
+  const d = new Date(isoString);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (d.toDateString() === today.toDateString()) return "TODAY";
+  if (d.toDateString() === yesterday.toDateString()) return "YESTERDAY";
+  return d.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }).toUpperCase();
+}
+
+function addLogEntry(text, ts) {
+  const log = $("#log-entries");
+  const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const dateLabel = ts ? formatDate(ts) : "TODAY";
+
+  // Check if we need a date separator
+  const lastDateSep = log.querySelector(".date-sep:first-child");
+  if (!lastDateSep || lastDateSep.textContent !== dateLabel) {
+    const sep = document.createElement("div");
+    sep.className = "date-sep";
+    sep.textContent = dateLabel;
+    log.insertBefore(sep, log.firstChild);
+  }
+
+  const entry = document.createElement("div");
+  entry.className = "log-entry";
+  entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span>`;
+
+  // Insert after the date separator
+  const firstSep = log.querySelector(".date-sep");
+  if (firstSep && firstSep.nextSibling) {
+    log.insertBefore(entry, firstSep.nextSibling);
+  } else {
+    log.appendChild(entry);
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 window.addEventListener("DOMContentLoaded", async () => {
-  // Check if API key is configured
+  // Check config
   const config = await invoke("get_config");
   if (!config.has_api_key) {
-    setupDiv().style.display = "block";
+    $("#setup").style.display = "block";
+    $("#status-detail").textContent = "API key required";
+  } else {
+    $("#status-detail").textContent = `Key: ${config.api_key_preview}`;
+    setTimeout(() => {
+      $("#status-detail").textContent = "Ready";
+    }, 2000);
+  }
+
+  // Load history from log files
+  try {
+    const history = await invoke("get_log_history", { limit: 50 });
+    // history is newest-first, but we want to add oldest-first so newest ends up on top
+    for (const entry of history.reverse()) {
+      addLogEntry(entry.text, entry.ts);
+    }
+  } catch (e) {
+    console.error("Failed to load history:", e);
   }
 
   // API key form
-  document.getElementById("key-form")?.addEventListener("submit", async (e) => {
+  $("#key-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const key = document.getElementById("api-key-input").value.trim();
+    const key = $("#api-key-input").value.trim();
     if (key) {
       await invoke("set_api_key", { key });
-      setupDiv().style.display = "none";
-      statusText().textContent = "Ready. Press Ctrl+Alt+Space to dictate.";
+      $("#setup").style.display = "none";
+      $("#status-detail").textContent = "Key saved. Ready!";
     }
   });
 
-  // Listen for recording status changes
+  // Recording status
   await listen("recording-status", (event) => {
-    const icon = statusIcon();
+    const icon = $("#status-icon");
     if (event.payload) {
       icon.className = "recording";
-      statusText().textContent = "Recording... Press Ctrl+Alt+Space to stop.";
+      playStartSound();
     } else {
       icon.className = "idle";
-      statusText().textContent = "Ready. Press Ctrl+Alt+Space to dictate.";
+      playStopSound();
     }
   });
 
-  // Listen for transcribing status
+  // Detailed status messages
+  await listen("status-detail", (event) => {
+    $("#status-detail").textContent = event.payload;
+  });
+
+  // Transcribing animation
+  let ribbitInterval = null;
   await listen("transcribing", (event) => {
     if (event.payload) {
-      statusIcon().className = "transcribing";
-      statusText().textContent = "Transcribing...";
+      $("#status-icon").className = "transcribing";
+      let dots = 0;
+      ribbitInterval = setInterval(() => {
+        dots = (dots + 1) % 4;
+        const base = $("#status-detail").textContent.split("...")[0].split("..")[0].split(".")[0];
+        if (base.includes("Ribbit")) {
+          $("#status-detail").textContent = "Ribbiting" + ".".repeat(dots + 1);
+        }
+      }, 400);
+    } else {
+      if (ribbitInterval) { clearInterval(ribbitInterval); ribbitInterval = null; }
+      $("#status-icon").className = "idle";
     }
   });
 
-  // Listen for transcription results
+  // Transcription result — add to visible log
   await listen("transcription", (event) => {
-    const text = event.payload;
-    const div = lastTranscription();
-    const entry = document.createElement("div");
-    entry.className = "entry";
-    const time = new Date().toLocaleTimeString();
-    entry.textContent = `[${time}] ${text}`;
-    div.insertBefore(entry, div.firstChild);
-
-    // Keep only last 20 entries
-    while (div.children.length > 20) {
-      div.removeChild(div.lastChild);
-    }
+    addLogEntry(event.payload);
+    playBeep(660, 80); // success chirp
   });
 
-  // Listen for errors
+  // Errors — show prominently
   await listen("error", (event) => {
-    statusText().textContent = event.payload;
-    statusIcon().className = "idle";
+    $("#status-detail").textContent = event.payload;
+    $("#status-detail").classList.add("error");
     setTimeout(() => {
-      statusText().textContent = "Ready. Press Ctrl+Alt+Space to dictate.";
-    }, 5000);
+      $("#status-detail").classList.remove("error");
+      $("#status-detail").textContent = "Ready";
+    }, 8000);
   });
 });

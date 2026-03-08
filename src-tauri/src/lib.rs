@@ -22,7 +22,19 @@ fn get_config() -> Result<serde_json::Value, String> {
     let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
     Ok(serde_json::json!({
         "has_api_key": !api_key.is_empty(),
+        "api_key_preview": if api_key.len() > 8 {
+            format!("{}...{}", &api_key[..4], &api_key[api_key.len()-4..])
+        } else if !api_key.is_empty() {
+            "****".to_string()
+        } else {
+            "".to_string()
+        },
     }))
+}
+
+#[tauri::command]
+fn get_log_history(limit: usize) -> Vec<serde_json::Value> {
+    logger::read_recent_entries(if limit == 0 { 50 } else { limit })
 }
 
 #[tauri::command]
@@ -52,6 +64,7 @@ fn start_recording(state: &Arc<Mutex<RecordingState>>, app: &AppHandle) {
     drop(s);
 
     let _ = app.emit("recording-status", true);
+    let _ = app.emit("status-detail", "Listening...");
 
     let state_clone = Arc::clone(state);
     std::thread::spawn(move || {
@@ -71,9 +84,15 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
     let _ = app.emit("recording-status", false);
 
-    if audio_data.is_empty() {
+    let duration_secs = audio_data.len() as f32 / sample_rate as f32;
+
+    if audio_data.is_empty() || duration_secs < 0.3 {
+        let _ = app.emit("status-detail", "Too short, try again.");
         return;
     }
+
+    let _ = app.emit("status-detail",
+        format!("Ribbiting... ({:.1}s of audio)", duration_secs));
 
     let app_handle = app.clone();
     tokio::spawn(async move {
@@ -81,18 +100,25 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
         match transcribe::transcribe_audio(&audio_data, sample_rate).await {
             Ok(text) => {
-                if !text.is_empty() {
+                if text.is_empty() {
+                    let _ = app_handle.emit("status-detail", "No speech detected.");
+                } else {
+                    let _ = app_handle.emit("status-detail", "Inserting text...");
+
                     if let Err(e) = inserter::insert_text(&text) {
-                        eprintln!("Failed to insert text: {}", e);
-                        let _ = app_handle.emit("error", format!("Insert failed: {}", e));
+                        let _ = app_handle.emit("error",
+                            format!("Paste failed ({}). Text copied to clipboard.", e));
                     }
+
                     logger::log_transcription(&text);
                     let _ = app_handle.emit("transcription", &text);
+                    let _ = app_handle.emit("status-detail", "Done!");
                 }
             }
             Err(e) => {
                 eprintln!("Transcription error: {}", e);
-                let _ = app_handle.emit("error", format!("Transcription failed: {}", e));
+                let _ = app_handle.emit("error", e.clone());
+                let _ = app_handle.emit("status-detail", format!("Error: {}", e));
             }
         }
 
@@ -135,7 +161,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -153,7 +179,7 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Global shortcut: Ctrl+Alt+Space (toggle: press to start, press again to stop)
+            // Global shortcut: Ctrl+Alt+Space (toggle)
             let shortcut: Shortcut = "ctrl+alt+space".parse().unwrap();
             let state_for_shortcut = Arc::clone(&state);
 
