@@ -1,5 +1,6 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const { getCurrentWindow } = window.__TAURI__.window;
 
 // Frog sounds via Web Audio API
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -194,6 +195,9 @@ window.addEventListener("DOMContentLoaded", async () => {
       $("#status-detail").textContent = "ready";
     }, 8000);
   });
+
+  $("#win-min").addEventListener("click", () => getCurrentWindow().minimize());
+  $("#win-close").addEventListener("click", () => getCurrentWindow().close());
 
   $("#debug-btn").addEventListener("click", async () => {
     const panel = $("#debug-panel");

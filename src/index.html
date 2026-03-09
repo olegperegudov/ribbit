@@ -9,17 +9,19 @@
   </head>
   <body>
     <main class="container">
-      <div class="header">
+      <div class="header" data-tauri-drag-region>
         <div id="status-icon" class="idle">
           <img src="frog.png" width="32" height="32" alt="Ribbit" />
         </div>
-        <div class="header-text">
-          <div class="app-title">ribbit</div>
+        <div class="header-text" data-tauri-drag-region>
+          <div class="app-title" data-tauri-drag-region>ribbit</div>
           <div id="status-detail">ready</div>
         </div>
         <div class="header-right">
           <kbd>ctrl+alt+space</kbd>
           <button id="debug-btn" title="Debug log">&gt;_</button>
+          <button id="win-min" class="win-btn" title="Minimize">&#x2212;</button>
+          <button id="win-close" class="win-btn win-close" title="Close">&#x2715;</button>
         </div>
       </div>
 
