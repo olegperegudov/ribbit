@@ -25,7 +25,6 @@ body {
   align-items: center;
   gap: 0.6rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid #1e2530;
   flex-shrink: 0;
 }
 
@@ -63,17 +62,6 @@ body {
   letter-spacing: 0.02em;
 }
 
-#status-detail {
-  font-size: 0.75rem;
-  color: #4ade80;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-#status-detail.error {
-  color: #ef4444;
-}
 
 /* Sparkline */
 #sparkline {

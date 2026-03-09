@@ -6,21 +6,32 @@ const { getCurrentWindow } = window.__TAURI__.window;
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let quackBuffer = null;
 
+// Resume audio context on any user interaction (required by autoplay policy)
+["click", "keydown", "pointerdown"].forEach(evt => {
+  document.addEventListener(evt, () => {
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  }, { once: true });
+});
+
 fetch("quack.ogg")
   .then(r => r.arrayBuffer())
   .then(buf => audioCtx.decodeAudioData(buf))
-  .then(decoded => { quackBuffer = decoded; });
+  .then(decoded => { quackBuffer = decoded; })
+  .catch(e => console.error("Failed to load quack.ogg:", e));
 
 function playQuack(rate = 1.0, volume = 0.8) {
   if (!quackBuffer) return;
-  const src = audioCtx.createBufferSource();
-  const gain = audioCtx.createGain();
-  src.buffer = quackBuffer;
-  src.playbackRate.value = rate;
-  gain.gain.value = volume;
-  src.connect(gain);
-  gain.connect(audioCtx.destination);
-  src.start();
+  const resume = audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
+  resume.then(() => {
+    const src = audioCtx.createBufferSource();
+    const gain = audioCtx.createGain();
+    src.buffer = quackBuffer;
+    src.playbackRate.value = rate;
+    gain.gain.value = volume;
+    src.connect(gain);
+    gain.connect(audioCtx.destination);
+    src.start();
+  });
 }
 
 function playStartQuack() { playQuack(1.15, 0.8); }
@@ -33,10 +44,14 @@ const SPARK_DAYS = 30;
 let sparkData = new Array(SPARK_DAYS).fill(0); // seconds per day
 let sparkDates = []; // date strings for tooltip
 let currentAudioLevel = 0;
-let morphProgress = 0; // 0=sparkline, 1=waveform
+let morphProgress = 0; // 0=sparkline, 1=flat
 let morphTarget = 0;
 let sparkAnimId = null;
 let isRecording = false;
+let vizState = "idle"; // "idle" | "readying" | "recording"
+let silentFrames = 0;
+const SILENT_THRESHOLD = 0.005;
+const SILENT_FRAMES_SHOW = 60; // ~1s at 60fps
 
 function initSparkline(canvas) {
   const rect = canvas.getBoundingClientRect();
@@ -80,8 +95,21 @@ function drawSparkline() {
   }
 
   const maxVal = Math.max(...sparkData, 60); // min 1 min
+
+  // Flat line Y = average of sparkline values (stays in place)
+  const avgVal = sparkData.reduce((a, b) => a + b, 0) / sparkData.length;
+  const flatY = H - 2 - (avgVal / maxVal) * (H - 6);
+
+  // Audio vibration (only when recording with sound)
   const t = performance.now() / 80;
-  const amp = Math.min(currentAudioLevel * 250, H / 2 - 2);
+  const rawAmp = Math.min(currentAudioLevel * 250, H / 2 - 2);
+  const availableAmp = Math.min(rawAmp, flatY - 2); // don't go above canvas
+
+  // Silent detection
+  if (vizState === "recording") {
+    if (currentAudioLevel < SILENT_THRESHOLD) silentFrames++;
+    else silentFrames = 0;
+  }
 
   // Compute blended Y for each pixel
   const points = [];
@@ -93,29 +121,35 @@ function drawSparkline() {
     const val = sparkData[i] * (1 - f) + (sparkData[i + 1] ?? sparkData[i]) * f;
     const sy = H - 2 - (val / maxVal) * (H - 6);
 
-    // Waveform Y
-    const wy = H / 2 + Math.sin(x * 0.15 + t) * amp
-      * (0.6 + 0.4 * Math.sin(x * 0.07 + t * 0.3));
+    // Target Y: flat line + optional upward vibration
+    let targetY = flatY;
+    if (vizState === "recording" && availableAmp > 0.5) {
+      const wave = Math.abs(Math.sin(x * 0.15 + t) * (0.6 + 0.4 * Math.sin(x * 0.07 + t * 0.3)));
+      targetY = flatY - wave * availableAmp;
+    }
 
-    const y = sy * (1 - morphProgress) + wy * morphProgress;
+    const y = sy * (1 - morphProgress) + targetY * morphProgress;
     points.push(y);
   }
 
-  // Fill
-  ctx.beginPath();
-  ctx.moveTo(0, H);
-  points.forEach((y, x) => ctx.lineTo(x, y));
-  ctx.lineTo(W, H);
-  ctx.closePath();
-  ctx.fillStyle = "rgba(74, 222, 128, 0.08)";
-  ctx.fill();
+  // Line color by state
+  let lineColor = "#4ade80"; // green (idle + recording)
+  if (vizState === "readying") lineColor = "#facc15"; // yellow
 
-  // Stroke
+  // Stroke only (no fill)
   ctx.beginPath();
   points.forEach((y, x) => x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
-  ctx.strokeStyle = "#4ade80";
+  ctx.strokeStyle = lineColor;
   ctx.lineWidth = 1.5;
   ctx.stroke();
+
+  // "- no sound -" text when recording but silent
+  if (vizState === "recording" && silentFrames > SILENT_FRAMES_SHOW) {
+    ctx.font = '9px "JetBrains Mono", monospace';
+    ctx.fillStyle = "#4b5563";
+    ctx.textAlign = "center";
+    ctx.fillText("- no sound -", W / 2, flatY - 8);
+  }
 
   // Keep animating if recording or morphing
   if (isRecording || morphProgress !== morphTarget) {
@@ -127,15 +161,18 @@ function drawSparkline() {
 
 function startRecordingViz() {
   isRecording = true;
+  vizState = "readying";
   morphTarget = 1;
+  silentFrames = 0;
   if (!sparkAnimId) sparkAnimId = requestAnimationFrame(drawSparkline);
 }
 
 function stopRecordingViz() {
   isRecording = false;
+  vizState = "idle";
   morphTarget = 0;
   currentAudioLevel = 0;
-  // Keep animating until morph completes
+  silentFrames = 0;
   if (!sparkAnimId) sparkAnimId = requestAnimationFrame(drawSparkline);
 }
 
@@ -229,7 +266,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   const config = await invoke("get_config");
   if (!config.has_api_key) {
     $("#setup").style.display = "block";
-    $("#status-detail").textContent = "api key required";
   }
 
   // Open Groq console link in default browser
@@ -238,13 +274,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     const { openUrl } = window.__TAURI__.opener;
     await openUrl("https://console.groq.com/keys");
   });
-
-  if (config.has_api_key) {
-    $("#status-detail").textContent = `${config.provider}: ${config.api_key_preview}`;
-    setTimeout(() => {
-      $("#status-detail").textContent = "ready";
-    }, 2000);
-  }
 
   // Load history
   try {
@@ -282,7 +311,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (key) {
       await invoke("set_api_key", { key });
       $("#setup").style.display = "none";
-      $("#status-detail").textContent = "key saved. ready";
     }
   });
 
@@ -290,7 +318,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     const icon = $("#status-icon");
     if (event.payload) {
       icon.className = "recording";
-      $("#status-detail").textContent = "";
       playStartQuack();
       startRecordingViz();
     } else {
@@ -302,26 +329,14 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   await listen("audio-level", (event) => {
     currentAudioLevel = event.payload;
+    // First audio-level event after recording start = mic is ready
+    if (vizState === "readying") vizState = "recording";
   });
 
-  await listen("status-detail", (event) => {
-    $("#status-detail").textContent = event.payload.toLowerCase();
-  });
-
-  let ribbitInterval = null;
   await listen("transcribing", (event) => {
     if (event.payload) {
       $("#status-icon").className = "transcribing";
-      let dots = 0;
-      ribbitInterval = setInterval(() => {
-        dots = (dots + 1) % 4;
-        const base = $("#status-detail").textContent.split("...")[0].split("..")[0].split(".")[0];
-        if (base.includes("ribbit")) {
-          $("#status-detail").textContent = "ribbiting" + ".".repeat(dots + 1);
-        }
-      }, 400);
     } else {
-      if (ribbitInterval) { clearInterval(ribbitInterval); ribbitInterval = null; }
       $("#status-icon").className = "idle";
     }
   });
@@ -338,12 +353,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await listen("error", (event) => {
-    $("#status-detail").textContent = event.payload.toLowerCase();
-    $("#status-detail").classList.add("error");
-    setTimeout(() => {
-      $("#status-detail").classList.remove("error");
-      $("#status-detail").textContent = "ready";
-    }, 8000);
+    console.error("Ribbit error:", event.payload);
   });
 
   // Window controls
