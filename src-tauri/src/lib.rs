@@ -183,7 +183,8 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
         match result {
             Ok(text) => {
-                debug_log::log(&format!("transcription OK: {:?}", &text[..text.len().min(80)]));
+                let preview: String = text.chars().take(80).collect();
+                debug_log::log(&format!("transcription OK: {:?}", preview));
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
