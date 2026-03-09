@@ -1,16 +1,18 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter};
 
 use crate::RecordingState;
 use crate::debug_log;
 
-pub fn record_audio(state: Arc<Mutex<RecordingState>>) {
+pub fn record_audio(state: Arc<Mutex<RecordingState>>, app: AppHandle) {
     let host = cpal::default_host();
 
     let device = match host.default_input_device() {
         Some(d) => d,
         None => {
             debug_log::log("ERROR: no input device available");
+            let _ = app.emit("status-detail", "No microphone found");
             return;
         }
     };
@@ -51,6 +53,7 @@ pub fn record_audio(state: Arc<Mutex<RecordingState>>) {
                 Ok(c) => c,
                 Err(e) => {
                     debug_log::log(&format!("ERROR: no input config: {}", e));
+                    let _ = app.emit("status-detail", "Mic config error");
                     return;
                 }
             };
@@ -87,6 +90,7 @@ pub fn record_audio(state: Arc<Mutex<RecordingState>>) {
                 Ok(s) => s,
                 Err(e) => {
                     debug_log::log(&format!("ERROR: failed to create stream: {}", e));
+                    let _ = app.emit("status-detail", "Mic stream error");
                     return;
                 }
             }
@@ -95,8 +99,14 @@ pub fn record_audio(state: Arc<Mutex<RecordingState>>) {
 
     if let Err(e) = stream.play() {
         debug_log::log(&format!("ERROR: failed to start stream: {}", e));
+        let _ = app.emit("status-detail", "Mic start error");
         return;
     }
+
+    // Mic is ready — NOW signal the frontend to play start sound
+    debug_log::log("mic stream active, listening");
+    let _ = app.emit("recording-status", true);
+    let _ = app.emit("status-detail", "Listening...");
 
     // Keep recording until is_recording becomes false
     loop {

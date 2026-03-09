@@ -83,13 +83,15 @@ fn start_recording(state: &Arc<Mutex<RecordingState>>, app: &AppHandle) {
     s.audio_data.clear();
     drop(s);
 
-    let _ = app.emit("recording-status", true);
-    let _ = app.emit("status-detail", "Listening...");
+    // Show "warming up" immediately — the actual "Listening" + start sound
+    // fires from audio::record_audio after the mic stream starts
+    let _ = app.emit("status-detail", "Starting mic...");
 
     let state_clone = Arc::clone(state);
+    let app_clone = app.clone();
     std::thread::spawn(move || {
         debug_log::log("audio thread started");
-        audio::record_audio(state_clone);
+        audio::record_audio(state_clone, app_clone);
         debug_log::log("audio thread finished");
     });
 }
@@ -206,6 +208,11 @@ pub fn run() {
 
     let has_key = std::env::var("OPENAI_API_KEY").is_ok();
     debug_log::log(&format!("API key present: {}", has_key));
+
+    // Warm up HTTP client (TLS handshake) in background so first transcription is fast
+    std::thread::spawn(|| {
+        transcribe::warm_up_client();
+    });
 
     let state = Arc::new(Mutex::new(RecordingState {
         is_recording: false,

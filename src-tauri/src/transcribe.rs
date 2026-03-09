@@ -1,4 +1,17 @@
 use std::io::Cursor;
+use std::sync::OnceLock;
+
+static HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+
+fn client() -> &'static reqwest::blocking::Client {
+    HTTP_CLIENT.get_or_init(|| reqwest::blocking::Client::new())
+}
+
+/// Pre-initialize the HTTP client so first request doesn't pay TLS cost
+pub fn warm_up_client() {
+    let _ = client();
+    crate::debug_log::log("HTTP client warmed up");
+}
 
 /// Encode f32 PCM audio data as WAV bytes
 fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Vec<u8> {
@@ -57,8 +70,7 @@ pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32) -> Result
         .text("model", "whisper-1")
         .text("prompt", "Transcribe accurately, preserving both Russian and English words as spoken.");
 
-    let client = reqwest::blocking::Client::new();
-    let response = client
+    let response = client()
         .post("https://api.openai.com/v1/audio/transcriptions")
         .header("Authorization", format!("Bearer {}", api_key))
         .multipart(form)
