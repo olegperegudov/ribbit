@@ -275,8 +275,12 @@ pub fn run() {
                     if matches!(event, TrayIconEvent::Click { .. }) {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+                            if w.is_visible().unwrap_or(false) {
+                                let _ = w.hide();
+                            } else {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
                         }
                     }
                 });
