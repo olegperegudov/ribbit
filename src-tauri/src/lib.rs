@@ -4,6 +4,8 @@ mod inserter;
 mod logger;
 mod debug_log;
 mod usage;
+mod sound;
+
 use std::sync::{Arc, Mutex};
 use tauri::{
     AppHandle, Manager, Emitter,
@@ -69,6 +71,11 @@ fn get_debug_log() -> String {
 #[tauri::command]
 fn get_usage_stats() -> Vec<serde_json::Value> {
     usage::get_monthly()
+}
+
+#[tauri::command]
+fn test_sound(app: AppHandle) {
+    app.state::<sound::SoundPlayer>().play(sound::SoundKind::Start);
 }
 
 #[tauri::command]
@@ -182,6 +189,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     };
 
     let _ = app.emit("recording-status", false);
+    app.state::<sound::SoundPlayer>().play(sound::SoundKind::Stop);
 
     let duration_secs = audio_data.len() as f32 / sample_rate as f32;
     let rms = if audio_data.is_empty() {
@@ -236,6 +244,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
                     logger::log_transcription(&text, duration_secs);
                     usage::record(duration_secs);
+                    app_handle.state::<sound::SoundPlayer>().play(sound::SoundKind::Done);
                     let _ = app_handle.emit("transcription", serde_json::json!({
                         "text": &text,
                         "duration": duration_secs,
@@ -340,7 +349,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -404,6 +413,7 @@ pub fn run() {
 
             // Manage state for commands and shortcut handler
             app.manage(Arc::clone(&state));
+            app.manage(sound::SoundPlayer::new());
 
             // Register saved shortcut
             let shortcut_str = state.lock().unwrap().current_shortcut.clone();

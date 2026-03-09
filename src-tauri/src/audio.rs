@@ -1,9 +1,10 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::RecordingState;
 use crate::debug_log;
+use crate::sound;
 
 pub fn record_audio(state: Arc<Mutex<RecordingState>>, app: AppHandle) {
     let host = cpal::default_host();
@@ -103,9 +104,10 @@ pub fn record_audio(state: Arc<Mutex<RecordingState>>, app: AppHandle) {
         return;
     }
 
-    // Mic is ready — signal frontend to play start sound
+    // Mic is ready — signal frontend + play start sound natively
     debug_log::log("mic stream active, listening");
     let _ = app.emit("recording-status", true);
+    app.state::<sound::SoundPlayer>().play(sound::SoundKind::Start);
 
     // Keep recording until is_recording becomes false, emit audio levels
     let mut last_len = 0;
