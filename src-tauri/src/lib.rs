@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     AppHandle, Manager, Emitter,
     menu::{MenuBuilder, MenuItemBuilder},
-    tray::TrayIconBuilder,
+    tray::{TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -254,15 +254,30 @@ pub fn run() {
             let handle = app.handle().clone();
 
             // System tray
+            let show = MenuItemBuilder::with_id("show", "Show Ribbit").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit Ribbit").build(app)?;
-            let menu = MenuBuilder::new(app).item(&quit).build()?;
+            let menu = MenuBuilder::new(app).item(&show).item(&quit).build()?;
 
             let mut tray_builder = TrayIconBuilder::new()
                 .tooltip("Ribbit - Voice to Text")
                 .menu(&menu)
                 .on_menu_event(move |app, event| {
-                    if event.id() == "quit" {
+                    if event.id() == "show" {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    } else if event.id() == "quit" {
                         app.exit(0);
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if matches!(event, TrayIconEvent::Click { .. }) {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
                     }
                 });
 

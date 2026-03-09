@@ -197,7 +197,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   $("#win-min").addEventListener("click", () => getCurrentWindow().minimize());
-  $("#win-close").addEventListener("click", () => getCurrentWindow().close());
+  $("#win-close").addEventListener("click", () => getCurrentWindow().hide());
 
   $("#debug-btn").addEventListener("click", async () => {
     const panel = $("#debug-panel");
