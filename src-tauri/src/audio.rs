@@ -108,12 +108,28 @@ pub fn record_audio(state: Arc<Mutex<RecordingState>>, app: AppHandle) {
     let _ = app.emit("recording-status", true);
     let _ = app.emit("status-detail", "Listening...");
 
-    // Keep recording until is_recording becomes false
+    // Keep recording until is_recording becomes false, emit audio levels
+    let mut last_len = 0;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(50));
-        let s = state.lock().unwrap();
-        if !s.is_recording {
-            break;
+        let level = {
+            let s = state.lock().unwrap();
+            if !s.is_recording {
+                break;
+            }
+            let cur = s.audio_data.len();
+            if cur > last_len {
+                let rms = (s.audio_data[last_len..].iter()
+                    .map(|x| x * x).sum::<f32>()
+                    / (cur - last_len) as f32).sqrt();
+                last_len = cur;
+                Some(rms)
+            } else {
+                None
+            }
+        };
+        if let Some(rms) = level {
+            let _ = app.emit("audio-level", rms);
         }
     }
 }

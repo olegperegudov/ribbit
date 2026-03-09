@@ -2,56 +2,42 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 
-// Frog sounds via Web Audio API
+// Sounds via Web Audio API
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-function playRibbit() {
-  const now = audioCtx.currentTime;
-  [0, 0.12].forEach((offset, i) => {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    const lfo = audioCtx.createOscillator();
-    const lfoGain = audioCtx.createGain();
-    lfo.frequency.value = 30;
-    lfoGain.gain.value = 40;
-    lfo.connect(lfoGain);
-    lfoGain.connect(osc.frequency);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.type = "triangle";
-    const t = now + offset;
-    osc.frequency.setValueAtTime(480 - i * 40, t);
-    osc.frequency.exponentialRampToValueAtTime(200, t + 0.09);
-    gain.gain.setValueAtTime(0.12, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
-    osc.start(t);
-    osc.stop(t + 0.11);
-    lfo.start(t);
-    lfo.stop(t + 0.11);
-  });
-}
-
-function playCroak() {
-  const now = audioCtx.currentTime;
+function playQuackAt(time, pitch) {
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
-  const lfo = audioCtx.createOscillator();
-  const lfoGain = audioCtx.createGain();
-  lfo.frequency.value = 25;
-  lfoGain.gain.value = 30;
-  lfo.connect(lfoGain);
-  lfoGain.connect(osc.frequency);
-  osc.connect(gain);
+  const filter = audioCtx.createBiquadFilter();
+
+  filter.type = "bandpass";
+  filter.frequency.value = 800 * pitch;
+  filter.Q.value = 3;
+
+  osc.connect(filter);
+  filter.connect(gain);
   gain.connect(audioCtx.destination);
-  osc.type = "triangle";
-  osc.frequency.setValueAtTime(320, now);
-  osc.frequency.exponentialRampToValueAtTime(140, now + 0.15);
-  gain.gain.setValueAtTime(0.12, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-  osc.start(now);
-  osc.stop(now + 0.18);
-  lfo.start(now);
-  lfo.stop(now + 0.18);
+
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(680 * pitch, time);
+  osc.frequency.exponentialRampToValueAtTime(280 * pitch, time + 0.08);
+
+  gain.gain.setValueAtTime(0.13, time);
+  gain.gain.linearRampToValueAtTime(0.13, time + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+
+  osc.start(time);
+  osc.stop(time + 0.12);
+}
+
+function playStartQuack() {
+  const now = audioCtx.currentTime;
+  playQuackAt(now, 1.1);
+  playQuackAt(now + 0.14, 1.0);
+}
+
+function playStopQuack() {
+  playQuackAt(audioCtx.currentTime, 0.85);
 }
 
 function playChirp() {
@@ -70,6 +56,47 @@ function playChirp() {
 }
 
 const $ = (sel) => document.querySelector(sel);
+
+// Audio level visualization
+let currentAudioLevel = 0;
+let vizAnimId = null;
+
+function startAudioViz() {
+  const canvas = $("#audio-viz");
+  canvas.style.display = "block";
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;
+  const H = canvas.height;
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.beginPath();
+    ctx.strokeStyle = "#4ade80";
+    ctx.lineWidth = 1.5;
+
+    // Amplitude based on real audio level, clamped
+    const amp = Math.min(currentAudioLevel * 250, H / 2 - 1);
+    const t = performance.now() / 80;
+
+    for (let x = 0; x < W; x++) {
+      const y = H / 2 + Math.sin(x * 0.2 + t) * amp * (0.6 + 0.4 * Math.sin(x * 0.07 + t * 0.3));
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    vizAnimId = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function stopAudioViz() {
+  if (vizAnimId) {
+    cancelAnimationFrame(vizAnimId);
+    vizAnimId = null;
+  }
+  $("#audio-viz").style.display = "none";
+  currentAudioLevel = 0;
+}
 
 function formatTime(isoString) {
   const d = new Date(isoString);
@@ -160,11 +187,17 @@ window.addEventListener("DOMContentLoaded", async () => {
     const icon = $("#status-icon");
     if (event.payload) {
       icon.className = "recording";
-      playRibbit();
+      playStartQuack();
+      startAudioViz();
     } else {
       icon.className = "idle";
-      playCroak();
+      playStopQuack();
+      stopAudioViz();
     }
+  });
+
+  await listen("audio-level", (event) => {
+    currentAudioLevel = event.payload;
   });
 
   await listen("status-detail", (event) => {
@@ -207,12 +240,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("#win-min").addEventListener("click", () => getCurrentWindow().minimize());
   $("#win-close").addEventListener("click", () => getCurrentWindow().hide());
 
-  // Settings panel
+  // Settings panel (gear toggles it)
   $("#settings-btn").addEventListener("click", () => {
     const visible = $("#settings-panel").style.display !== "none";
     showPanel(visible ? "log" : "settings");
   });
-  $("#settings-close").addEventListener("click", () => showPanel("log"));
 
   // Always on top toggle
   $("#always-on-top").addEventListener("change", async (e) => {
