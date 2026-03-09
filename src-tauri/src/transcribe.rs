@@ -88,8 +88,7 @@ pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32) -> Result
 
     let form = reqwest::blocking::multipart::Form::new()
         .part("file", file_part)
-        .text("model", model.to_string())
-        .text("language", "ru");
+        .text("model", model.to_string());
 
     let t0 = std::time::Instant::now();
     let response = client()
