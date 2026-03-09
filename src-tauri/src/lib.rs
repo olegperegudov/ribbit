@@ -79,6 +79,24 @@ fn test_sound(app: AppHandle) {
 }
 
 #[tauri::command]
+fn hide_to_tray(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_skip_taskbar(true);
+        let _ = w.hide();
+    }
+}
+
+#[tauri::command]
+fn show_from_tray(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.set_skip_taskbar(false);
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+#[tauri::command]
 fn set_always_on_top(app: AppHandle, value: bool) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("main") {
         w.set_always_on_top(value).map_err(|e| e.to_string())?;
@@ -349,7 +367,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -375,6 +393,7 @@ pub fn run() {
                             } else {
                                 let _ = w.show();
                                 let _ = w.set_skip_taskbar(false);
+                                let _ = w.unminimize();
                                 let _ = w.set_focus();
                                 let _ = show_for_menu.set_text("Hide Ribbit");
                             }
@@ -397,6 +416,7 @@ pub fn run() {
                             } else {
                                 let _ = w.show();
                                 let _ = w.set_skip_taskbar(false);
+                                let _ = w.unminimize();
                                 let _ = w.set_focus();
                                 let _ = show_for_tray.set_text("Hide Ribbit");
                             }

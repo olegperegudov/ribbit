@@ -137,13 +137,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     setTimeout(() => { $("#status-detail").textContent = ""; }, 5000);
   });
 
-  // Window controls
+  // Window controls: _ = minimize to taskbar, X = hide to tray
   $("#win-min").addEventListener("click", () => getCurrentWindow().minimize());
-  $("#win-close").addEventListener("click", async () => {
-    const win = getCurrentWindow();
-    await win.setSkipTaskbar(true);
-    await win.hide();
-  });
+  $("#win-close").addEventListener("click", () => invoke("hide_to_tray"));
 
   // Settings panel (gear toggles it)
   $("#settings-btn").addEventListener("click", () => {
