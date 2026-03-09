@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     AppHandle, Manager, Emitter,
     menu::{MenuBuilder, MenuItemBuilder},
-    tray::{TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -261,6 +261,7 @@ pub fn run() {
             let mut tray_builder = TrayIconBuilder::new()
                 .tooltip("Ribbit - Voice to Text")
                 .menu(&menu)
+                .menu_on_left_click(false)
                 .on_menu_event(move |app, event| {
                     if event.id() == "show" {
                         if let Some(w) = app.get_webview_window("main") {
@@ -272,7 +273,7 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if matches!(event, TrayIconEvent::Click { .. }) {
+                    if matches!(event, TrayIconEvent::Click { button: MouseButton::Left, .. }) {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {
                             if w.is_visible().unwrap_or(false) {
