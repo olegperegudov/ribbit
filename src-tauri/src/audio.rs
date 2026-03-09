@@ -106,7 +106,6 @@ pub fn record_audio(state: Arc<Mutex<RecordingState>>, app: AppHandle) {
     // Mic is ready — NOW signal the frontend to play start sound
     debug_log::log("mic stream active, listening");
     let _ = app.emit("recording-status", true);
-    let _ = app.emit("status-detail", "Listening...");
 
     // Keep recording until is_recording becomes false, emit audio levels
     let mut last_len = 0;

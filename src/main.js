@@ -2,58 +2,29 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 
-// Sounds via Web Audio API
+// Sounds — load real quack sample, play with Web Audio API for pitch control
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let quackBuffer = null;
 
-function playQuackAt(time, pitch) {
-  const osc = audioCtx.createOscillator();
+fetch("quack.ogg")
+  .then(r => r.arrayBuffer())
+  .then(buf => audioCtx.decodeAudioData(buf))
+  .then(decoded => { quackBuffer = decoded; });
+
+function playQuack(rate = 1.0, volume = 0.8) {
+  if (!quackBuffer) return;
+  const src = audioCtx.createBufferSource();
   const gain = audioCtx.createGain();
-  const filter = audioCtx.createBiquadFilter();
-
-  filter.type = "bandpass";
-  filter.frequency.value = 800 * pitch;
-  filter.Q.value = 3;
-
-  osc.connect(filter);
-  filter.connect(gain);
+  src.buffer = quackBuffer;
+  src.playbackRate.value = rate;
+  gain.gain.value = volume;
+  src.connect(gain);
   gain.connect(audioCtx.destination);
-
-  osc.type = "sawtooth";
-  osc.frequency.setValueAtTime(680 * pitch, time);
-  osc.frequency.exponentialRampToValueAtTime(280 * pitch, time + 0.08);
-
-  gain.gain.setValueAtTime(0.13, time);
-  gain.gain.linearRampToValueAtTime(0.13, time + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
-
-  osc.start(time);
-  osc.stop(time + 0.12);
+  src.start();
 }
 
-function playStartQuack() {
-  const now = audioCtx.currentTime;
-  playQuackAt(now, 1.1);
-  playQuackAt(now + 0.14, 1.0);
-}
-
-function playStopQuack() {
-  playQuackAt(audioCtx.currentTime, 0.85);
-}
-
-function playChirp() {
-  const now = audioCtx.currentTime;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.type = "sine";
-  osc.frequency.setValueAtTime(600, now);
-  osc.frequency.exponentialRampToValueAtTime(900, now + 0.06);
-  gain.gain.setValueAtTime(0.08, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-  osc.start(now);
-  osc.stop(now + 0.08);
-}
+function playStartQuack() { playQuack(1.15, 0.8); }
+function playStopQuack() { playQuack(0.85, 0.6); }
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -187,6 +158,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const icon = $("#status-icon");
     if (event.payload) {
       icon.className = "recording";
+      $("#status-detail").textContent = "";
       playStartQuack();
       startAudioViz();
     } else {
@@ -224,7 +196,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   await listen("transcription", (event) => {
     addLogEntry(event.payload);
-    playChirp();
+    playQuack(1.3, 0.4);
   });
 
   await listen("error", (event) => {
