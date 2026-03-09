@@ -2,9 +2,35 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 
-// Sound playback moved to Rust backend (rodio) — no browser autoplay restrictions
-
 const $ = (sel) => document.querySelector(sel);
+
+// --- Sound ---
+const audioCtx = new AudioContext();
+let quackBuffer = null;
+
+// Resume AudioContext on ANY user gesture (needed for browser autoplay policy)
+for (const evt of ["click", "keydown", "pointerdown"]) {
+  document.addEventListener(evt, () => {
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  }, { once: false });
+}
+
+fetch("quack.ogg")
+  .then(r => r.arrayBuffer())
+  .then(buf => audioCtx.decodeAudioData(buf))
+  .then(decoded => { quackBuffer = decoded; });
+
+function playQuack(rate = 1.0, volume = 0.8) {
+  if (!quackBuffer) return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  const src = audioCtx.createBufferSource();
+  const gain = audioCtx.createGain();
+  src.buffer = quackBuffer;
+  src.playbackRate.value = rate;
+  gain.gain.value = volume;
+  src.connect(gain).connect(audioCtx.destination);
+  src.start();
+}
 
 // --- Utilities ---
 
@@ -104,9 +130,11 @@ window.addEventListener("DOMContentLoaded", async () => {
       icon.className = "recording";
       micReady = false;
       $("#status-detail").textContent = "starting mic...";
+      playQuack(1.15, 0.8);
     } else {
       icon.className = "idle";
       $("#status-detail").textContent = "";
+      playQuack(0.85, 0.6);
     }
   });
 
@@ -130,6 +158,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   await listen("transcription", (event) => {
     const { text } = event.payload;
     addLogEntry(text);
+    playQuack(1.3, 0.4);
   });
 
   await listen("error", (event) => {
@@ -139,7 +168,11 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Window controls
   $("#win-min").addEventListener("click", () => getCurrentWindow().minimize());
-  $("#win-close").addEventListener("click", () => getCurrentWindow().hide());
+  $("#win-close").addEventListener("click", async () => {
+    const win = getCurrentWindow();
+    await win.setSkipTaskbar(true);
+    await win.hide();
+  });
 
   // Settings panel (gear toggles it)
   $("#settings-btn").addEventListener("click", () => {

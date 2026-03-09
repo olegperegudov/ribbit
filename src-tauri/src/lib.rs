@@ -4,8 +4,6 @@ mod inserter;
 mod logger;
 mod debug_log;
 mod usage;
-mod sound;
-
 use std::sync::{Arc, Mutex};
 use tauri::{
     AppHandle, Manager, Emitter,
@@ -184,7 +182,6 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     };
 
     let _ = app.emit("recording-status", false);
-    app.state::<sound::SoundPlayer>().play(sound::SoundKind::Stop);
 
     let duration_secs = audio_data.len() as f32 / sample_rate as f32;
     let rms = if audio_data.is_empty() {
@@ -239,7 +236,6 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
                     logger::log_transcription(&text, duration_secs);
                     usage::record(duration_secs);
-                    app_handle.state::<sound::SoundPlayer>().play(sound::SoundKind::Done);
                     let _ = app_handle.emit("transcription", serde_json::json!({
                         "text": &text,
                         "duration": duration_secs,
@@ -364,10 +360,12 @@ pub fn run() {
                     if event.id() == "show" {
                         if let Some(w) = app.get_webview_window("main") {
                             if w.is_visible().unwrap_or(false) {
+                                let _ = w.set_skip_taskbar(true);
                                 let _ = w.hide();
                                 let _ = show_for_menu.set_text("Show Ribbit");
                             } else {
                                 let _ = w.show();
+                                let _ = w.set_skip_taskbar(false);
                                 let _ = w.set_focus();
                                 let _ = show_for_menu.set_text("Hide Ribbit");
                             }
@@ -384,10 +382,12 @@ pub fn run() {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {
                             if w.is_visible().unwrap_or(false) {
+                                let _ = w.set_skip_taskbar(true);
                                 let _ = w.hide();
                                 let _ = show_for_tray.set_text("Show Ribbit");
                             } else {
                                 let _ = w.show();
+                                let _ = w.set_skip_taskbar(false);
                                 let _ = w.set_focus();
                                 let _ = show_for_tray.set_text("Hide Ribbit");
                             }
@@ -404,7 +404,6 @@ pub fn run() {
 
             // Manage state for commands and shortcut handler
             app.manage(Arc::clone(&state));
-            app.manage(sound::SoundPlayer::new());
 
             // Register saved shortcut
             let shortcut_str = state.lock().unwrap().current_shortcut.clone();

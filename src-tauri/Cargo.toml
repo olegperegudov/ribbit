@@ -30,5 +30,4 @@ arboard = "3"
 chrono = "0.4"
 dirs = "6"
 rusqlite = { version = "0.31", features = ["bundled"] }
-rodio = { version = "0.19", default-features = false, features = ["vorbis"] }
 
