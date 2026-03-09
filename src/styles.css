@@ -30,18 +30,19 @@ body {
 }
 
 #status-icon {
-  color: #22c55e;
   flex-shrink: 0;
-  transition: color 0.3s;
 }
 
-#status-icon.idle { color: #22c55e; }
+#status-icon img {
+  display: block;
+  image-rendering: pixelated;
+}
+
+#status-icon.idle { opacity: 1; }
 #status-icon.recording {
-  color: #ef4444;
   animation: pulse 1s ease-in-out infinite;
 }
 #status-icon.transcribing {
-  color: #eab308;
   animation: pulse 0.5s ease-in-out infinite;
 }
 

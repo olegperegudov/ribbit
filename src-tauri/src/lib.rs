@@ -257,15 +257,21 @@ pub fn run() {
             let quit = MenuItemBuilder::with_id("quit", "Quit Ribbit").build(app)?;
             let menu = MenuBuilder::new(app).item(&quit).build()?;
 
-            let _tray = TrayIconBuilder::new()
+            let mut tray_builder = TrayIconBuilder::new()
                 .tooltip("Ribbit - Voice to Text")
                 .menu(&menu)
                 .on_menu_event(move |app, event| {
                     if event.id() == "quit" {
                         app.exit(0);
                     }
-                })
-                .build(app)?;
+                });
+
+            // Use app icon for tray
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _tray = tray_builder.build(app)?;
 
             // Global shortcut: Ctrl+Alt+Space (toggle recording)
             let shortcut: Shortcut = "ctrl+alt+space".parse()
