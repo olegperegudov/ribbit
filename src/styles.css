@@ -168,8 +168,57 @@ body {
 }
 
 /* Setup */
-#setup { padding: 1rem 0; }
-#setup p { font-size: 0.8rem; color: #6b7280; margin-bottom: 0.4rem; }
+#setup { padding: 0.8rem 0; }
+
+.setup-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #f3f4f6;
+  margin-bottom: 0.6rem;
+}
+
+.setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+.setup-step {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  line-height: 1.4;
+}
+
+.step-num {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1f28;
+  border: 1px solid #2a3040;
+  border-radius: 50%;
+  font-size: 0.6rem;
+  color: #4ade80;
+}
+
+#setup a {
+  color: #4ade80;
+  text-decoration: none;
+  cursor: pointer;
+}
+#setup a:hover { text-decoration: underline; }
+
+#setup code {
+  color: #4ade80;
+  font-family: inherit;
+}
+
 #setup form { display: flex; gap: 0.4rem; }
 
 #setup input {

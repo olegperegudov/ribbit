@@ -230,7 +230,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (!config.has_api_key) {
     $("#setup").style.display = "block";
     $("#status-detail").textContent = "api key required";
-  } else {
+  }
+
+  // Open Groq console link in default browser
+  $("#groq-link")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const { openUrl } = window.__TAURI__.opener;
+    await openUrl("https://console.groq.com/keys");
+  });
+
+  if (config.has_api_key) {
     $("#status-detail").textContent = `${config.provider}: ${config.api_key_preview}`;
     setTimeout(() => {
       $("#status-detail").textContent = "ready";

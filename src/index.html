@@ -57,9 +57,23 @@
       </div>
 
       <div id="setup" style="display:none">
-        <p>enter api key (groq gsk_ or openai sk-):</p>
+        <div class="setup-title">free api key needed</div>
+        <div class="setup-steps">
+          <div class="setup-step">
+            <span class="step-num">1</span>
+            <span>go to <a id="groq-link" href="#">console.groq.com</a> and sign up (free)</span>
+          </div>
+          <div class="setup-step">
+            <span class="step-num">2</span>
+            <span>click "API Keys" in the left menu, then "Create API Key"</span>
+          </div>
+          <div class="setup-step">
+            <span class="step-num">3</span>
+            <span>copy the key (starts with <code>gsk_</code>) and paste below</span>
+          </div>
+        </div>
         <form id="key-form">
-          <input type="password" id="api-key-input" placeholder="gsk_... or sk-..." />
+          <input type="password" id="api-key-input" placeholder="gsk_..." autocomplete="off" />
           <button type="submit">save</button>
         </form>
       </div>
