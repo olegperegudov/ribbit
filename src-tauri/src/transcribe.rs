@@ -13,6 +13,26 @@ pub fn warm_up_client() {
     crate::debug_log::log("HTTP client warmed up");
 }
 
+/// Detect which STT provider to use based on available API keys
+/// Priority: GROQ_API_KEY > OPENAI_API_KEY
+fn get_provider() -> Result<(&'static str, String, &'static str), String> {
+    if let Ok(key) = std::env::var("GROQ_API_KEY") {
+        Ok((
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            key,
+            "whisper-large-v3-turbo",
+        ))
+    } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+        Ok((
+            "https://api.openai.com/v1/audio/transcriptions",
+            key,
+            "whisper-1",
+        ))
+    } else {
+        Err("No API key set. Add GROQ_API_KEY or OPENAI_API_KEY.".into())
+    }
+}
+
 /// Encode f32 PCM audio data as WAV bytes
 fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Vec<u8> {
     let mut buf = Vec::new();
@@ -32,8 +52,8 @@ fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Vec<u8> {
 
     // fmt chunk
     cursor.write_all(b"fmt ").unwrap();
-    cursor.write_all(&16u32.to_le_bytes()).unwrap(); // chunk size
-    cursor.write_all(&1u16.to_le_bytes()).unwrap(); // PCM format
+    cursor.write_all(&16u32.to_le_bytes()).unwrap();
+    cursor.write_all(&1u16.to_le_bytes()).unwrap();
     cursor.write_all(&channels.to_le_bytes()).unwrap();
     cursor.write_all(&sample_rate.to_le_bytes()).unwrap();
     cursor.write_all(&byte_rate.to_le_bytes()).unwrap();
@@ -53,12 +73,13 @@ fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Vec<u8> {
     buf
 }
 
-/// Blocking version — runs on a std::thread, no tokio needed.
+/// Blocking transcription — auto-selects Groq or OpenAI based on available keys
 pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32) -> Result<String, String> {
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .map_err(|_| "OPENAI_API_KEY not set. Please configure your API key.".to_string())?;
+    let (url, api_key, model) = get_provider()?;
+    crate::debug_log::log(&format!("STT: {} ({})", model, url.split('/').nth(2).unwrap_or("?")));
 
     let wav_bytes = encode_wav(audio_data, sample_rate);
+    crate::debug_log::log(&format!("WAV: {} bytes", wav_bytes.len()));
 
     let file_part = reqwest::blocking::multipart::Part::bytes(wav_bytes)
         .file_name("audio.wav")
@@ -67,20 +88,24 @@ pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32) -> Result
 
     let form = reqwest::blocking::multipart::Form::new()
         .part("file", file_part)
-        .text("model", "whisper-1")
-        .text("prompt", "Transcribe accurately, preserving both Russian and English words as spoken.");
+        .text("model", model.to_string())
+        .text("language", "ru");
 
+    let t0 = std::time::Instant::now();
     let response = client()
-        .post("https://api.openai.com/v1/audio/transcriptions")
+        .post(url)
         .header("Authorization", format!("Bearer {}", api_key))
         .multipart(form)
         .send()
         .map_err(|e| format!("Network error: {}", e))?;
 
+    let elapsed = t0.elapsed();
+    crate::debug_log::log(&format!("API response in {:.1}s, status={}", elapsed.as_secs_f32(), response.status()));
+
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
-        return Err(format!("OpenAI API error {}: {}", status, body));
+        return Err(format!("API error {}: {}", status, body));
     }
 
     let result: serde_json::Value = response

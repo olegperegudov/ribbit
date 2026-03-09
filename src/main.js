@@ -123,7 +123,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("#setup").style.display = "block";
     $("#status-detail").textContent = "api key required";
   } else {
-    $("#status-detail").textContent = `key: ${config.api_key_preview}`;
+    $("#status-detail").textContent = `${config.provider}: ${config.api_key_preview}`;
     setTimeout(() => {
       $("#status-detail").textContent = "ready";
     }, 2000);

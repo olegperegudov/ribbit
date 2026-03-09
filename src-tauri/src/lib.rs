@@ -20,16 +20,26 @@ struct RecordingState {
 
 #[tauri::command]
 fn get_config() -> Result<serde_json::Value, String> {
-    let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+    let (provider, key) = if let Ok(k) = std::env::var("GROQ_API_KEY") {
+        ("groq", k)
+    } else if let Ok(k) = std::env::var("OPENAI_API_KEY") {
+        ("openai", k)
+    } else {
+        ("none", String::new())
+    };
+
+    let preview = if key.len() > 8 {
+        format!("{}...{}", &key[..4], &key[key.len()-4..])
+    } else if !key.is_empty() {
+        "****".to_string()
+    } else {
+        "".to_string()
+    };
+
     Ok(serde_json::json!({
-        "has_api_key": !api_key.is_empty(),
-        "api_key_preview": if api_key.len() > 8 {
-            format!("{}...{}", &api_key[..4], &api_key[api_key.len()-4..])
-        } else if !api_key.is_empty() {
-            "****".to_string()
-        } else {
-            "".to_string()
-        },
+        "has_api_key": !key.is_empty(),
+        "api_key_preview": preview,
+        "provider": provider,
     }))
 }
 
@@ -56,7 +66,7 @@ fn get_debug_log() -> String {
 }
 
 #[tauri::command]
-async fn set_api_key(key: String) -> Result<(), String> {
+async fn set_api_key(key: String, provider: Option<String>) -> Result<(), String> {
     let env_path = dirs::config_dir()
         .ok_or("Cannot find config directory")?
         .join("ribbit")
@@ -65,10 +75,26 @@ async fn set_api_key(key: String) -> Result<(), String> {
     std::fs::create_dir_all(env_path.parent().unwrap())
         .map_err(|e| e.to_string())?;
 
-    std::fs::write(&env_path, format!("OPENAI_API_KEY={}\n", key))
+    // Detect provider from key prefix or explicit parameter
+    let prov = provider.unwrap_or_else(|| {
+        if key.starts_with("gsk_") { "groq".into() } else { "openai".into() }
+    });
+
+    let var_name = if prov == "groq" { "GROQ_API_KEY" } else { "OPENAI_API_KEY" };
+
+    // Read existing env, replace/add the key
+    let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
+    let mut lines: Vec<String> = existing.lines()
+        .filter(|l| !l.starts_with("GROQ_API_KEY=") && !l.starts_with("OPENAI_API_KEY="))
+        .map(|l| l.to_string())
+        .collect();
+    lines.push(format!("{}={}", var_name, key));
+
+    std::fs::write(&env_path, lines.join("\n") + "\n")
         .map_err(|e| e.to_string())?;
 
-    unsafe { std::env::set_var("OPENAI_API_KEY", &key); }
+    unsafe { std::env::set_var(var_name, &key); }
+    debug_log::log(&format!("API key saved: {} ({})", var_name, prov));
     Ok(())
 }
 
