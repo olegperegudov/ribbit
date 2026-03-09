@@ -278,6 +278,16 @@ kbd {
   font-size: 0.6rem;
   font-family: inherit;
   color: #6b7280;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+kbd:hover {
+  border-color: rgba(74, 222, 128, 0.3);
+  color: #9ca3af;
+}
+kbd.capturing {
+  border-color: rgba(74, 222, 128, 0.5);
+  color: #4ade80;
 }
 
 .setting-btn {

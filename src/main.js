@@ -188,6 +188,83 @@ window.addEventListener("DOMContentLoaded", async () => {
     await invoke("set_always_on_top", { value: e.target.checked });
   });
 
+  // Shortcut customization
+  const shortcutEl = $("#shortcut-display");
+  const shortcutLabel = shortcutEl.closest(".setting-row").querySelector(".setting-label");
+  let capturing = false;
+  let capturedKeys = "";
+  let savedShortcut = "";
+
+  // Load current shortcut from backend
+  try {
+    savedShortcut = await invoke("get_shortcut");
+    shortcutEl.textContent = savedShortcut;
+  } catch (e) {
+    console.error("Failed to load shortcut:", e);
+  }
+
+  shortcutEl.addEventListener("click", () => {
+    if (capturing) return;
+    capturing = true;
+    capturedKeys = "";
+    shortcutEl.textContent = "press shortcut...";
+    shortcutEl.classList.add("capturing");
+    shortcutLabel.textContent = "enter=save  esc=cancel";
+  });
+
+  document.addEventListener("keydown", async (e) => {
+    if (!capturing) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.key === "Escape") {
+      capturing = false;
+      shortcutEl.classList.remove("capturing");
+      shortcutEl.textContent = savedShortcut;
+      shortcutLabel.textContent = "hotkey";
+      return;
+    }
+
+    if (e.key === "Enter") {
+      capturing = false;
+      shortcutEl.classList.remove("capturing");
+      shortcutLabel.textContent = "hotkey";
+      if (capturedKeys) {
+        try {
+          await invoke("set_shortcut", { shortcut: capturedKeys });
+          savedShortcut = capturedKeys;
+          shortcutEl.textContent = savedShortcut;
+        } catch (err) {
+          shortcutEl.textContent = savedShortcut;
+          $("#status-detail").textContent = "invalid shortcut";
+          setTimeout(() => { $("#status-detail").textContent = ""; }, 3000);
+        }
+      } else {
+        shortcutEl.textContent = savedShortcut;
+      }
+      return;
+    }
+
+    const parts = [];
+    if (e.ctrlKey) parts.push("ctrl");
+    if (e.altKey) parts.push("alt");
+    if (e.shiftKey) parts.push("shift");
+
+    const key = e.key.toLowerCase();
+    if (!["control", "alt", "shift", "meta"].includes(key)) {
+      const keyMap = { " ": "space", "arrowup": "up", "arrowdown": "down",
+        "arrowleft": "left", "arrowright": "right" };
+      parts.push(keyMap[key] || key);
+    }
+
+    const hasModifier = parts.some(p => ["ctrl", "alt", "shift"].includes(p));
+    const hasKey = parts.some(p => !["ctrl", "alt", "shift"].includes(p));
+    if (hasModifier && hasKey) {
+      capturedKeys = parts.join("+");
+      shortcutEl.textContent = capturedKeys;
+    }
+  });
+
   // Debug log (from settings)
   $("#debug-btn").addEventListener("click", async () => {
     const log = await invoke("get_debug_log");

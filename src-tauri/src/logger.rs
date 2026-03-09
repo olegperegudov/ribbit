@@ -40,34 +40,17 @@ pub fn read_recent_entries(limit: usize) -> Vec<serde_json::Value> {
         None => return vec![],
     };
 
-    if !log_dir.exists() {
-        return vec![];
-    }
+    let today_file = log_dir.join(format!("{}.jsonl", Local::now().format("%Y-%m-%d")));
+    let contents = match fs::read_to_string(&today_file) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
 
-    // Collect log files, sorted by name descending (newest first)
-    let mut files: Vec<_> = fs::read_dir(&log_dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
+    let mut entries: Vec<serde_json::Value> = contents
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
         .collect();
-    files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
-
-    let mut entries = Vec::new();
-    for file in files {
-        if entries.len() >= limit {
-            break;
-        }
-        if let Ok(contents) = fs::read_to_string(file.path()) {
-            let mut file_entries: Vec<serde_json::Value> = contents
-                .lines()
-                .filter_map(|line| serde_json::from_str(line).ok())
-                .collect();
-            file_entries.reverse(); // newest first
-            entries.extend(file_entries);
-        }
-    }
-
+    entries.reverse(); // newest first
     entries.truncate(limit);
     entries
 }

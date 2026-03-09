@@ -17,6 +17,7 @@ struct RecordingState {
     is_recording: bool,
     audio_data: Vec<f32>,
     sample_rate: u32,
+    current_shortcut: String,
 }
 
 #[tauri::command]
@@ -109,6 +110,39 @@ async fn set_api_key(key: String, provider: Option<String>) -> Result<(), String
 
     unsafe { std::env::set_var(var_name, &key); }
     debug_log::log(&format!("API key saved: {} ({})", var_name, prov));
+    Ok(())
+}
+
+#[tauri::command]
+fn get_shortcut(state: tauri::State<'_, Arc<Mutex<RecordingState>>>) -> String {
+    state.lock().unwrap().current_shortcut.clone()
+}
+
+#[tauri::command]
+fn set_shortcut(app: AppHandle, shortcut: String, state: tauri::State<'_, Arc<Mutex<RecordingState>>>) -> Result<(), String> {
+    let new_shortcut: Shortcut = shortcut.parse()
+        .map_err(|e| format!("Invalid shortcut: {}", e))?;
+
+    let old_str = state.lock().unwrap().current_shortcut.clone();
+    if let Ok(old) = old_str.parse::<Shortcut>() {
+        let _ = app.global_shortcut().unregister(old);
+    }
+
+    if let Err(e) = register_shortcut(&app, new_shortcut) {
+        // Restore old shortcut on failure
+        if let Ok(old) = old_str.parse::<Shortcut>() {
+            let _ = register_shortcut(&app, old);
+        }
+        return Err(e);
+    }
+
+    state.lock().unwrap().current_shortcut = shortcut.clone();
+
+    let mut config = read_config();
+    config["shortcut"] = serde_json::Value::String(shortcut.clone());
+    save_config(&config)?;
+
+    debug_log::log(&format!("Shortcut changed to: {}", shortcut));
     Ok(())
 }
 
@@ -237,6 +271,39 @@ fn load_env_file(path: &std::path::Path, overwrite: bool) {
     }
 }
 
+fn config_path() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("ribbit").join("config.json"))
+}
+
+fn read_config() -> serde_json::Value {
+    config_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::json!({}))
+}
+
+fn save_config(config: &serde_json::Value) -> Result<(), String> {
+    let path = config_path().ok_or("Cannot find config directory")?;
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(&path, serde_json::to_string_pretty(config).unwrap())
+        .map_err(|e| e.to_string())
+}
+
+fn register_shortcut(app: &AppHandle, shortcut: Shortcut) -> Result<(), String> {
+    app.global_shortcut().on_shortcut(shortcut, |app, _shortcut, _event| {
+        let state = app.state::<Arc<Mutex<RecordingState>>>();
+        let is_recording = state.lock().unwrap().is_recording;
+        if is_recording {
+            stop_recording_and_transcribe(state.inner(), app);
+        } else {
+            start_recording(state.inner(), app);
+        }
+    }).map_err(|e| {
+        debug_log::log(&format!("shortcut registration failed: {}", e));
+        e.to_string()
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     debug_log::log("=== Ribbit starting ===");
@@ -259,16 +326,22 @@ pub fn run() {
         transcribe::warm_up_client();
     });
 
+    let saved_shortcut = read_config()["shortcut"]
+        .as_str()
+        .unwrap_or("ctrl+alt+space")
+        .to_string();
+
     let state = Arc::new(Mutex::new(RecordingState {
         is_recording: false,
         audio_data: Vec::new(),
         sample_rate: 16000,
+        current_shortcut: saved_shortcut,
     }));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -326,28 +399,16 @@ pub fn run() {
 
             let _tray = tray_builder.build(app)?;
 
-            // Global shortcut: Ctrl+Alt+Space (toggle recording)
-            let shortcut: Shortcut = "ctrl+alt+space".parse()
+            // Manage state for commands and shortcut handler
+            app.manage(Arc::clone(&state));
+
+            // Register saved shortcut
+            let shortcut_str = state.lock().unwrap().current_shortcut.clone();
+            let shortcut: Shortcut = shortcut_str.parse()
                 .map_err(|e| format!("Failed to parse shortcut: {}", e))?;
-            let state_for_shortcut = Arc::clone(&state);
 
-            debug_log::log("registering hotkey: ctrl+alt+space");
-
-            handle.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, _event| {
-                let is_recording = {
-                    let s = state_for_shortcut.lock().unwrap();
-                    s.is_recording
-                };
-
-                if is_recording {
-                    stop_recording_and_transcribe(&state_for_shortcut, app);
-                } else {
-                    start_recording(&state_for_shortcut, app);
-                }
-            }).map_err(|e| {
-                debug_log::log(&format!("hotkey registration failed: {}", e));
-                e
-            })?;
+            debug_log::log(&format!("registering hotkey: {}", shortcut_str));
+            register_shortcut(&handle, shortcut)?;
 
             debug_log::log("setup complete");
             Ok(())
