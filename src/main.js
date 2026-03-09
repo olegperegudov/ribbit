@@ -28,46 +28,146 @@ function playStopQuack() { playQuack(0.85, 0.6); }
 
 const $ = (sel) => document.querySelector(sel);
 
-// Audio level visualization
+// --- Sparkline + Audio Viz (shared canvas) ---
+const SPARK_DAYS = 30;
+let sparkData = new Array(SPARK_DAYS).fill(0); // seconds per day
+let sparkDates = []; // date strings for tooltip
 let currentAudioLevel = 0;
-let vizAnimId = null;
+let morphProgress = 0; // 0=sparkline, 1=waveform
+let morphTarget = 0;
+let sparkAnimId = null;
+let isRecording = false;
 
-function startAudioViz() {
-  const canvas = $("#audio-viz");
-  canvas.style.display = "block";
+function initSparkline(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.getContext("2d").scale(dpr, dpr);
+  canvas._w = rect.width;
+  canvas._h = rect.height;
+}
+
+function loadSparkData(usageData) {
+  // Fill 30-day array, zero-fill missing days
+  const today = new Date();
+  sparkData = [];
+  sparkDates = [];
+
+  for (let i = SPARK_DAYS - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    sparkDates.push(dateStr);
+    const entry = usageData.find(e => e.date === dateStr);
+    sparkData.push(entry ? entry.seconds : 0);
+  }
+}
+
+function drawSparkline() {
+  const canvas = $("#sparkline");
+  if (!canvas._w) initSparkline(canvas);
   const ctx = canvas.getContext("2d");
-  const W = canvas.width;
-  const H = canvas.height;
+  const W = canvas._w;
+  const H = canvas._h;
 
-  function draw() {
-    ctx.clearRect(0, 0, W, H);
-    ctx.beginPath();
-    ctx.strokeStyle = "#4ade80";
-    ctx.lineWidth = 1.5;
+  ctx.clearRect(0, 0, W, H);
 
-    // Amplitude based on real audio level, clamped
-    const amp = Math.min(currentAudioLevel * 250, H / 2 - 1);
-    const t = performance.now() / 80;
-
-    for (let x = 0; x < W; x++) {
-      const y = H / 2 + Math.sin(x * 0.2 + t) * amp * (0.6 + 0.4 * Math.sin(x * 0.07 + t * 0.3));
-      if (x === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    vizAnimId = requestAnimationFrame(draw);
+  // Morph animation
+  if (morphProgress !== morphTarget) {
+    morphProgress += (morphTarget - morphProgress) * 0.12;
+    if (Math.abs(morphProgress - morphTarget) < 0.01) morphProgress = morphTarget;
   }
-  draw();
+
+  const maxVal = Math.max(...sparkData, 60); // min 1 min
+  const t = performance.now() / 80;
+  const amp = Math.min(currentAudioLevel * 250, H / 2 - 2);
+
+  // Compute blended Y for each pixel
+  const points = [];
+  for (let x = 0; x < W; x++) {
+    // Sparkline Y
+    const dayFrac = (x / (W - 1)) * (SPARK_DAYS - 1);
+    const i = Math.floor(dayFrac);
+    const f = dayFrac - i;
+    const val = sparkData[i] * (1 - f) + (sparkData[i + 1] ?? sparkData[i]) * f;
+    const sy = H - 2 - (val / maxVal) * (H - 6);
+
+    // Waveform Y
+    const wy = H / 2 + Math.sin(x * 0.15 + t) * amp
+      * (0.6 + 0.4 * Math.sin(x * 0.07 + t * 0.3));
+
+    const y = sy * (1 - morphProgress) + wy * morphProgress;
+    points.push(y);
+  }
+
+  // Fill
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  points.forEach((y, x) => ctx.lineTo(x, y));
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(74, 222, 128, 0.08)";
+  ctx.fill();
+
+  // Stroke
+  ctx.beginPath();
+  points.forEach((y, x) => x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+  ctx.strokeStyle = "#4ade80";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Keep animating if recording or morphing
+  if (isRecording || morphProgress !== morphTarget) {
+    sparkAnimId = requestAnimationFrame(drawSparkline);
+  } else {
+    sparkAnimId = null;
+  }
 }
 
-function stopAudioViz() {
-  if (vizAnimId) {
-    cancelAnimationFrame(vizAnimId);
-    vizAnimId = null;
-  }
-  $("#audio-viz").style.display = "none";
+function startRecordingViz() {
+  isRecording = true;
+  morphTarget = 1;
+  if (!sparkAnimId) sparkAnimId = requestAnimationFrame(drawSparkline);
+}
+
+function stopRecordingViz() {
+  isRecording = false;
+  morphTarget = 0;
   currentAudioLevel = 0;
+  // Keep animating until morph completes
+  if (!sparkAnimId) sparkAnimId = requestAnimationFrame(drawSparkline);
 }
+
+// Tooltip
+function setupSparkTooltip(canvas) {
+  let tooltip = document.createElement("div");
+  tooltip.id = "sparkline-tooltip";
+  tooltip.style.display = "none";
+  document.body.appendChild(tooltip);
+
+  canvas.addEventListener("mousemove", (e) => {
+    if (isRecording) { tooltip.style.display = "none"; return; }
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const dayIdx = Math.round((x / rect.width) * (SPARK_DAYS - 1));
+    if (dayIdx < 0 || dayIdx >= SPARK_DAYS) return;
+
+    const secs = sparkData[dayIdx];
+    const date = sparkDates[dayIdx];
+    const mins = (secs / 60).toFixed(1);
+    tooltip.textContent = `${date}: ${mins} min`;
+    tooltip.style.display = "block";
+    tooltip.style.left = (e.clientX + 8) + "px";
+    tooltip.style.top = (e.clientY - 24) + "px";
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    tooltip.style.display = "none";
+  });
+}
+
+// --- Utilities ---
 
 function formatTime(isoString) {
   const d = new Date(isoString);
@@ -123,6 +223,8 @@ function showPanel(name) {
   $("#debug-panel").style.display = name === "debug" ? "flex" : "none";
 }
 
+// --- Main ---
+
 window.addEventListener("DOMContentLoaded", async () => {
   const config = await invoke("get_config");
   if (!config.has_api_key) {
@@ -135,14 +237,35 @@ window.addEventListener("DOMContentLoaded", async () => {
     }, 2000);
   }
 
+  // Load history
   try {
     const history = await invoke("get_log_history", { limit: 50 });
     for (const entry of history.reverse()) {
-      addLogEntry(entry.text, entry.ts);
+      const dur = entry.duration ? ` (${Number(entry.duration).toFixed(1)}s)` : "";
+      addLogEntry(entry.text + dur, entry.ts);
     }
   } catch (e) {
     console.error("Failed to load history:", e);
   }
+
+  // Init sparkline
+  const sparkCanvas = $("#sparkline");
+  initSparkline(sparkCanvas);
+  setupSparkTooltip(sparkCanvas);
+
+  try {
+    const usage = await invoke("get_usage_stats");
+    loadSparkData(usage);
+  } catch (e) {
+    console.error("Failed to load usage:", e);
+  }
+  drawSparkline();
+
+  // Resize handler
+  window.addEventListener("resize", () => {
+    initSparkline(sparkCanvas);
+    drawSparkline();
+  });
 
   $("#key-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -160,11 +283,11 @@ window.addEventListener("DOMContentLoaded", async () => {
       icon.className = "recording";
       $("#status-detail").textContent = "";
       playStartQuack();
-      startAudioViz();
+      startRecordingViz();
     } else {
       icon.className = "idle";
       playStopQuack();
-      stopAudioViz();
+      stopRecordingViz();
     }
   });
 
@@ -195,8 +318,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await listen("transcription", (event) => {
-    addLogEntry(event.payload);
+    const { text, duration } = event.payload;
+    const dur = duration ? ` (${Number(duration).toFixed(1)}s)` : "";
+    addLogEntry(text + dur);
     playQuack(1.3, 0.4);
+
+    // Update today's sparkline data point
+    sparkData[SPARK_DAYS - 1] += duration || 0;
+    if (!sparkAnimId) drawSparkline();
   });
 
   await listen("error", (event) => {

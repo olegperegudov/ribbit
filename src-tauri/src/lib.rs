@@ -3,6 +3,7 @@ mod transcribe;
 mod inserter;
 mod logger;
 mod debug_log;
+mod usage;
 
 use std::sync::{Arc, Mutex};
 use tauri::{
@@ -63,6 +64,11 @@ fn get_debug_log() -> String {
         }
         Err(_) => "No debug log found.".to_string(),
     }
+}
+
+#[tauri::command]
+fn get_usage_stats() -> Vec<serde_json::Value> {
+    usage::get_monthly()
 }
 
 #[tauri::command]
@@ -194,8 +200,12 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         debug_log::log("text inserted OK");
                     }
 
-                    logger::log_transcription(&text);
-                    let _ = app_handle.emit("transcription", &text);
+                    logger::log_transcription(&text, duration_secs);
+                    usage::record(duration_secs);
+                    let _ = app_handle.emit("transcription", serde_json::json!({
+                        "text": &text,
+                        "duration": duration_secs,
+                    }));
                     let _ = app_handle.emit("status-detail", "Done!");
                 }
             }
@@ -257,7 +267,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats])
         .setup(move |app| {
             let handle = app.handle().clone();
 

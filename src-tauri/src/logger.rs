@@ -6,7 +6,7 @@ fn log_dir() -> Option<std::path::PathBuf> {
     dirs::config_dir().map(|d| d.join("ribbit").join("logs"))
 }
 
-pub fn log_transcription(text: &str) {
+pub fn log_transcription(text: &str, duration_secs: f32) {
     let log_dir = match log_dir() {
         Some(d) => d,
         None => return,
@@ -22,6 +22,7 @@ pub fn log_transcription(text: &str) {
     let entry = serde_json::json!({
         "ts": now.to_rfc3339(),
         "text": text,
+        "duration": duration_secs,
     });
 
     if let Ok(mut file) = OpenOptions::new()
