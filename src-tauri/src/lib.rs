@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     AppHandle, Manager, Emitter,
     menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -63,6 +63,14 @@ fn get_debug_log() -> String {
         }
         Err(_) => "No debug log found.".to_string(),
     }
+}
+
+#[tauri::command]
+fn set_always_on_top(app: AppHandle, value: bool) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        w.set_always_on_top(value).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -249,7 +257,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -258,6 +266,9 @@ pub fn run() {
             let quit = MenuItemBuilder::with_id("quit", "Quit Ribbit").build(app)?;
             let menu = MenuBuilder::new(app).item(&show).item(&quit).build()?;
 
+            let show_for_menu = show.clone();
+            let show_for_tray = show.clone();
+
             let mut tray_builder = TrayIconBuilder::new()
                 .tooltip("Ribbit - Voice to Text")
                 .menu(&menu)
@@ -265,22 +276,33 @@ pub fn run() {
                 .on_menu_event(move |app, event| {
                     if event.id() == "show" {
                         if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+                            if w.is_visible().unwrap_or(false) {
+                                let _ = w.hide();
+                                let _ = show_for_menu.set_text("Show Ribbit");
+                            } else {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                                let _ = show_for_menu.set_text("Hide Ribbit");
+                            }
                         }
                     } else if event.id() == "quit" {
                         app.exit(0);
                     }
                 })
-                .on_tray_icon_event(|tray, event| {
-                    if matches!(event, TrayIconEvent::Click { button: MouseButton::Left, .. }) {
+                .on_tray_icon_event(move |tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up, ..
+                    } = event {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {
                             if w.is_visible().unwrap_or(false) {
                                 let _ = w.hide();
+                                let _ = show_for_tray.set_text("Show Ribbit");
                             } else {
                                 let _ = w.show();
                                 let _ = w.set_focus();
+                                let _ = show_for_tray.set_text("Hide Ribbit");
                             }
                         }
                     }

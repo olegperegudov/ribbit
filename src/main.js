@@ -118,6 +118,13 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Show one panel at a time (log, settings, debug)
+function showPanel(name) {
+  $("#log-entries").style.display = name === "log" ? "" : "none";
+  $("#settings-panel").style.display = name === "settings" ? "flex" : "none";
+  $("#debug-panel").style.display = name === "debug" ? "flex" : "none";
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   const config = await invoke("get_config");
   if (!config.has_api_key) {
@@ -196,25 +203,28 @@ window.addEventListener("DOMContentLoaded", async () => {
     }, 8000);
   });
 
+  // Window controls
   $("#win-min").addEventListener("click", () => getCurrentWindow().minimize());
   $("#win-close").addEventListener("click", () => getCurrentWindow().hide());
 
-  $("#debug-btn").addEventListener("click", async () => {
-    const panel = $("#debug-panel");
-    if (panel.style.display === "none") {
-      const log = await invoke("get_debug_log");
-      $("#debug-content").textContent = log;
-      panel.style.display = "flex";
-      $("#log-entries").style.display = "none";
-      $("#debug-content").scrollTop = $("#debug-content").scrollHeight;
-    } else {
-      panel.style.display = "none";
-      $("#log-entries").style.display = "";
-    }
+  // Settings panel
+  $("#settings-btn").addEventListener("click", () => {
+    const visible = $("#settings-panel").style.display !== "none";
+    showPanel(visible ? "log" : "settings");
+  });
+  $("#settings-close").addEventListener("click", () => showPanel("log"));
+
+  // Always on top toggle
+  $("#always-on-top").addEventListener("change", async (e) => {
+    await invoke("set_always_on_top", { value: e.target.checked });
   });
 
-  $("#debug-close").addEventListener("click", () => {
-    $("#debug-panel").style.display = "none";
-    $("#log-entries").style.display = "";
+  // Debug log (from settings)
+  $("#debug-btn").addEventListener("click", async () => {
+    const log = await invoke("get_debug_log");
+    $("#debug-content").textContent = log;
+    showPanel("debug");
+    $("#debug-content").scrollTop = $("#debug-content").scrollHeight;
   });
+  $("#debug-close").addEventListener("click", () => showPanel("log"));
 });

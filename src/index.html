@@ -10,16 +10,15 @@
   <body>
     <main class="container">
       <div class="header" data-tauri-drag-region>
-        <div id="status-icon" class="idle">
-          <img src="frog.png" width="32" height="32" alt="Ribbit" />
+        <div id="status-icon" class="idle" data-tauri-drag-region>
+          <img src="frog.png" width="32" height="32" alt="Ribbit" data-tauri-drag-region />
         </div>
         <div class="header-text" data-tauri-drag-region>
           <div class="app-title" data-tauri-drag-region>ribbit</div>
-          <div id="status-detail">ready</div>
+          <div id="status-detail" data-tauri-drag-region>ready</div>
         </div>
         <div class="header-right">
-          <kbd>ctrl+alt+space</kbd>
-          <button id="debug-btn" title="Debug log">&gt;_</button>
+          <button id="settings-btn" class="win-btn" title="Settings">&#x2699;</button>
           <button id="win-min" class="win-btn" title="Minimize">&#x2212;</button>
           <button id="win-close" class="win-btn win-close" title="Close">&#x2715;</button>
         </div>
@@ -27,8 +26,32 @@
 
       <div id="log-entries"></div>
 
+      <div id="settings-panel" style="display:none">
+        <div class="panel-header">
+          <span>settings</span>
+          <button id="settings-close">&times;</button>
+        </div>
+        <div class="settings-content">
+          <div class="setting-row">
+            <span class="setting-label">hotkey</span>
+            <kbd>ctrl+alt+space</kbd>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">always on top</span>
+            <label class="toggle">
+              <input type="checkbox" id="always-on-top" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">debug log</span>
+            <button id="debug-btn" class="setting-btn">&gt;_</button>
+          </div>
+        </div>
+      </div>
+
       <div id="debug-panel" style="display:none">
-        <div class="debug-header">
+        <div class="panel-header">
           <span>debug log</span>
           <button id="debug-close">&times;</button>
         </div>
