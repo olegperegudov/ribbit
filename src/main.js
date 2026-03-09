@@ -2,40 +2,7 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 
-// Sounds — load real quack sample, play with Web Audio API for pitch control
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let quackBuffer = null;
-
-// Resume audio context on any user interaction (required by autoplay policy)
-["click", "keydown", "pointerdown"].forEach(evt => {
-  document.addEventListener(evt, () => {
-    if (audioCtx.state === "suspended") audioCtx.resume();
-  }, { once: true });
-});
-
-fetch("quack.ogg")
-  .then(r => r.arrayBuffer())
-  .then(buf => audioCtx.decodeAudioData(buf))
-  .then(decoded => { quackBuffer = decoded; })
-  .catch(e => console.error("Failed to load quack.ogg:", e));
-
-function playQuack(rate = 1.0, volume = 0.8) {
-  if (!quackBuffer) return;
-  const resume = audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
-  resume.then(() => {
-    const src = audioCtx.createBufferSource();
-    const gain = audioCtx.createGain();
-    src.buffer = quackBuffer;
-    src.playbackRate.value = rate;
-    gain.gain.value = volume;
-    src.connect(gain);
-    gain.connect(audioCtx.destination);
-    src.start();
-  });
-}
-
-function playStartQuack() { playQuack(1.15, 0.8); }
-function playStopQuack() { playQuack(0.85, 0.6); }
+// Sound playback moved to Rust backend (rodio) — no browser autoplay restrictions
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -137,11 +104,9 @@ window.addEventListener("DOMContentLoaded", async () => {
       icon.className = "recording";
       micReady = false;
       $("#status-detail").textContent = "starting mic...";
-      playStartQuack();
     } else {
       icon.className = "idle";
       $("#status-detail").textContent = "";
-      playStopQuack();
     }
   });
 
@@ -165,7 +130,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   await listen("transcription", (event) => {
     const { text } = event.payload;
     addLogEntry(text);
-    playQuack(1.3, 0.4);
   });
 
   await listen("error", (event) => {
