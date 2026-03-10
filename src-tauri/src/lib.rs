@@ -391,13 +391,21 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
 }
 
 fn register_shortcut(app: &AppHandle, shortcut: Shortcut) -> Result<(), String> {
-    app.global_shortcut().on_shortcut(shortcut, |app, _shortcut, _event| {
+    use tauri_plugin_global_shortcut::ShortcutState;
+    app.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
         let state = app.state::<Arc<Mutex<RecordingState>>>();
-        let is_recording = state.lock().unwrap().is_recording;
-        if is_recording {
-            stop_recording_and_transcribe(state.inner(), app);
-        } else {
-            start_recording(state.inner(), app);
+        match event.state() {
+            ShortcutState::Pressed => {
+                if !state.lock().unwrap().is_recording {
+                    start_recording(state.inner(), app);
+                }
+                // Ignore repeated Pressed events (key held down)
+            }
+            ShortcutState::Released => {
+                if state.lock().unwrap().is_recording {
+                    stop_recording_and_transcribe(state.inner(), app);
+                }
+            }
         }
     }).map_err(|e| {
         debug_log::log(&format!("shortcut registration failed: {}", e));

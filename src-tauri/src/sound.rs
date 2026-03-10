@@ -64,16 +64,22 @@ impl SoundPlayer {
                 if is_ping {
                     use rodio::Source;
                     let (freq, dur, vol) = match kind {
-                        SoundKind::Start => (280.0, 200, 0.6),
-                        SoundKind::Stop  => (180.0, 250, 0.5),
-                        SoundKind::Done  => (350.0, 180, 0.4),
+                        SoundKind::Start => (440.0, 200, 0.7),
+                        SoundKind::Stop  => (330.0, 250, 0.6),
+                        SoundKind::Done  => (520.0, 180, 0.5),
                     };
-                    let samples = generate_ping(freq, dur, vol);
-                    let source = rodio::buffer::SamplesBuffer::new(1, 48000, samples);
+                    let mono = generate_ping(freq, dur, vol);
+                    // Duplicate to stereo — play_raw doesn't convert mono
+                    let mut stereo = Vec::with_capacity(mono.len() * 2);
+                    for s in &mono {
+                        stereo.push(*s);
+                        stereo.push(*s);
+                    }
+                    let source = rodio::buffer::SamplesBuffer::new(2, 48000, stereo);
                     match handle.play_raw(source.convert_samples()) {
                         Ok(()) => {
                             crate::debug_log::log(&format!("sound: played ping-{}", label));
-                            std::thread::sleep(std::time::Duration::from_millis(dur as u64 + 50));
+                            std::thread::sleep(std::time::Duration::from_millis(dur as u64 + 100));
                         }
                         Err(e) => crate::debug_log::log(&format!("sound: ping play failed: {}", e)),
                     }
