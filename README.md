@@ -1,5 +1,6 @@
- <img width="64" height="64" alt="frog" src="https://github.com/user-attachments/assets/fb164061-3d5f-408a-92a7-45a93fe8ba43" />  ### Ribbit
+ <img src="https://your-frog-image-url.png" width="60" height="60" align="left" style="margin-right: 15px; margin-bottom: 5px;" alt="Ribbit Frog">
 
+### Ribbit
 ------------------------------------------
 Hold the key, croak your thoughts,  
 Ribbit turns your quacks to code.  
