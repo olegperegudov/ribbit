@@ -2,6 +2,11 @@
 
 ### Ribbit
 
+Hold the key, croak your thoughts,  
+Ribbit turns your quacks to code.  
+Bugs get squashed just like they should —  
+Pray the transcription comes out good! 🐸
+
 Simple, local voice-to-text dictation for Windows. Hold a hotkey, speak, release — transcribed text is pasted into any active window.
 
 **Free to use.** Requires a free [Groq](https://groq.com/) API key (no credit card, generous free tier).
