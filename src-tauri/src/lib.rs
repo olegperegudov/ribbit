@@ -465,7 +465,7 @@ pub fn run() {
             let mut tray_builder = TrayIconBuilder::new()
                 .tooltip("Ribbit - Voice to Text")
                 .menu(&menu)
-                .menu_on_left_click(false)
+                .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| {
                     if event.id() == "show" {
                         if let Some(w) = app.get_webview_window("main") {
@@ -526,7 +526,7 @@ pub fn run() {
             let update_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 // Small delay so the app finishes loading first
-                tauri::async_runtime::sleep(std::time::Duration::from_secs(3)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
                 let config = read_config();
                 let last_check = config["last_update_check"].as_i64().unwrap_or(0);

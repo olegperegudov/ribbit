@@ -1,6 +1,6 @@
 [package]
 name = "ribbit"
-version = "0.4.0"
+version = "0.5.0"
 description = "Voice-to-text dictation app"
 authors = ["Oleg Peregudov"]
 edition = "2021"
@@ -32,4 +32,5 @@ dirs = "6"
 rusqlite = { version = "0.31", features = ["bundled"] }
 rodio = { version = "0.19", default-features = false, features = ["vorbis"] }
 tauri-plugin-updater = "2"
+tokio = { version = "1", features = ["time"] }
 
