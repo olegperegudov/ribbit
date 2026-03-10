@@ -1,9 +1,4 @@
-<table border="0" cellpadding="0" cellspacing="0">
-  <tr>
-    <td valign="middle"><img src="твоя_ссылка_на_лягушку.png" width="60"></td>
-    <td valign="middle"><h3 style="margin: 0; padding-left: 12px;">Ribbit</h3></td>
-  </tr>
-</table>
+<table border="0" cellpadding="0" cellspacing="0"><tr><td valign="middle"><img src="твоя_ссылка_на_лягушку.png" width="60"></td><td valign="middle" style="padding-left:12px;"><h3 style="margin:0;">Ribbit</h3></td></tr></table>
 
 ------------------------------------------
 Hold the key, croak your thoughts,  
