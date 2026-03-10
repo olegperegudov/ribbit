@@ -1,6 +1,4 @@
- <img width="64" height="64" alt="frog" src="https://github.com/user-attachments/assets/fb164061-3d5f-408a-92a7-45a93fe8ba43" />
-
-### Ribbit
+ <img width="64" height="64" alt="frog" src="https://github.com/user-attachments/assets/fb164061-3d5f-408a-92a7-45a93fe8ba43" />  ### Ribbit
 
 ------------------------------------------
 Hold the key, croak your thoughts,  
