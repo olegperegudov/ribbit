@@ -1,4 +1,4 @@
- <img src="https://your-frog-image-url.png" width="60" height="60" align="left" style="margin-right: 15px; margin-bottom: 5px;" alt="Ribbit Frog">
+ <img src="твоя_ссылка_на_лягушку.png" width="60" style="vertical-align: middle; margin-right: 12px;"> <h3 style="display: inline; margin: 0;">Ribbit</h3>
 
 ### Ribbit
 ------------------------------------------
