@@ -81,17 +81,15 @@ fn test_sound(app: AppHandle) {
 #[tauri::command]
 fn hide_to_tray(app: AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.set_skip_taskbar(true);
-        let _ = w.hide();
+        let _ = w.minimize();
     }
 }
 
 #[tauri::command]
 fn show_from_tray(app: AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.set_skip_taskbar(false);
         let _ = w.unminimize();
+        let _ = w.show();
         let _ = w.set_focus();
     }
 }
@@ -386,16 +384,14 @@ pub fn run() {
                 .on_menu_event(move |app, event| {
                     if event.id() == "show" {
                         if let Some(w) = app.get_webview_window("main") {
-                            if w.is_visible().unwrap_or(false) {
-                                let _ = w.set_skip_taskbar(true);
-                                let _ = w.hide();
-                                let _ = show_for_menu.set_text("Show Ribbit");
-                            } else {
-                                let _ = w.show();
-                                let _ = w.set_skip_taskbar(false);
+                            if w.is_minimized().unwrap_or(false) || !w.is_visible().unwrap_or(true) {
                                 let _ = w.unminimize();
+                                let _ = w.show();
                                 let _ = w.set_focus();
                                 let _ = show_for_menu.set_text("Hide Ribbit");
+                            } else {
+                                let _ = w.minimize();
+                                let _ = show_for_menu.set_text("Show Ribbit");
                             }
                         }
                     } else if event.id() == "quit" {
@@ -409,16 +405,14 @@ pub fn run() {
                     } = event {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {
-                            if w.is_visible().unwrap_or(false) {
-                                let _ = w.set_skip_taskbar(true);
-                                let _ = w.hide();
-                                let _ = show_for_tray.set_text("Show Ribbit");
-                            } else {
-                                let _ = w.show();
-                                let _ = w.set_skip_taskbar(false);
+                            if w.is_minimized().unwrap_or(false) || !w.is_visible().unwrap_or(true) {
                                 let _ = w.unminimize();
+                                let _ = w.show();
                                 let _ = w.set_focus();
                                 let _ = show_for_tray.set_text("Hide Ribbit");
+                            } else {
+                                let _ = w.minimize();
+                                let _ = show_for_tray.set_text("Show Ribbit");
                             }
                         }
                     }
