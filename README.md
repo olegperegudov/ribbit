@@ -1,17 +1,18 @@
-<table border="0" cellpadding="0" cellspacing="0"><tr><td valign="middle"><img src="твоя_ссылка_на_лягушку.png" width="60"></td><td valign="middle" style="padding-left:12px;"><h3 style="margin:0;">Ribbit</h3></td></tr></table>
+<p align="center">
+  <img src="src/frog.png" width="96" alt="Ribbit logo" />
+</p>
 
-------------------------------------------
-Hold the key, croak your thoughts,  
-Ribbit turns your quacks to code.  
-Bugs get squashed just like they should —  
-Pray the transcription comes out good! 🐸
-------------------------------------------
+<h1 align="center">Ribbit</h1>
 
-Simple, local voice-to-text dictation for Windows. Hold a hotkey, speak, release — transcribed text is pasted into any active window.
+<p align="center">
+  Simple, local voice-to-text dictation for Windows.<br/>
+  Hold a hotkey, speak, release — transcribed text is pasted into any active window.
+</p>
 
-**Free to use.** Requires a free [Groq](https://groq.com/) API key (no credit card, generous free tier).
-
-**Private by design.** No accounts, no cloud storage, no telemetry. Audio is sent to Groq for transcription and discarded immediately. Your API key and transcription history stay on your machine.
+<p align="center">
+  <b>Free to use</b> — requires a free <a href="https://groq.com/">Groq</a> API key (no credit card, generous free tier)<br/>
+  <b>Private by design</b> — no accounts, no cloud storage, no telemetry
+</p>
 
 ## How it works
 
