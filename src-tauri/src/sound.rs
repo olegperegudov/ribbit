@@ -26,7 +26,7 @@ fn generate_ping(freq: f32, duration_ms: u32, volume: f32) -> Vec<f32> {
     let mut samples = Vec::with_capacity(num_samples as usize);
     for i in 0..num_samples {
         let t = i as f32 / sample_rate as f32;
-        let envelope = (-t * 10.0).exp();
+        let envelope = (-t * 6.0).exp();
         let sample = (2.0 * std::f32::consts::PI * freq * t).sin() * envelope * volume;
         samples.push(sample);
     }
@@ -77,9 +77,9 @@ impl SoundPlayer {
                 if is_ping {
                     use rodio::Source;
                     let (freq, dur, vol) = match kind {
-                        SoundKind::Start => (880.0, 150, 0.5),
-                        SoundKind::Stop  => (440.0, 200, 0.4),
-                        SoundKind::Done  => (1320.0, 120, 0.3),
+                        SoundKind::Start => (280.0, 200, 0.6),
+                        SoundKind::Stop  => (180.0, 250, 0.5),
+                        SoundKind::Done  => (350.0, 180, 0.4),
                     };
                     let samples = generate_ping(freq, dur, vol);
                     let source = rodio::buffer::SamplesBuffer::new(1, 48000, samples);

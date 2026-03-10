@@ -1,17 +1,17 @@
 # Ribbit
 
-Voice-to-text dictation for Windows. Press a hotkey, speak, release — transcribed text is pasted into any active window.
+Simple, local voice-to-text dictation for Windows. Hold a hotkey, speak, release — transcribed text is pasted into any active window.
 
-Uses [Groq](https://groq.com/) Whisper API (free tier) for fast, accurate transcription.
+**Free to use.** Requires a free [Groq](https://groq.com/) API key (no credit card, generous free tier).
 
-![Ribbit window](https://raw.githubusercontent.com/olegperegudov/ribbit/main/src/frog.png)
+**Private by design.** No accounts, no cloud storage, no telemetry. Audio is sent to Groq for transcription and discarded immediately. Your API key and transcription history stay on your machine.
 
 ## How it works
 
-1. Press and hold **Ctrl+Alt+Space** (customizable) anywhere on your desktop
+1. **Hold** **Ctrl+Alt+Space** (customizable) anywhere on your desktop
 2. Speak into your microphone
-3. release keys to stop recording
-4. Ribbit transcribes your audio and pastes the text into the active window via Ctrl+V
+3. **Release** to stop recording
+4. Ribbit transcribes your audio and pastes the text into the active window
 
 All transcriptions are saved in a local log with timestamps, grouped by date.
 
@@ -23,7 +23,7 @@ Grab the latest installer from [Releases](https://github.com/olegperegudov/ribbi
 
 ### 2. Get a free Groq API key
 
-1. Go to [console.groq.com](https://console.groq.com/keys) and sign up (free, no credit card)
+1. Go to [console.groq.com](https://console.groq.com/keys) and sign up (free, no credit card needed)
 2. Click **API Keys** in the left menu, then **Create API Key**
 3. Copy the key (starts with `gsk_`)
 
@@ -33,15 +33,24 @@ When you first launch Ribbit, you'll see a setup screen. Paste your key and clic
 
 ## Features
 
-- **Global hotkey** — works from any app, even when Ribbit is minimized
-- **Auto-paste** — transcribed text goes straight into your active window
-- **Transcription log** — searchable history with timestamps, grouped by date
+- **Hold-to-record** — hold the hotkey to record, release to transcribe
+- **Auto-paste** — transcribed text goes straight into your active window via Ctrl+V
+- **Works everywhere** — global hotkey works from any app, even when Ribbit is minimized
+- **Local and private** — no accounts, no cloud sync, no data collection
+- **Transcription log** — history with timestamps, grouped by date
 - **Sound packs** — frog or ping audio feedback (switch in settings)
 - **System tray** — runs quietly in the background, X hides to tray
 - **Auto-update** — checks for updates daily, one-click install from settings
-- **Customizable hotkey** — change it in settings (click the hotkey field, press your combo, hit Enter)
-- **Always on top** — toggle in settings
+- **Customizable hotkey** — click the hotkey field in settings, press your combo, hit Enter
 - **Lightweight** — ~4 MB installer, minimal resource usage
+
+## Privacy
+
+- Audio is sent to Groq's API for transcription only — not stored on their servers
+- Your API key is saved locally in `%LOCALAPPDATA%/ribbit/.env`
+- Transcription history is stored locally in `%LOCALAPPDATA%/ribbit/logs/`
+- No analytics, no tracking, no telemetry — zero network calls besides the Groq API
+- Fully open source — inspect every line of code
 
 ## Settings
 
