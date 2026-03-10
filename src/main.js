@@ -239,10 +239,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     invoke("test_sound");
   });
 
-  // Version display
+  // Version display + changelog link
   try {
     const ver = await invoke("get_current_version");
-    $("#version-label").textContent = `v${ver}`;
+    const versionEl = $("#version-label");
+    versionEl.textContent = `v${ver}`;
+    versionEl.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const { openUrl } = window.__TAURI__.opener;
+      await openUrl(`https://github.com/olegperegudov/ribbit/releases/tag/v${ver}`);
+    });
   } catch (e) {}
 
   // Update check
