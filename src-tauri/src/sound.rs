@@ -23,11 +23,16 @@ pub fn get_pack() -> &'static str {
 fn generate_ping(freq: f32, duration_ms: u32, volume: f32) -> Vec<f32> {
     let sample_rate = 48000u32;
     let num_samples = sample_rate * duration_ms / 1000;
+    let pi2 = 2.0 * std::f32::consts::PI;
     let mut samples = Vec::with_capacity(num_samples as usize);
     for i in 0..num_samples {
         let t = i as f32 / sample_rate as f32;
-        let envelope = (-t * 6.0).exp();
-        let sample = (2.0 * std::f32::consts::PI * freq * t).sin() * envelope * volume;
+        let envelope = (-t * 4.0).exp(); // slow decay for fuller sound
+        // fundamental + harmonics for a rich, warm tone (not a thin sine)
+        let fundamental = (pi2 * freq * t).sin();
+        let harmonic2 = (pi2 * freq * 2.0 * t).sin() * 0.3;
+        let harmonic3 = (pi2 * freq * 3.0 * t).sin() * 0.1;
+        let sample = (fundamental + harmonic2 + harmonic3) * envelope * volume;
         samples.push(sample);
     }
     samples
@@ -64,9 +69,9 @@ impl SoundPlayer {
                 if is_ping {
                     use rodio::Source;
                     let (freq, dur, vol) = match kind {
-                        SoundKind::Start => (440.0, 200, 0.7),
-                        SoundKind::Stop  => (330.0, 250, 0.6),
-                        SoundKind::Done  => (520.0, 180, 0.5),
+                        SoundKind::Start => (250.0, 300, 0.8),
+                        SoundKind::Stop  => (200.0, 350, 0.7),
+                        SoundKind::Done  => (300.0, 250, 0.6),
                     };
                     let mono = generate_ping(freq, dur, vol);
                     // Duplicate to stereo — play_raw doesn't convert mono

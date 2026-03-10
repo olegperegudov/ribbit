@@ -282,7 +282,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     };
 
     let _ = app.emit("recording-status", false);
-    app.state::<sound::SoundPlayer>().play(sound::SoundKind::Stop);
+    // No stop sound — the Done sound after transcription is enough
 
     let duration_secs = audio_data.len() as f32 / sample_rate as f32;
     let rms = if audio_data.is_empty() {
