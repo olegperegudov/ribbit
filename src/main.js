@@ -288,6 +288,28 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // Update available indicator (from auto-check or manual check)
+  await listen("update-available", (event) => {
+    const ver = event.payload;
+    updateBtn.textContent = `update to v${ver}`;
+    updateBtn.classList.add("update-available");
+    $("#settings-btn").classList.add("update-available");
+    updateBtn.disabled = false;
+    updateBtn.onclick = async () => {
+      updateBtn.textContent = "downloading...";
+      updateBtn.disabled = true;
+      try {
+        await invoke("install_update");
+      } catch (e) {
+        updateBtn.textContent = "update failed";
+        setTimeout(() => {
+          updateBtn.textContent = `update to v${ver}`;
+          updateBtn.disabled = false;
+        }, 3000);
+      }
+    };
+  });
+
   await listen("update-progress", (event) => {
     const pct = event.payload;
     updateBtn.textContent = `downloading ${pct}%`;

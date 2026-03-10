@@ -118,6 +118,7 @@ async fn check_for_update(app: AppHandle) -> Result<serde_json::Value, String> {
             let version = update.version.clone();
             let body = update.body.clone().unwrap_or_default();
             debug_log::log(&format!("Update available: v{}", version));
+            let _ = app.emit("update-available", &version);
             Ok(serde_json::json!({
                 "available": true,
                 "version": version,
@@ -520,6 +521,46 @@ pub fn run() {
 
             debug_log::log(&format!("registering hotkey: {}", shortcut_str));
             register_shortcut(&handle, shortcut)?;
+
+            // Auto-check for updates (if >24h since last check)
+            let update_handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                // Small delay so the app finishes loading first
+                tauri::async_runtime::sleep(std::time::Duration::from_secs(3)).await;
+
+                let config = read_config();
+                let last_check = config["last_update_check"].as_i64().unwrap_or(0);
+                let now = chrono::Utc::now().timestamp();
+                if now - last_check < 86400 {
+                    debug_log::log("update: skipping auto-check (checked <24h ago)");
+                    return;
+                }
+
+                debug_log::log("update: running auto-check...");
+                let updater = match update_handle.updater() {
+                    Ok(u) => u,
+                    Err(e) => {
+                        debug_log::log(&format!("update: auto-check error: {}", e));
+                        return;
+                    }
+                };
+                match updater.check().await {
+                    Ok(Some(update)) => {
+                        debug_log::log(&format!("update: v{} available", update.version));
+                        let _ = update_handle.emit("update-available", &update.version);
+                    }
+                    Ok(None) => {
+                        debug_log::log("update: up to date");
+                    }
+                    Err(e) => {
+                        debug_log::log(&format!("update: auto-check failed: {}", e));
+                    }
+                }
+                // Save check timestamp regardless of result
+                let mut cfg = read_config();
+                cfg["last_update_check"] = serde_json::json!(now);
+                let _ = save_config(&cfg);
+            });
 
             debug_log::log("setup complete");
             Ok(())
