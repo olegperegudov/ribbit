@@ -80,6 +80,21 @@ fn test_sound(app: AppHandle) {
 }
 
 #[tauri::command]
+fn get_sound_pack() -> String {
+    sound::get_pack().to_string()
+}
+
+#[tauri::command]
+fn set_sound_pack(pack: String) -> Result<(), String> {
+    sound::set_pack(&pack);
+    let mut config = read_config();
+    config["sound_pack"] = serde_json::Value::String(pack.clone());
+    save_config(&config)?;
+    debug_log::log(&format!("Sound pack changed to: {}", pack));
+    Ok(())
+}
+
+#[tauri::command]
 fn hide_to_tray(app: AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.minimize();
@@ -411,10 +426,17 @@ pub fn run() {
         transcribe::warm_up_client();
     });
 
-    let saved_shortcut = read_config()["shortcut"]
+    let config = read_config();
+
+    let saved_shortcut = config["shortcut"]
         .as_str()
         .unwrap_or("ctrl+alt+space")
         .to_string();
+
+    // Restore saved sound pack
+    if let Some(pack) = config["sound_pack"].as_str() {
+        sound::set_pack(pack);
+    }
 
     let state = Arc::new(Mutex::new(RecordingState {
         is_recording: false,
@@ -427,7 +449,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack])
         .setup(move |app| {
             let handle = app.handle().clone();
 

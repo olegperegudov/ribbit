@@ -229,8 +229,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Test sound button
-  $("#test-sound-btn").addEventListener("click", () => invoke("test_sound"));
+  // Sound pack selector
+  const soundSelect = $("#sound-select");
+  try {
+    soundSelect.value = await invoke("get_sound_pack");
+  } catch (e) {}
+  soundSelect.addEventListener("change", async () => {
+    await invoke("set_sound_pack", { pack: soundSelect.value });
+    invoke("test_sound");
+  });
 
   // Version display
   try {
