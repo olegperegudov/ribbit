@@ -10,6 +10,13 @@
 </p>
 
 <p align="center">
+  <i>Hold the key, croak your thoughts,<br/>
+  Ribbit turns your quacks to code.<br/>
+  Bugs get squashed just like they should —<br/>
+  Pray the transcription comes out good!</i> 🐸
+</p>
+
+<p align="center">
   <b>Free to use</b> — requires a free <a href="https://groq.com/">Groq</a> API key (no credit card, generous free tier)<br/>
   <b>Private by design</b> — no accounts, no cloud storage, no telemetry
 </p>
