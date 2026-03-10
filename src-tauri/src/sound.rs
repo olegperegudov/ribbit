@@ -2,6 +2,8 @@ use std::io::Cursor;
 use std::sync::{mpsc, atomic::{AtomicU8, Ordering}};
 
 const QUACK_OGG: &[u8] = include_bytes!("../../src/quack.ogg");
+const KNOCK_START_OGG: &[u8] = include_bytes!("../../src/knock_start.ogg");
+const KNOCK_DONE_OGG: &[u8] = include_bytes!("../../src/knock_done.ogg");
 
 pub enum SoundKind {
     Start, // mic ready
@@ -9,7 +11,7 @@ pub enum SoundKind {
     Done,  // transcription complete
 }
 
-// 0 = frog, 1 = ping
+// 0 = frog, 1 = knock
 static SOUND_PACK: AtomicU8 = AtomicU8::new(0);
 
 pub fn set_pack(pack: &str) {
@@ -18,24 +20,6 @@ pub fn set_pack(pack: &str) {
 
 pub fn get_pack() -> &'static str {
     if SOUND_PACK.load(Ordering::Relaxed) == 1 { "ping" } else { "frog" }
-}
-
-fn generate_ping(freq: f32, duration_ms: u32, volume: f32) -> Vec<f32> {
-    let sample_rate = 48000u32;
-    let num_samples = sample_rate * duration_ms / 1000;
-    let pi2 = 2.0 * std::f32::consts::PI;
-    let mut samples = Vec::with_capacity(num_samples as usize);
-    for i in 0..num_samples {
-        let t = i as f32 / sample_rate as f32;
-        let envelope = (-t * 4.0).exp(); // slow decay for fuller sound
-        // fundamental + harmonics for a rich, warm tone (not a thin sine)
-        let fundamental = (pi2 * freq * t).sin();
-        let harmonic2 = (pi2 * freq * 2.0 * t).sin() * 0.3;
-        let harmonic3 = (pi2 * freq * 3.0 * t).sin() * 0.1;
-        let sample = (fundamental + harmonic2 + harmonic3) * envelope * volume;
-        samples.push(sample);
-    }
-    samples
 }
 
 pub struct SoundPlayer {
@@ -64,55 +48,56 @@ impl SoundPlayer {
                     }
                 };
 
-                let is_ping = SOUND_PACK.load(Ordering::Relaxed) == 1;
+                let is_knock = SOUND_PACK.load(Ordering::Relaxed) == 1;
 
-                if is_ping {
-                    use rodio::Source;
-                    let (freq, dur, vol) = match kind {
-                        SoundKind::Start => (250.0, 300, 0.8),
-                        SoundKind::Stop  => (200.0, 350, 0.7),
-                        SoundKind::Done  => (300.0, 250, 0.6),
+                // Pick the right ogg bytes and volume
+                let (ogg_data, volume, pack_name) = if is_knock {
+                    let data = match kind {
+                        SoundKind::Start => KNOCK_START_OGG,
+                        SoundKind::Stop  => KNOCK_START_OGG, // reuse start for stop
+                        SoundKind::Done  => KNOCK_DONE_OGG,
                     };
-                    let mono = generate_ping(freq, dur, vol);
-                    // Duplicate to stereo — play_raw doesn't convert mono
-                    let mut stereo = Vec::with_capacity(mono.len() * 2);
-                    for s in &mono {
-                        stereo.push(*s);
-                        stereo.push(*s);
-                    }
-                    let source = rodio::buffer::SamplesBuffer::new(2, 48000, stereo);
-                    match handle.play_raw(source.convert_samples()) {
-                        Ok(()) => {
-                            crate::debug_log::log(&format!("sound: played ping-{}", label));
-                            std::thread::sleep(std::time::Duration::from_millis(dur as u64 + 100));
-                        }
-                        Err(e) => crate::debug_log::log(&format!("sound: ping play failed: {}", e)),
+                    let vol = match kind {
+                        SoundKind::Start => 1.0_f32,
+                        SoundKind::Stop  => 0.7,
+                        SoundKind::Done  => 1.0,
+                    };
+                    (data, vol, "knock")
+                } else {
+                    let vol = match kind {
+                        SoundKind::Start => 0.8_f32,
+                        SoundKind::Stop  => 0.6,
+                        SoundKind::Done  => 0.4,
+                    };
+                    (QUACK_OGG, vol, "frog")
+                };
+
+                let speed = if !is_knock {
+                    match kind {
+                        SoundKind::Start => 1.15_f32,
+                        SoundKind::Stop  => 0.85,
+                        SoundKind::Done  => 1.3,
                     }
                 } else {
-                    let cursor = Cursor::new(QUACK_OGG);
-                    match rodio::Decoder::new(cursor) {
-                        Ok(source) => {
-                            use rodio::Source;
-                            let (speed, volume) = match kind {
-                                SoundKind::Start => (1.15_f32, 0.8_f32),
-                                SoundKind::Stop  => (0.85, 0.6),
-                                SoundKind::Done  => (1.3, 0.4),
-                            };
-                            match handle.play_raw(
-                                source.speed(speed).amplify(volume).convert_samples(),
-                            ) {
-                                Ok(()) => {
-                                    crate::debug_log::log(&format!("sound: played frog-{}", label));
-                                    // Keep stream alive while sound plays
-                                    std::thread::sleep(std::time::Duration::from_millis(500));
-                                }
-                                Err(e) => crate::debug_log::log(&format!("sound: frog play failed: {}", e)),
+                    1.0
+                };
+
+                let cursor = Cursor::new(ogg_data);
+                match rodio::Decoder::new(cursor) {
+                    Ok(source) => {
+                        use rodio::Source;
+                        match handle.play_raw(
+                            source.speed(speed).amplify(volume).convert_samples(),
+                        ) {
+                            Ok(()) => {
+                                crate::debug_log::log(&format!("sound: played {}-{}", pack_name, label));
+                                std::thread::sleep(std::time::Duration::from_millis(500));
                             }
+                            Err(e) => crate::debug_log::log(&format!("sound: play failed: {}", e)),
                         }
-                        Err(e) => crate::debug_log::log(&format!("sound: decode error: {}", e)),
                     }
+                    Err(e) => crate::debug_log::log(&format!("sound: decode error: {}", e)),
                 }
-                // _stream drops here, closing the device — ready for next sound on fresh device
             }
             crate::debug_log::log("sound: channel closed, thread exiting");
         });
