@@ -1,6 +1,10 @@
- <img src="твоя_ссылка_на_лягушку.png" width="60" style="vertical-align: middle; margin-right: 12px;"> <h3 style="display: inline; margin: 0;">Ribbit</h3>
+<table border="0" cellpadding="0" cellspacing="0">
+  <tr>
+    <td valign="middle"><img src="твоя_ссылка_на_лягушку.png" width="60"></td>
+    <td valign="middle"><h3 style="margin: 0; padding-left: 12px;">Ribbit</h3></td>
+  </tr>
+</table>
 
-### Ribbit
 ------------------------------------------
 Hold the key, croak your thoughts,  
 Ribbit turns your quacks to code.  
