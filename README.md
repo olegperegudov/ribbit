@@ -8,9 +8,9 @@ Uses [Groq](https://groq.com/) Whisper API (free tier) for fast, accurate transc
 
 ## How it works
 
-1. Press **Ctrl+Alt+Space** (customizable) anywhere on your desktop
+1. Press and hold **Ctrl+Alt+Space** (customizable) anywhere on your desktop
 2. Speak into your microphone
-3. Press the hotkey again to stop recording
+3. release keys to stop recording
 4. Ribbit transcribes your audio and pastes the text into the active window via Ctrl+V
 
 All transcriptions are saved in a local log with timestamps, grouped by date.
