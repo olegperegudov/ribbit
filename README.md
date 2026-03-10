@@ -1,4 +1,5 @@
  <img width="64" height="64" alt="frog" src="https://github.com/user-attachments/assets/fb164061-3d5f-408a-92a7-45a93fe8ba43" />
+
 ### Ribbit
 
 Simple, local voice-to-text dictation for Windows. Hold a hotkey, speak, release — transcribed text is pasted into any active window.
