@@ -232,6 +232,60 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Test sound button
   $("#test-sound-btn").addEventListener("click", () => invoke("test_sound"));
 
+  // Version display
+  try {
+    const ver = await invoke("get_current_version");
+    $("#version-label").textContent = `v${ver}`;
+  } catch (e) {}
+
+  // Update check
+  const updateBtn = $("#update-btn");
+  updateBtn.addEventListener("click", async () => {
+    updateBtn.textContent = "checking...";
+    updateBtn.disabled = true;
+    try {
+      const result = await invoke("check_for_update");
+      if (result.available) {
+        updateBtn.textContent = `update to v${result.version}`;
+        updateBtn.classList.add("update-available");
+        updateBtn.disabled = false;
+        // Re-bind: next click installs
+        updateBtn.onclick = async () => {
+          updateBtn.textContent = "downloading...";
+          updateBtn.disabled = true;
+          try {
+            await invoke("install_update");
+          } catch (e) {
+            updateBtn.textContent = "update failed";
+            setTimeout(() => {
+              updateBtn.textContent = "check update";
+              updateBtn.classList.remove("update-available");
+              updateBtn.disabled = false;
+              updateBtn.onclick = null; // restore original handler
+            }, 3000);
+          }
+        };
+      } else {
+        updateBtn.textContent = "up to date";
+        setTimeout(() => {
+          updateBtn.textContent = "check update";
+          updateBtn.disabled = false;
+        }, 2000);
+      }
+    } catch (e) {
+      updateBtn.textContent = "check failed";
+      setTimeout(() => {
+        updateBtn.textContent = "check update";
+        updateBtn.disabled = false;
+      }, 3000);
+    }
+  });
+
+  await listen("update-progress", (event) => {
+    const pct = event.payload;
+    updateBtn.textContent = `downloading ${pct}%`;
+  });
+
   // Debug log (from settings)
   $("#debug-btn").addEventListener("click", async () => {
     const log = await invoke("get_debug_log");

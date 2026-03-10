@@ -13,6 +13,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use tauri_plugin_updater::UpdaterExt;
 
 struct RecordingState {
     is_recording: bool,
@@ -92,6 +93,66 @@ fn show_from_tray(app: AppHandle) {
         let _ = w.show();
         let _ = w.set_focus();
     }
+}
+
+#[tauri::command]
+async fn check_for_update(app: AppHandle) -> Result<serde_json::Value, String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let version = update.version.clone();
+            let body = update.body.clone().unwrap_or_default();
+            debug_log::log(&format!("Update available: v{}", version));
+            Ok(serde_json::json!({
+                "available": true,
+                "version": version,
+                "body": body,
+            }))
+        }
+        Ok(None) => {
+            debug_log::log("No update available");
+            Ok(serde_json::json!({ "available": false }))
+        }
+        Err(e) => {
+            debug_log::log(&format!("Update check failed: {}", e));
+            Err(e.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            debug_log::log(&format!("Downloading update v{}...", update.version));
+
+            let mut downloaded: u64 = 0;
+            let app_for_event = app.clone();
+            update.download_and_install(
+                move |chunk, total| {
+                    downloaded += chunk as u64;
+                    let progress = total.map(|t| (downloaded as f64 / t as f64 * 100.0) as u32);
+                    let _ = app_for_event.emit("update-progress", progress.unwrap_or(0));
+                },
+                || {
+                    debug_log::log("Update downloaded, restarting...");
+                },
+            ).await.map_err(|e| {
+                debug_log::log(&format!("Update install failed: {}", e));
+                e.to_string()
+            })?;
+
+            app.restart();
+        }
+        Ok(None) => Err("No update available".into()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn get_current_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 #[tauri::command]
@@ -365,7 +426,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version])
         .setup(move |app| {
             let handle = app.handle().clone();
 
