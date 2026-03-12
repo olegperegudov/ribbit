@@ -50,36 +50,15 @@ impl SoundPlayer {
 
                 let is_knock = SOUND_PACK.load(Ordering::Relaxed) == 1;
 
-                // Pick the right ogg bytes and volume
-                let (ogg_data, volume, pack_name) = if is_knock {
+                let (ogg_data, pack_name) = if is_knock {
                     let data = match kind {
                         SoundKind::Start => KNOCK_START_OGG,
-                        SoundKind::Stop  => KNOCK_START_OGG, // reuse start for stop
+                        SoundKind::Stop  => KNOCK_START_OGG,
                         SoundKind::Done  => KNOCK_DONE_OGG,
                     };
-                    let vol = match kind {
-                        SoundKind::Start => 1.0_f32,
-                        SoundKind::Stop  => 0.7,
-                        SoundKind::Done  => 1.0,
-                    };
-                    (data, vol, "knock")
+                    (data, "knock")
                 } else {
-                    let vol = match kind {
-                        SoundKind::Start => 0.8_f32,
-                        SoundKind::Stop  => 0.6,
-                        SoundKind::Done  => 0.4,
-                    };
-                    (QUACK_OGG, vol, "frog")
-                };
-
-                let speed = if !is_knock {
-                    match kind {
-                        SoundKind::Start => 1.15_f32,
-                        SoundKind::Stop  => 0.85,
-                        SoundKind::Done  => 1.3,
-                    }
-                } else {
-                    1.0
+                    (QUACK_OGG, "frog")
                 };
 
                 let cursor = Cursor::new(ogg_data);
@@ -87,7 +66,7 @@ impl SoundPlayer {
                     Ok(source) => {
                         use rodio::Source;
                         match handle.play_raw(
-                            source.speed(speed).amplify(volume).convert_samples(),
+                            source.convert_samples(),
                         ) {
                             Ok(()) => {
                                 crate::debug_log::log(&format!("sound: played {}-{}", pack_name, label));
