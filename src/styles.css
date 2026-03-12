@@ -400,6 +400,28 @@ kbd.capturing {
   background: #4ade80;
 }
 
+/* Hint icon (?) */
+.hint-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1px solid #2a3040;
+  font-size: 0.55rem;
+  color: #4b5563;
+  cursor: help;
+  margin-left: 0.25rem;
+  vertical-align: middle;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.hint-icon:hover {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
 /* Language selector */
 .setting-row-lang {
   align-items: flex-start;
