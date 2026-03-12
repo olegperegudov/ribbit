@@ -437,6 +437,7 @@ fn register_shortcut(app: &AppHandle, shortcut: Shortcut) -> Result<(), String> 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     debug_log::log("=== Ribbit starting ===");
+    logger::cleanup_old_logs();
 
     // Load .env from config dir (primary)
     if let Some(config_dir) = dirs::config_dir() {

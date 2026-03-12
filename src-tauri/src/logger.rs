@@ -34,6 +34,27 @@ pub fn log_transcription(text: &str, duration_secs: f32) {
     }
 }
 
+/// Delete log files older than today
+pub fn cleanup_old_logs() {
+    let log_dir = match log_dir() {
+        Some(d) => d,
+        None => return,
+    };
+
+    let today = Local::now().format("%Y-%m-%d").to_string();
+
+    if let Ok(entries) = fs::read_dir(&log_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.ends_with(".jsonl") && !name.starts_with(&today) {
+                let _ = fs::remove_file(entry.path());
+                crate::debug_log::log(&format!("cleaned up old log: {}", name));
+            }
+        }
+    }
+}
+
 pub fn read_recent_entries(limit: usize) -> Vec<serde_json::Value> {
     let log_dir = match log_dir() {
         Some(d) => d,
