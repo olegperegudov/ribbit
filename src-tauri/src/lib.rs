@@ -85,6 +85,24 @@ fn get_sound_pack() -> String {
 }
 
 #[tauri::command]
+fn get_languages() -> Vec<String> {
+    let config = read_config();
+    config["languages"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn set_languages(languages: Vec<String>) -> Result<(), String> {
+    let mut config = read_config();
+    config["languages"] = serde_json::json!(languages);
+    save_config(&config)?;
+    debug_log::log(&format!("Languages set to: {:?}", languages));
+    Ok(())
+}
+
+#[tauri::command]
 fn set_sound_pack(pack: String) -> Result<(), String> {
     sound::set_pack(&pack);
     let mut config = read_config();
@@ -312,8 +330,11 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     std::thread::spawn(move || {
         let _ = app_handle.emit("transcribing", true);
 
+        // Read configured languages for Whisper hint
+        let languages = get_languages();
+
         // Create a blocking reqwest client instead of async
-        let result = transcribe::transcribe_audio_blocking(&audio_data, sample_rate);
+        let result = transcribe::transcribe_audio_blocking(&audio_data, sample_rate, &languages);
 
         match result {
             Ok(text) => {
@@ -458,7 +479,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages])
         .setup(move |app| {
             let handle = app.handle().clone();
 

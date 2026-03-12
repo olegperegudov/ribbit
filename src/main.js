@@ -229,6 +229,54 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // Language selector
+  const langSelect = $("#lang-select");
+  const langChips = $("#lang-chips");
+  const langLabels = {};
+  for (const opt of langSelect.options) {
+    if (opt.value) langLabels[opt.value] = opt.textContent;
+  }
+
+  let selectedLangs = [];
+
+  function renderLangChips() {
+    langChips.innerHTML = "";
+    for (const code of selectedLangs) {
+      const chip = document.createElement("span");
+      chip.className = "lang-chip";
+      chip.innerHTML = `${escapeHtml(langLabels[code] || code)}<button class="lang-chip-x" data-lang="${code}">&times;</button>`;
+      langChips.appendChild(chip);
+    }
+    // Hide already-selected languages from dropdown
+    for (const opt of langSelect.options) {
+      if (opt.value) opt.hidden = selectedLangs.includes(opt.value);
+    }
+  }
+
+  try {
+    selectedLangs = await invoke("get_languages");
+    renderLangChips();
+  } catch (e) {}
+
+  langSelect.addEventListener("change", async () => {
+    const code = langSelect.value;
+    if (code && !selectedLangs.includes(code)) {
+      selectedLangs.push(code);
+      renderLangChips();
+      await invoke("set_languages", { languages: selectedLangs });
+    }
+    langSelect.value = "";
+  });
+
+  langChips.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".lang-chip-x");
+    if (!btn) return;
+    const code = btn.dataset.lang;
+    selectedLangs = selectedLangs.filter(l => l !== code);
+    renderLangChips();
+    await invoke("set_languages", { languages: selectedLangs });
+  });
+
   // Sound pack selector
   const soundSelect = $("#sound-select");
   try {

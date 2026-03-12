@@ -73,10 +73,22 @@ fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Vec<u8> {
     buf
 }
 
+/// Language names for prompt hints (used when multiple languages selected)
+fn lang_name(code: &str) -> &'static str {
+    match code {
+        "en" => "English", "ru" => "Russian", "zh" => "Chinese",
+        "de" => "German", "es" => "Spanish", "fr" => "French",
+        "it" => "Italian", "ja" => "Japanese", "ko" => "Korean",
+        "nl" => "Dutch", "pl" => "Polish", "pt" => "Portuguese",
+        "tr" => "Turkish", "uk" => "Ukrainian",
+        _ => "Unknown",
+    }
+}
+
 /// Blocking transcription — auto-selects Groq or OpenAI based on available keys
-pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32) -> Result<String, String> {
+pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32, languages: &[String]) -> Result<String, String> {
     let (url, api_key, model) = get_provider()?;
-    crate::debug_log::log(&format!("STT: {} ({})", model, url.split('/').nth(2).unwrap_or("?")));
+    crate::debug_log::log(&format!("STT: {} ({}), langs={:?}", model, url.split('/').nth(2).unwrap_or("?"), languages));
 
     let wav_bytes = encode_wav(audio_data, sample_rate);
     crate::debug_log::log(&format!("WAV: {} bytes", wav_bytes.len()));
@@ -86,9 +98,18 @@ pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32) -> Result
         .mime_str("audio/wav")
         .map_err(|e| e.to_string())?;
 
-    let form = reqwest::blocking::multipart::Form::new()
+    let mut form = reqwest::blocking::multipart::Form::new()
         .part("file", file_part)
         .text("model", model.to_string());
+
+    // Single language: pass directly as `language` param
+    // Multiple languages: use `prompt` hint to bias detection
+    if languages.len() == 1 {
+        form = form.text("language", languages[0].clone());
+    } else if languages.len() > 1 {
+        let names: Vec<&str> = languages.iter().map(|c| lang_name(c)).collect();
+        form = form.text("prompt", format!("Dictation in {}.", names.join(" and ")));
+    }
 
     let t0 = std::time::Instant::now();
     let response = client()
