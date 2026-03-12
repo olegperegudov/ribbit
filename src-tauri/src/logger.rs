@@ -34,20 +34,22 @@ pub fn log_transcription(text: &str, duration_secs: f32) {
     }
 }
 
-/// Delete log files older than today
+/// Delete log files older than yesterday
 pub fn cleanup_old_logs() {
     let log_dir = match log_dir() {
         Some(d) => d,
         None => return,
     };
 
-    let today = Local::now().format("%Y-%m-%d").to_string();
+    let now = Local::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    let yesterday = (now - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
 
     if let Ok(entries) = fs::read_dir(&log_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name.ends_with(".jsonl") && !name.starts_with(&today) {
+            if name.ends_with(".jsonl") && !name.starts_with(&today) && !name.starts_with(&yesterday) {
                 let _ = fs::remove_file(entry.path());
                 crate::debug_log::log(&format!("cleaned up old log: {}", name));
             }
@@ -61,17 +63,31 @@ pub fn read_recent_entries(limit: usize) -> Vec<serde_json::Value> {
         None => return vec![],
     };
 
-    let today_file = log_dir.join(format!("{}.jsonl", Local::now().format("%Y-%m-%d")));
-    let contents = match fs::read_to_string(&today_file) {
-        Ok(c) => c,
-        Err(_) => return vec![],
-    };
+    let now = Local::now();
+    let cutoff = now - chrono::Duration::days(1);
 
-    let mut entries: Vec<serde_json::Value> = contents
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect();
-    entries.reverse(); // newest first
-    entries.truncate(limit);
-    entries
+    // Read today + yesterday files
+    let mut all_entries = Vec::new();
+    for offset in 0..=1 {
+        let date = (now - chrono::Duration::days(offset)).format("%Y-%m-%d").to_string();
+        let file = log_dir.join(format!("{}.jsonl", date));
+        if let Ok(contents) = fs::read_to_string(&file) {
+            for line in contents.lines() {
+                if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
+                    // Filter: only entries within last 24h
+                    if let Some(ts) = entry["ts"].as_str() {
+                        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+                            if dt >= cutoff {
+                                all_entries.push(entry);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    all_entries.reverse(); // newest first
+    all_entries.truncate(limit);
+    all_entries
 }
