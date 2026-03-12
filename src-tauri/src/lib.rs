@@ -551,21 +551,14 @@ pub fn run() {
             debug_log::log(&format!("registering hotkey: {}", shortcut_str));
             register_shortcut(&handle, shortcut)?;
 
-            // Auto-check for updates (if >24h since last check)
+            // Auto-check for updates on every launch
             let update_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 // Small delay so the app finishes loading first
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-                let config = read_config();
-                let last_check = config["last_update_check"].as_i64().unwrap_or(0);
-                let now = chrono::Utc::now().timestamp();
-                if now - last_check < 86400 {
-                    debug_log::log("update: skipping auto-check (checked <24h ago)");
-                    return;
-                }
-
                 debug_log::log("update: running auto-check...");
+                let now = chrono::Utc::now().timestamp();
                 let updater = match update_handle.updater() {
                     Ok(u) => u,
                     Err(e) => {
