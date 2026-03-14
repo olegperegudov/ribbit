@@ -5,6 +5,7 @@ mod logger;
 mod debug_log;
 mod usage;
 mod sound;
+mod vocab;
 
 use std::sync::{Arc, Mutex};
 use tauri::{
@@ -263,6 +264,49 @@ fn set_shortcut(app: AppHandle, shortcut: String, state: tauri::State<'_, Arc<Mu
     Ok(())
 }
 
+#[tauri::command]
+fn get_vocab() -> std::collections::HashMap<String, Vec<String>> {
+    vocab::read_vocab()
+}
+
+#[tauri::command]
+fn set_vocab(vocab_data: std::collections::HashMap<String, Vec<String>>) -> Result<(), String> {
+    vocab::save_vocab(&vocab_data)
+}
+
+#[tauri::command]
+fn add_vocab_entry(target: String, alias: String) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    let mut v = vocab::read_vocab();
+    let aliases = v.entry(target).or_default();
+    let alias_lower = alias.to_lowercase();
+    if !aliases.iter().any(|a| a.to_lowercase() == alias_lower) {
+        aliases.push(alias);
+    }
+    vocab::save_vocab(&v)?;
+    Ok(v)
+}
+
+#[tauri::command]
+fn remove_vocab_alias(target: String, alias: String) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    let mut v = vocab::read_vocab();
+    if let Some(aliases) = v.get_mut(&target) {
+        aliases.retain(|a| a.to_lowercase() != alias.to_lowercase());
+        if aliases.is_empty() {
+            v.remove(&target);
+        }
+    }
+    vocab::save_vocab(&v)?;
+    Ok(v)
+}
+
+#[tauri::command]
+fn remove_vocab_entry(target: String) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    let mut v = vocab::read_vocab();
+    v.remove(&target);
+    vocab::save_vocab(&v)?;
+    Ok(v)
+}
+
 fn start_recording(state: &Arc<Mutex<RecordingState>>, app: &AppHandle) {
     debug_log::log("start_recording called");
     let mut s = state.lock().unwrap();
@@ -317,7 +361,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
     if rms < 0.001 {
         debug_log::log("WARNING: audio is silence (RMS < 0.001), check mic permissions");
-        let _ = app.emit("status-detail", "Mic silent — check Windows mic permissions");
+        let _ = app.emit("status-detail", "Mic silent — check mic permissions in system settings");
         return;
     }
 
@@ -337,7 +381,8 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
         let result = transcribe::transcribe_audio_blocking(&audio_data, sample_rate, &languages);
 
         match result {
-            Ok(text) => {
+            Ok(raw_text) => {
+                let text = vocab::apply(&raw_text);
                 let preview: String = text.chars().take(80).collect();
                 debug_log::log(&format!("transcription OK: {:?}", preview));
                 if text.is_empty() {
@@ -364,7 +409,6 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         debug_log::log("text inserted OK");
                     }
 
-                    app_handle.state::<sound::SoundPlayer>().play(sound::SoundKind::Done);
                     let _ = app_handle.emit("status-detail", "Done!");
                 }
             }
@@ -482,7 +526,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry])
         .setup(move |app| {
             let handle = app.handle().clone();
 

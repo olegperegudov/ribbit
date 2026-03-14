@@ -16,19 +16,21 @@ pub fn insert_text(text: &str) -> Result<(), String> {
 
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
 
-    // Simulate Ctrl+V using Key::Control + Key::Other(VK_V)
-    // Key::Control uses proper modifier handling
-    // Key::Other(0x56) sends virtual key code VK_V (layout-independent)
-    // NOTE: raw() sends SCAN CODES not VK codes — don't use it for this!
+    // Simulate paste: Ctrl+V on Windows, Cmd+V on macOS
     let paste_result = (|| -> Result<(), String> {
-        enigo.key(Key::Control, Direction::Press).map_err(|e| format!("ctrl press: {}", e))?;
+        #[cfg(target_os = "macos")]
+        let modifier = Key::Meta;
+        #[cfg(not(target_os = "macos"))]
+        let modifier = Key::Control;
+
+        enigo.key(modifier, Direction::Press).map_err(|e| format!("mod press: {}", e))?;
         thread::sleep(Duration::from_millis(20));
-        enigo.key(Key::Other(0x56), Direction::Press).map_err(|e| format!("v press: {}", e))?;
+        enigo.key(Key::Unicode('v'), Direction::Press).map_err(|e| format!("v press: {}", e))?;
         thread::sleep(Duration::from_millis(20));
-        enigo.key(Key::Other(0x56), Direction::Release).map_err(|e| format!("v release: {}", e))?;
+        enigo.key(Key::Unicode('v'), Direction::Release).map_err(|e| format!("v release: {}", e))?;
         thread::sleep(Duration::from_millis(20));
-        enigo.key(Key::Control, Direction::Release).map_err(|e| format!("ctrl release: {}", e))?;
-        debug_log::log("Ctrl+V simulated via Key::Control + Key::Other(VK_V)");
+        enigo.key(modifier, Direction::Release).map_err(|e| format!("mod release: {}", e))?;
+        debug_log::log(if cfg!(target_os = "macos") { "Cmd+V simulated" } else { "Ctrl+V simulated" });
         Ok(())
     })();
 

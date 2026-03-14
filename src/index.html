@@ -26,21 +26,27 @@
 
       <div id="log-entries"></div>
 
+      <!-- Selection popup for quick vocab add -->
+      <div id="vocab-popup" style="display:none">
+        <input id="vocab-popup-input" type="text" placeholder="replace with..." autocomplete="off" />
+        <div id="vocab-popup-suggestion" style="display:none"></div>
+      </div>
+
       <div id="settings-panel" style="display:none">
         <div class="settings-content">
           <div class="setting-row">
-            <span class="setting-label">hotkey</span>
+            <span class="setting-label">hotkey <span class="hint-icon" title="Click the shortcut, press your new combo, then Enter to save or Esc to cancel.">?</span></span>
             <kbd id="shortcut-display">ctrl+alt+space</kbd>
           </div>
           <div class="setting-row">
-            <span class="setting-label">always on top</span>
+            <span class="setting-label">always on top <span class="hint-icon" title="Keep the Ribbit window above all other windows.">?</span></span>
             <label class="toggle">
               <input type="checkbox" id="always-on-top" checked />
               <span class="toggle-slider"></span>
             </label>
           </div>
           <div class="setting-row">
-            <span class="setting-label">sound</span>
+            <span class="setting-label">sound <span class="hint-icon" title="Audio feedback when recording starts. Frog = quack, Ping = subtle knock.">?</span></span>
             <select id="sound-select">
               <option value="frog">frog</option>
               <option value="ping">ping</option>
@@ -70,14 +76,33 @@
             </div>
           </div>
           <div class="setting-row">
-            <span class="setting-label">debug log</span>
+            <span class="setting-label">vocabulary <span class="hint-icon" title="Custom word replacements. Fix recurring transcription mistakes — e.g. 'def' → 'dev'. Select a word in the log to add it quickly.">?</span></span>
+            <button id="vocab-btn" class="setting-btn">abc</button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">debug log <span class="hint-icon" title="Internal log for troubleshooting. Shows recording events, API calls, and errors.">?</span></span>
             <button id="debug-btn" class="setting-btn">&gt;_</button>
           </div>
           <div class="setting-row">
             <a class="setting-label version-link" id="version-label" href="#" title="see changelog">v0.6.4</a>
-            <button id="update-btn" class="setting-btn">check update</button>
+            <button id="update-btn" class="setting-btn" title="Checks for new versions. When an update is available, the gear icon glows green — click here to download and install.">check update</button>
           </div>
         </div>
+      </div>
+
+      <div id="vocab-panel" style="display:none">
+        <div class="panel-header">
+          <span>vocabulary</span>
+          <button id="vocab-close">&times;</button>
+        </div>
+        <div class="vocab-add-row">
+          <input id="vocab-add-target" type="text" placeholder="correct word" autocomplete="off" />
+          <span class="vocab-arrow">&larr;</span>
+          <input id="vocab-add-alias" type="text" placeholder="misheard word" autocomplete="off" />
+          <button id="vocab-add-btn">+</button>
+        </div>
+        <input id="vocab-search" type="text" placeholder="search..." autocomplete="off" />
+        <div id="vocab-list"></div>
       </div>
 
       <div id="debug-panel" style="display:none">

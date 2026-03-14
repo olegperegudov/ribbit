@@ -42,6 +42,9 @@ function addLogEntry(text, ts) {
   entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span>`;
   entry.title = "click to copy";
   entry.addEventListener("click", () => {
+    // Don't copy if user is selecting text (for vocab popup)
+    const sel = window.getSelection();
+    if (sel && sel.toString().trim()) return;
     navigator.clipboard.writeText(text).then(() => {
       entry.classList.add("copied");
       setTimeout(() => entry.classList.remove("copied"), 800);
@@ -62,11 +65,145 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Show one panel at a time (log, settings, debug)
+// Show one panel at a time (log, settings, debug, vocab)
 function showPanel(name) {
   $("#log-entries").style.display = name === "log" ? "" : "none";
   $("#settings-panel").style.display = name === "settings" ? "flex" : "none";
   $("#debug-panel").style.display = name === "debug" ? "flex" : "none";
+  $("#vocab-panel").style.display = name === "vocab" ? "flex" : "none";
+}
+
+// --- Vocab helpers ---
+
+let vocabData = {}; // target → [aliases]
+
+function levenshtein(a, b) {
+  a = a.toLowerCase(); b = b.toLowerCase();
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+function findBestMatch(word) {
+  // Find the closest existing target by checking against all aliases AND targets
+  let best = null, bestDist = Infinity;
+  const w = word.toLowerCase();
+  for (const [target, aliases] of Object.entries(vocabData)) {
+    // Check distance to target itself
+    const dt = levenshtein(w, target);
+    if (dt < bestDist) { bestDist = dt; best = target; }
+    // Check distance to each alias
+    for (const alias of aliases) {
+      const da = levenshtein(w, alias);
+      if (da < bestDist) { bestDist = da; best = target; }
+    }
+  }
+  // Only suggest if reasonably close (distance <= half the word length)
+  if (best && bestDist <= Math.max(2, Math.ceil(w.length / 2))) return best;
+  return null;
+}
+
+// Apply vocab replacements to text (JS mirror of Rust vocab::apply)
+function applyVocab(text) {
+  const lookup = {};
+  for (const [target, aliases] of Object.entries(vocabData)) {
+    for (const alias of aliases) lookup[alias.toLowerCase()] = target;
+  }
+  if (Object.keys(lookup).length === 0) return text;
+
+  function matchCase(source, target) {
+    if (source === source.toUpperCase()) return target.toUpperCase();
+    if (source[0] === source[0].toUpperCase()) return target[0].toUpperCase() + target.slice(1);
+    return target;
+  }
+
+  // Phase 1: multi-word phrases (longest first)
+  const multi = Object.entries(lookup).filter(([a]) => a.includes(" ")).sort((a, b) => b[0].length - a[0].length);
+  let result = text;
+  for (const [alias, target] of multi) {
+    const re = new RegExp("(?<=^|[^\\w\u0400-\u04FF])" + alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?=$|[^\\w\u0400-\u04FF])", "gi");
+    result = result.replace(re, (m) => matchCase(m, target));
+  }
+
+  // Phase 2: single words
+  result = result.replace(/[\w\u0400-\u04FF]+/g, (word) => {
+    const target = lookup[word.toLowerCase()];
+    if (!target) return word;
+    return matchCase(word, target);
+  });
+
+  return result;
+}
+
+// Re-scan all visible log entries and apply vocab replacements
+function rescanLogEntries() {
+  for (const entry of document.querySelectorAll("#log-entries .log-entry")) {
+    const textEl = entry.querySelector(".log-text");
+    if (!textEl) continue;
+    const original = textEl.textContent;
+    const replaced = applyVocab(original);
+    if (replaced !== original) {
+      textEl.textContent = replaced;
+    }
+  }
+}
+
+function renderVocabList(filter = "") {
+  const list = $("#vocab-list");
+  list.innerHTML = "";
+  const fl = filter.toLowerCase();
+
+  // Sort: latin first, then cyrillic, alphabetical within each
+  const keys = Object.keys(vocabData).sort((a, b) => {
+    const aLat = /^[a-z]/i.test(a), bLat = /^[a-z]/i.test(b);
+    if (aLat !== bLat) return aLat ? -1 : 1;
+    return a.localeCompare(b);
+  });
+
+  for (const target of keys) {
+    const aliases = vocabData[target];
+    // Filter
+    if (fl && !target.toLowerCase().includes(fl) && !aliases.some(a => a.toLowerCase().includes(fl))) continue;
+
+    const row = document.createElement("div");
+    row.className = "vocab-row";
+
+    const targetSpan = document.createElement("span");
+    targetSpan.className = "vocab-target";
+    targetSpan.textContent = target;
+
+    const aliasesSpan = document.createElement("span");
+    aliasesSpan.className = "vocab-aliases";
+    for (const alias of aliases) {
+      const chip = document.createElement("span");
+      chip.className = "vocab-alias-chip";
+      chip.innerHTML = `${escapeHtml(alias)}<button class="vocab-alias-x" data-target="${escapeHtml(target)}" data-alias="${escapeHtml(alias)}">&times;</button>`;
+      aliasesSpan.appendChild(chip);
+    }
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "vocab-row-x";
+    removeBtn.textContent = "\u00d7";
+    removeBtn.dataset.target = target;
+
+    row.appendChild(targetSpan);
+    row.appendChild(document.createTextNode(" \u2190 "));
+    row.appendChild(aliasesSpan);
+    row.appendChild(removeBtn);
+    list.appendChild(row);
+  }
+
+  if (list.children.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "vocab-empty";
+    empty.textContent = filter ? "no matches" : "no words yet \u2014 add from here or select text in the log";
+    list.appendChild(empty);
+  }
 }
 
 // --- Main ---
@@ -384,4 +521,135 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("#debug-content").scrollTop = $("#debug-content").scrollHeight;
   });
   $("#debug-close").addEventListener("click", () => showPanel("log"));
+
+  // --- Vocab panel ---
+  try { vocabData = await invoke("get_vocab"); } catch (e) {}
+
+  $("#vocab-btn").addEventListener("click", () => {
+    renderVocabList();
+    showPanel("vocab");
+  });
+  $("#vocab-close").addEventListener("click", () => showPanel("log"));
+
+  // Search filter
+  $("#vocab-search").addEventListener("input", (e) => {
+    renderVocabList(e.target.value);
+  });
+
+  // Add new entry from panel
+  $("#vocab-add-btn").addEventListener("click", async () => {
+    const target = $("#vocab-add-target").value.trim();
+    const alias = $("#vocab-add-alias").value.trim();
+    if (!target || !alias) return;
+    try {
+      vocabData = await invoke("add_vocab_entry", { target, alias });
+      $("#vocab-add-target").value = "";
+      $("#vocab-add-alias").value = "";
+      renderVocabList($("#vocab-search").value);
+    } catch (e) { console.error("vocab add failed:", e); }
+  });
+
+  // Enter to add in either input
+  for (const id of ["#vocab-add-target", "#vocab-add-alias"]) {
+    $(id).addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); $("#vocab-add-btn").click(); }
+    });
+  }
+
+  // Remove alias (x on chip) or remove whole entry (x on row)
+  $("#vocab-list").addEventListener("click", async (e) => {
+    const aliasBtn = e.target.closest(".vocab-alias-x");
+    const rowBtn = e.target.closest(".vocab-row-x");
+    if (aliasBtn) {
+      const { target, alias } = aliasBtn.dataset;
+      try {
+        vocabData = await invoke("remove_vocab_alias", { target, alias });
+        renderVocabList($("#vocab-search").value);
+      } catch (err) { console.error(err); }
+    } else if (rowBtn) {
+      const target = rowBtn.dataset.target;
+      if (!confirm(`Remove "${target}" and all its aliases?`)) return;
+      try {
+        vocabData = await invoke("remove_vocab_entry", { target });
+        renderVocabList($("#vocab-search").value);
+      } catch (err) { console.error(err); }
+    }
+  });
+
+  // --- Selection popup for quick vocab add ---
+  const popup = $("#vocab-popup");
+  const popupInput = $("#vocab-popup-input");
+  const popupSuggestion = $("#vocab-popup-suggestion");
+  let popupSelectedWord = "";
+
+  function hidePopup() {
+    popup.style.display = "none";
+    popupSelectedWord = "";
+    popupInput.value = "";
+    popupSuggestion.style.display = "none";
+  }
+
+  // Show popup when text is selected in log entries
+  document.addEventListener("mouseup", (e) => {
+    // Only from log entries
+    if (!e.target.closest("#log-entries")) { return; }
+
+    const sel = window.getSelection();
+    const text = sel?.toString().trim();
+    if (!text) { hidePopup(); return; }
+
+    popupSelectedWord = text;
+    popupInput.value = "";
+
+    // Position popup near selection
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    popup.style.left = `${rect.left}px`;
+    popup.style.top = `${rect.bottom + 4}px`;
+    popup.style.display = "flex";
+
+    // Find best match from existing vocab
+    const suggestion = findBestMatch(text);
+    if (suggestion) {
+      popupSuggestion.textContent = suggestion;
+      popupSuggestion.style.display = "block";
+    } else {
+      popupSuggestion.style.display = "none";
+    }
+
+    // Focus input after a tick (so mouseup doesn't steal focus)
+    setTimeout(() => popupInput.focus(), 10);
+  });
+
+  // Click suggestion to add alias to existing entry
+  popupSuggestion.addEventListener("click", async () => {
+    if (!popupSelectedWord) return;
+    const target = popupSuggestion.textContent;
+    try {
+      vocabData = await invoke("add_vocab_entry", { target, alias: popupSelectedWord });
+      rescanLogEntries();
+    } catch (e) { console.error(e); }
+    hidePopup();
+  });
+
+  // Enter in popup input to create new entry or add to existing
+  popupInput.addEventListener("keydown", async (e) => {
+    if (e.key === "Escape") { hidePopup(); return; }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const target = popupInput.value.trim();
+    if (!target || !popupSelectedWord) return;
+    try {
+      vocabData = await invoke("add_vocab_entry", { target, alias: popupSelectedWord });
+      rescanLogEntries();
+    } catch (err) { console.error(err); }
+    hidePopup();
+  });
+
+  // Hide popup on click outside
+  document.addEventListener("mousedown", (e) => {
+    if (popup.style.display !== "none" && !popup.contains(e.target)) {
+      hidePopup();
+    }
+  });
 });

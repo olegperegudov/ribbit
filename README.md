@@ -5,7 +5,7 @@
 <h1 align="center">Ribbit</h1>
 
 <p align="center">
-  Simple, local voice-to-text dictation for Windows.<br/>
+  Simple, local voice-to-text dictation for Windows and macOS.<br/>
   Hold a hotkey, speak, release — transcribed text is pasted into any active window.
 </p>
 
@@ -23,7 +23,7 @@
 
 ## How it works
 
-1. **Hold** **Ctrl+Alt+Space** (customizable) anywhere on your desktop
+1. **Hold** **Ctrl+Alt+Space** (customizable, **Cmd+Alt+Space** on macOS) anywhere on your desktop
 2. Speak into your microphone
 3. **Release** to stop recording
 4. Ribbit transcribes your audio and pastes the text into the active window
@@ -34,7 +34,9 @@ All transcriptions are saved in a local log with timestamps, grouped by date.
 
 ### 1. Download
 
-Grab the latest installer from [Releases](https://github.com/olegperegudov/ribbit/releases/latest) and run `Ribbit_x.x.x_x64-setup.exe`.
+Grab the latest installer from [Releases](https://github.com/olegperegudov/ribbit/releases/latest):
+- **Windows** — `Ribbit_x.x.x_x64-setup.exe`
+- **macOS** — `Ribbit_x.x.x_aarch64.dmg` (Apple Silicon) or `Ribbit_x.x.x_x64.dmg` (Intel)
 
 ### 2. Get a free Groq API key
 
