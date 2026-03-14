@@ -34,9 +34,13 @@ All transcriptions are saved in a local log with timestamps, grouped by date.
 
 ### 1. Download
 
-Grab the latest installer from [Releases](https://github.com/olegperegudov/ribbit/releases/latest):
-- **Windows** — `Ribbit_x.x.x_x64-setup.exe`
-- **macOS** — `Ribbit_x.x.x_aarch64.dmg` (Apple Silicon) or `Ribbit_x.x.x_x64.dmg` (Intel)
+<p>
+  <a href="https://github.com/olegperegudov/ribbit/releases/latest"><img src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows" /></a>&nbsp;
+  <a href="https://github.com/olegperegudov/ribbit/releases/latest"><img src="https://img.shields.io/badge/macOS_%E2%80%93_Apple_Silicon-000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS Apple Silicon" /></a>&nbsp;
+  <a href="https://github.com/olegperegudov/ribbit/releases/latest"><img src="https://img.shields.io/badge/macOS_%E2%80%93_Intel-666?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS Intel" /></a>
+</p>
+
+Pick your platform from the [Releases](https://github.com/olegperegudov/ribbit/releases/latest) page.
 
 ### 2. Get a free Groq API key
 
