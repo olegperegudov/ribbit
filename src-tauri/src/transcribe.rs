@@ -102,13 +102,14 @@ pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32, languages
         .part("file", file_part)
         .text("model", model.to_string());
 
-    // Single language: pass directly as `language` param
-    // Multiple languages: use `prompt` hint to bias detection
-    if languages.len() == 1 {
+    // Pass first language as `language` param (strongest signal for Whisper)
+    // For multiple languages, also add a prompt hint
+    if !languages.is_empty() {
         form = form.text("language", languages[0].clone());
-    } else if languages.len() > 1 {
-        let names: Vec<&str> = languages.iter().map(|c| lang_name(c)).collect();
-        form = form.text("prompt", format!("Dictation in {}.", names.join(" and ")));
+        if languages.len() > 1 {
+            let names: Vec<&str> = languages.iter().map(|c| lang_name(c)).collect();
+            form = form.text("prompt", format!("Dictation in {}.", names.join(" and ")));
+        }
     }
 
     let t0 = std::time::Instant::now();

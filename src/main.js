@@ -26,7 +26,7 @@ function formatDate(isoString) {
 
 function addLogEntry(text, ts) {
   const log = $("#log-entries");
-  const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const dateLabel = ts ? formatDate(ts) : "TODAY";
 
   const lastDateSep = log.querySelector(".date-sep:first-child");
