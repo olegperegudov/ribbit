@@ -10,7 +10,7 @@ const $ = (sel) => document.querySelector(sel);
 
 function formatTime(isoString) {
   const d = new Date(isoString);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function formatDate(isoString) {
