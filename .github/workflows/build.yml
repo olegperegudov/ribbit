@@ -3,16 +3,87 @@ name: Build Ribbit
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 jobs:
+  # Auto-bump patch version, commit, and tag
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      skipped: ${{ steps.bump.outputs.skipped }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Auto-bump version
+        id: bump
+        run: |
+          # Read current version from tauri.conf.json
+          CURRENT=$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          echo "Current version: $CURRENT"
+
+          # Check if this commit already has a tag (avoid re-bumping version commits)
+          if git describe --exact-match HEAD 2>/dev/null; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "Commit already tagged, skipping"
+            exit 0
+          fi
+
+          # Check if last commit was a version bump (avoid infinite loop)
+          LAST_MSG=$(git log -1 --pretty=%s)
+          if [[ "$LAST_MSG" == v* ]] || [[ "$LAST_MSG" == *"auto-bump"* ]]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "Last commit was version bump, skipping"
+            exit 0
+          fi
+
+          # Bump patch version
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          PATCH=$((PATCH + 1))
+          NEW="$MAJOR.$MINOR.$PATCH"
+          TAG="v$NEW"
+          echo "Bumping to: $NEW"
+
+          # Update version in all files
+          python3 -c "
+          import json
+          for f in ['src-tauri/tauri.conf.json']:
+              d = json.load(open(f))
+              d['version'] = '$NEW'
+              json.dump(d, open(f, 'w'), indent=2)
+              print(f'Updated {f}')
+          "
+
+          sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" src-tauri/Cargo.toml
+          sed -i "s/v$CURRENT/v$NEW/" src/index.html
+
+          # Commit and tag
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "$TAG auto-bump"
+          git tag "$TAG"
+          git push origin main "$TAG"
+
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+
   build-windows:
+    needs: version
+    if: needs.version.outputs.skipped != 'true'
     runs-on: windows-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -49,25 +120,22 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           args: --target x86_64-pc-windows-msvc --bundles nsis
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('Ribbit {0}', github.ref_name) || '' }}
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
           prerelease: false
 
-      - name: Upload artifact (non-tag builds)
-        if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ribbit-windows
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-
   build-macos:
+    needs: version
+    if: needs.version.outputs.skipped != 'true'
     runs-on: macos-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -93,8 +161,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target aarch64-apple-darwin --bundles dmg
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('Ribbit {0}', github.ref_name) || '' }}
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
           prerelease: false
@@ -105,17 +173,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target x86_64-apple-darwin --bundles dmg
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('Ribbit {0}', github.ref_name) || '' }}
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
           prerelease: false
-
-      - name: Upload artifacts (non-tag builds)
-        if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ribbit-macos
-          path: |
-            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
