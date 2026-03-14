@@ -343,6 +343,14 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
+                    // Log transcription first — ensures text is saved even if paste fails
+                    logger::log_transcription(&text, duration_secs);
+                    usage::record(duration_secs);
+                    let _ = app_handle.emit("transcription", serde_json::json!({
+                        "text": &text,
+                        "duration": duration_secs,
+                    }));
+
                     let _ = app_handle.emit("status-detail", "Inserting text...");
 
                     // Small delay to let the UI update and the previous app regain focus
@@ -351,18 +359,12 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     if let Err(e) = inserter::insert_text(&text) {
                         debug_log::log(&format!("insert error: {}", e));
                         let _ = app_handle.emit("error",
-                            format!("Paste failed: {}", e));
+                            format!("Paste failed — text saved to log. {}", e));
                     } else {
                         debug_log::log("text inserted OK");
                     }
 
-                    logger::log_transcription(&text, duration_secs);
-                    usage::record(duration_secs);
                     app_handle.state::<sound::SoundPlayer>().play(sound::SoundKind::Done);
-                    let _ = app_handle.emit("transcription", serde_json::json!({
-                        "text": &text,
-                        "duration": duration_secs,
-                    }));
                     let _ = app_handle.emit("status-detail", "Done!");
                 }
             }

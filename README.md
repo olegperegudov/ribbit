@@ -17,8 +17,8 @@
 </p>
 
 <p align="center">
-  <b>Free to use</b> — requires a free <a href="https://groq.com/">Groq</a> API key (no credit card, generous free tier)<br/>
-  <b>Private by design</b> — no accounts, no cloud storage, no telemetry
+  <b>Free to use</b> — just needs a free <a href="https://console.groq.com/keys">Groq</a> account (no credit card, generous free tier)<br/>
+  <b>Private by design</b> — no cloud storage, no telemetry, your data stays on your machine
 </p>
 
 ## How it works
@@ -51,7 +51,7 @@ When you first launch Ribbit, you'll see a setup screen. Paste your key and clic
 - **Hold-to-record** — hold the hotkey to record, release to transcribe
 - **Auto-paste** — transcribed text goes straight into your active window via Ctrl+V
 - **Works everywhere** — global hotkey works from any app, even when Ribbit is minimized
-- **Local and private** — no accounts, no cloud sync, no data collection
+- **Local and private** — no cloud sync, no data collection (only a free Groq account needed for the API)
 - **Transcription log** — history with timestamps, grouped by date
 - **Sound packs** — frog or ping audio feedback (switch in settings)
 - **System tray** — runs quietly in the background, X hides to tray

@@ -40,6 +40,13 @@ function addLogEntry(text, ts) {
   const entry = document.createElement("div");
   entry.className = "log-entry";
   entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span>`;
+  entry.title = "click to copy";
+  entry.addEventListener("click", () => {
+    navigator.clipboard.writeText(text).then(() => {
+      entry.classList.add("copied");
+      setTimeout(() => entry.classList.remove("copied"), 800);
+    });
+  });
 
   const firstSep = log.querySelector(".date-sep");
   if (firstSep && firstSep.nextSibling) {
