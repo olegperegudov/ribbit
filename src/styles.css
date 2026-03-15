@@ -705,6 +705,12 @@ kbd.capturing {
 }
 .vocab-row-x:hover { color: #ef4444; }
 
+.vocab-hint {
+  color: #4b5563;
+  font-size: 0.6rem;
+  padding: 0 0 0.3rem;
+}
+
 .vocab-empty {
   color: #4b5563;
   font-size: 0.65rem;
