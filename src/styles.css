@@ -261,7 +261,6 @@ body {
 #settings-panel {
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
 }
 
 .settings-content {
