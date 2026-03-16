@@ -32,20 +32,21 @@ impl SoundPlayer {
         std::thread::spawn(move || {
             crate::debug_log::log("sound: thread started");
 
+            // Open output stream once and keep it alive for the thread's lifetime.
+            // This avoids Windows audio session issues when the window is not focused.
+            let (_stream, handle) = match rodio::OutputStream::try_default() {
+                Ok(s) => s,
+                Err(e) => {
+                    crate::debug_log::log(&format!("sound: output open failed: {}", e));
+                    return;
+                }
+            };
+
             for kind in rx {
                 let label = match &kind {
                     SoundKind::Start => "start",
                     SoundKind::Stop => "stop",
                     SoundKind::Done => "done",
-                };
-
-                // Re-open output stream each time to follow the current default device
-                let (_stream, handle) = match rodio::OutputStream::try_default() {
-                    Ok(s) => s,
-                    Err(e) => {
-                        crate::debug_log::log(&format!("sound: output open failed: {}", e));
-                        continue;
-                    }
                 };
 
                 let is_knock = SOUND_PACK.load(Ordering::Relaxed) == 1;
@@ -65,9 +66,7 @@ impl SoundPlayer {
                 match rodio::Decoder::new(cursor) {
                     Ok(source) => {
                         use rodio::Source;
-                        match handle.play_raw(
-                            source.convert_samples(),
-                        ) {
+                        match handle.play_raw(source.convert_samples()) {
                             Ok(()) => {
                                 crate::debug_log::log(&format!("sound: played {}-{}", pack_name, label));
                                 std::thread::sleep(std::time::Duration::from_millis(500));
