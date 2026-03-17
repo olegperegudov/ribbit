@@ -26,19 +26,52 @@ pub struct SoundPlayer {
     tx: std::sync::Mutex<mpsc::Sender<SoundKind>>,
 }
 
+/// Play sound on the given output handle.
+/// Returns true on success, false on failure.
+fn play_on(handle: &rodio::OutputStreamHandle, ogg_data: &[u8], pack_name: &str, label: &str) -> bool {
+    let cursor = Cursor::new(ogg_data);
+    match rodio::Decoder::new(cursor) {
+        Ok(source) => {
+            use rodio::Source;
+            match handle.play_raw(source.convert_samples()) {
+                Ok(()) => {
+                    crate::debug_log::log(&format!("sound: played {}-{}", pack_name, label));
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    true
+                }
+                Err(e) => {
+                    crate::debug_log::log(&format!("sound: play failed: {}", e));
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            crate::debug_log::log(&format!("sound: decode error: {}", e));
+            false
+        }
+    }
+}
+
 impl SoundPlayer {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             crate::debug_log::log("sound: thread started");
 
-            // Open output stream once and keep it alive for the thread's lifetime.
-            // This avoids Windows audio session issues when the window is not focused.
-            let (_stream, handle) = match rodio::OutputStream::try_default() {
-                Ok(s) => s,
+            // Keep a cached stream for when we can't open a fresh one (e.g. unfocused).
+            // Try fresh stream first each time — this handles device changes and stale streams.
+            // Fall back to cached stream if fresh open fails (Windows blocks new audio sessions
+            // for unfocused apps).
+            let mut cached: Option<(rodio::OutputStream, rodio::OutputStreamHandle)> = None;
+
+            // Initialize cached stream
+            match rodio::OutputStream::try_default() {
+                Ok((stream, handle)) => {
+                    crate::debug_log::log("sound: initial stream opened");
+                    cached = Some((stream, handle));
+                }
                 Err(e) => {
-                    crate::debug_log::log(&format!("sound: output open failed: {}", e));
-                    return;
+                    crate::debug_log::log(&format!("sound: initial open failed: {}", e));
                 }
             };
 
@@ -62,19 +95,32 @@ impl SoundPlayer {
                     (QUACK_OGG, "frog")
                 };
 
-                let cursor = Cursor::new(ogg_data);
-                match rodio::Decoder::new(cursor) {
-                    Ok(source) => {
-                        use rodio::Source;
-                        match handle.play_raw(source.convert_samples()) {
-                            Ok(()) => {
-                                crate::debug_log::log(&format!("sound: played {}-{}", pack_name, label));
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-                            }
-                            Err(e) => crate::debug_log::log(&format!("sound: play failed: {}", e)),
-                        }
+                // Strategy: try fresh stream first, fall back to cached.
+                // This ensures we always use the current default audio device,
+                // but still work when unfocused (Windows blocks new stream creation).
+                let mut played = false;
+
+                // Try opening a fresh stream (picks up device changes)
+                if let Ok((new_stream, new_handle)) = rodio::OutputStream::try_default() {
+                    if play_on(&new_handle, ogg_data, pack_name, label) {
+                        // Fresh stream worked — update cache
+                        cached = Some((new_stream, new_handle));
+                        played = true;
                     }
-                    Err(e) => crate::debug_log::log(&format!("sound: decode error: {}", e)),
+                }
+
+                // Fall back to cached stream
+                if !played {
+                    if let Some((_, ref handle)) = cached {
+                        crate::debug_log::log("sound: fresh stream failed, using cached");
+                        played = play_on(handle, ogg_data, pack_name, label);
+                    }
+                }
+
+                // Both failed — try to re-init cache for next time
+                if !played {
+                    crate::debug_log::log("sound: all playback failed, will retry next time");
+                    cached = None;
                 }
             }
             crate::debug_log::log("sound: channel closed, thread exiting");
