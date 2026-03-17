@@ -28,7 +28,7 @@ pub struct SoundPlayer {
 
 /// Play sound on the given output handle.
 /// Returns true on success, false on failure.
-fn play_on(handle: &rodio::OutputStreamHandle, ogg_data: &[u8], pack_name: &str, label: &str) -> bool {
+fn play_on(handle: &rodio::OutputStreamHandle, ogg_data: &'static [u8], pack_name: &str, label: &str) -> bool {
     let cursor = Cursor::new(ogg_data);
     match rodio::Decoder::new(cursor) {
         Ok(source) => {
