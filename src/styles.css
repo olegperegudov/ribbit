@@ -718,6 +718,49 @@ kbd.capturing {
   padding: 1.5rem 0;
 }
 
+/* Vocab key inline edit */
+.vocab-key-edit {
+  background: #0f1318;
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  border-radius: 3px;
+  color: #4ade80;
+  font-size: 0.7rem;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 1px 4px;
+  outline: none;
+  width: 80px;
+}
+
+/* Merge popup */
+.vocab-merge-popup {
+  position: fixed;
+  background: #1a1f28;
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.6rem;
+  color: #9ca3af;
+  z-index: 200;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  white-space: nowrap;
+}
+
+.merge-yes, .merge-no {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.6rem;
+  font-family: inherit;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: color 0.15s;
+}
+.merge-yes { color: #4ade80; }
+.merge-yes:hover { color: #22c55e; background: rgba(34, 197, 94, 0.1); }
+.merge-no { color: #6b7280; }
+.merge-no:hover { color: #ef4444; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }

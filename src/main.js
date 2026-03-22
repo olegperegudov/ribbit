@@ -174,6 +174,98 @@ function rescanLogEntries() {
   }
 }
 
+function startEditingKey(span, oldKey) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = oldKey;
+  input.className = "vocab-key-edit";
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  async function finish(save) {
+    if (done) return;
+    done = true;
+    const newKey = input.value.trim();
+    if (!save || !newKey || newKey === oldKey) {
+      // Restore original
+      const restored = document.createElement("span");
+      restored.className = "vocab-target";
+      restored.textContent = oldKey;
+      restored.title = "click to rename";
+      restored.style.cursor = "pointer";
+      restored.addEventListener("click", () => startEditingKey(restored, oldKey));
+      input.replaceWith(restored);
+      return;
+    }
+    // Check for duplicate key
+    const existingKey = Object.keys(vocabData).find(k => k.toLowerCase() === newKey.toLowerCase() && k !== oldKey);
+    if (existingKey) {
+      // Show merge popup above the input
+      showMergePopup(input, oldKey, existingKey);
+      return;
+    }
+    // Rename: move aliases from old key to new key
+    const aliases = vocabData[oldKey] || [];
+    delete vocabData[oldKey];
+    vocabData[newKey] = aliases;
+    try {
+      await invoke("set_vocab", { vocabData: vocabData });
+      rescanLogEntries();
+    } catch (e) { console.error(e); }
+    renderVocabList($("#vocab-search").value);
+  }
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => setTimeout(() => finish(false), 150));
+}
+
+function showMergePopup(anchorEl, oldKey, existingKey) {
+  // Remove any existing merge popup
+  document.querySelector(".vocab-merge-popup")?.remove();
+
+  const popup = document.createElement("div");
+  popup.className = "vocab-merge-popup";
+  popup.innerHTML = `similar key found, merge keys? : <button class="merge-yes">yes</button> | <button class="merge-no">no</button>`;
+
+  // Position above the input
+  const rect = anchorEl.getBoundingClientRect();
+  popup.style.left = `${rect.left}px`;
+  popup.style.top = `${rect.top - 28}px`;
+  document.body.appendChild(popup);
+
+  popup.querySelector(".merge-yes").addEventListener("click", async () => {
+    popup.remove();
+    // Merge: combine aliases from oldKey into existingKey
+    const oldAliases = vocabData[oldKey] || [];
+    const existing = vocabData[existingKey] || [];
+    for (const alias of oldAliases) {
+      if (!existing.some(a => a.toLowerCase() === alias.toLowerCase())) {
+        existing.push(alias);
+      }
+    }
+    vocabData[existingKey] = existing;
+    delete vocabData[oldKey];
+    try {
+      await invoke("set_vocab", { vocabData: vocabData });
+      rescanLogEntries();
+    } catch (e) { console.error(e); }
+    renderVocabList($("#vocab-search").value);
+  });
+
+  popup.querySelector(".merge-no").addEventListener("click", () => {
+    popup.remove();
+    renderVocabList($("#vocab-search").value);
+  });
+
+  // Auto-close after 5s
+  setTimeout(() => { if (popup.parentNode) { popup.remove(); renderVocabList($("#vocab-search").value); } }, 5000);
+}
+
 function renderVocabList(filter = "") {
   const list = $("#vocab-list");
   list.innerHTML = "";
@@ -197,6 +289,9 @@ function renderVocabList(filter = "") {
     const targetSpan = document.createElement("span");
     targetSpan.className = "vocab-target";
     targetSpan.textContent = target;
+    targetSpan.title = "click to rename";
+    targetSpan.style.cursor = "pointer";
+    targetSpan.addEventListener("click", () => startEditingKey(targetSpan, target));
 
     const aliasesSpan = document.createElement("span");
     aliasesSpan.className = "vocab-aliases";
@@ -589,7 +684,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       } catch (err) { console.error(err); }
     } else if (rowBtn) {
       const target = rowBtn.dataset.target;
-      if (!confirm(`Remove "${target}" and all its aliases?`)) return;
       try {
         vocabData = await invoke("remove_vocab_entry", { target });
         renderVocabList($("#vocab-search").value);
