@@ -761,6 +761,14 @@ kbd.capturing {
 .merge-no { color: #6b7280; }
 .merge-no:hover { color: #ef4444; }
 
+/* Vocab selection highlight (fuchsia while popup is open) */
+.vocab-selection-highlight {
+  background: rgba(217, 70, 239, 0.3);
+  color: #e879f9;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -697,12 +697,22 @@ window.addEventListener("DOMContentLoaded", async () => {
   const popupInput = $("#vocab-popup-input");
   const popupSuggestion = $("#vocab-popup-suggestion");
   let popupSelectedWord = "";
+  let popupHighlightedSpan = null;
 
   function hidePopup() {
     popup.style.display = "none";
     popupSelectedWord = "";
     popupInput.value = "";
     popupSuggestion.style.display = "none";
+    // Remove fuchsia highlight
+    if (popupHighlightedSpan) {
+      const parent = popupHighlightedSpan.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(popupHighlightedSpan.textContent), popupHighlightedSpan);
+        parent.normalize();
+      }
+      popupHighlightedSpan = null;
+    }
   }
 
   // Show popup when text is selected in log entries
@@ -717,9 +727,28 @@ window.addEventListener("DOMContentLoaded", async () => {
     popupSelectedWord = text;
     popupInput.value = "";
 
-    // Position popup near selection
+    // Wrap selected text in a highlight span so it stays visible after focus moves
     const range = sel.getRangeAt(0);
     const rect = range.getBoundingClientRect();
+
+    // Remove previous highlight if any
+    if (popupHighlightedSpan) {
+      const p = popupHighlightedSpan.parentNode;
+      if (p) {
+        p.replaceChild(document.createTextNode(popupHighlightedSpan.textContent), popupHighlightedSpan);
+        p.normalize();
+      }
+      popupHighlightedSpan = null;
+    }
+
+    const highlight = document.createElement("span");
+    highlight.className = "vocab-selection-highlight";
+    highlight.textContent = text;
+    range.deleteContents();
+    range.insertNode(highlight);
+    popupHighlightedSpan = highlight;
+    sel.removeAllRanges();
+
     popup.style.left = `${rect.left}px`;
     popup.style.top = `${rect.bottom + 4}px`;
     popup.style.display = "flex";
