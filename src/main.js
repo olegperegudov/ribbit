@@ -45,7 +45,8 @@ function addLogEntry(text, ts) {
     // Don't copy if user is selecting text (for vocab popup)
     const sel = window.getSelection();
     if (sel && sel.toString().trim()) return;
-    navigator.clipboard.writeText(text).then(() => {
+    const currentText = entry.querySelector(".log-text").textContent;
+    navigator.clipboard.writeText(currentText).then(() => {
       entry.classList.add("copied");
       setTimeout(() => entry.classList.remove("copied"), 800);
     });
