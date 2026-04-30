@@ -358,16 +358,23 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   let micReady = false;
+  let meterHeight = 0;
 
   await listen("recording-status", (event) => {
     const icon = $("#status-icon");
+    const meter = $("#audio-meter");
+    const bar = $("#audio-meter-bar");
     if (event.payload) {
       icon.className = "recording";
       micReady = false;
       $("#status-detail").textContent = "starting mic...";
+      meterHeight = 0;
+      bar.style.height = "0%";
+      meter.classList.add("active");
     } else {
       icon.className = "idle";
       $("#status-detail").textContent = "";
+      meter.classList.remove("active");
     }
   });
 
@@ -376,6 +383,13 @@ window.addEventListener("DOMContentLoaded", async () => {
       micReady = true;
       $("#status-detail").textContent = "listening...";
     }
+    // RMS → dB → 0..100% via -60dB floor; peak-hold with decay so bar doesn't
+    // flicker on inter-syllable nulls.
+    const rms = Math.max(Number(event.payload) || 0, 1e-6);
+    const db = 20 * Math.log10(rms);
+    const target = Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+    meterHeight = target > meterHeight ? target : meterHeight * 0.85;
+    $("#audio-meter-bar").style.height = meterHeight.toFixed(1) + "%";
   });
 
   let hasError = false;
