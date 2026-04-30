@@ -415,7 +415,6 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
             Err(e) => {
                 debug_log::log(&format!("transcription error: {}", e));
                 let _ = app_handle.emit("error", e.clone());
-                let _ = app_handle.emit("status-detail", format!("Error: {}", e));
             }
         }
 

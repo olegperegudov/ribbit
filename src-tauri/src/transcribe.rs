@@ -4,7 +4,12 @@ use std::sync::OnceLock;
 static HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 
 fn client() -> &'static reqwest::blocking::Client {
-    HTTP_CLIENT.get_or_init(|| reqwest::blocking::Client::new())
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .expect("failed to build HTTP client")
+    })
 }
 
 /// Pre-initialize the HTTP client so first request doesn't pay TLS cost

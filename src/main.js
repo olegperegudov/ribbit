@@ -378,13 +378,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  let hasError = false;
+
   await listen("transcribing", (event) => {
     if (event.payload) {
+      hasError = false;
       $("#status-icon").className = "transcribing";
       $("#status-detail").textContent = "ribbiting...";
     } else {
       $("#status-icon").className = "idle";
-      $("#status-detail").textContent = "";
+      if (!hasError) {
+        $("#status-detail").textContent = "";
+      }
     }
   });
 
@@ -394,8 +399,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await listen("error", (event) => {
+    hasError = true;
     $("#status-detail").textContent = event.payload.toLowerCase();
-    setTimeout(() => { $("#status-detail").textContent = ""; }, 5000);
+    setTimeout(() => { $("#status-detail").textContent = ""; hasError = false; }, 5000);
   });
 
   // Window controls: _ = minimize to taskbar, X = hide to tray
