@@ -491,6 +491,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     const parts = [];
+    if (e.metaKey) parts.push("cmd");
     if (e.ctrlKey) parts.push("ctrl");
     if (e.altKey) parts.push("alt");
     if (e.shiftKey) parts.push("shift");
@@ -502,8 +503,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       parts.push(keyMap[key] || key);
     }
 
-    const hasModifier = parts.some(p => ["ctrl", "alt", "shift"].includes(p));
-    const hasKey = parts.some(p => !["ctrl", "alt", "shift"].includes(p));
+    const hasModifier = parts.some(p => ["cmd", "ctrl", "alt", "shift"].includes(p));
+    const hasKey = parts.some(p => !["cmd", "ctrl", "alt", "shift"].includes(p));
     if (hasModifier && hasKey) {
       capturedKeys = parts.join("+");
       shortcutEl.textContent = capturedKeys;

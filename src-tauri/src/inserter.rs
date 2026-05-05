@@ -16,15 +16,20 @@ pub fn insert_text(text: &str) -> Result<(), String> {
 
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
 
-    // Simulate paste: Ctrl+V on Windows (VK code), Cmd+V on macOS (Unicode)
+    // Simulate paste: Cmd+V on macOS, Ctrl+V on Windows.
+    // Both branches use raw scan codes (Key::Other) instead of Key::Unicode.
+    // On macOS, Key::Unicode triggers HIToolbox layout lookup
+    // (TSMGetInputSourceProperty), which asserts main-thread and SIGTRAPs
+    // when called from the background thread that runs post-transcription.
+    // 0x09 = kVK_ANSI_V; Cmd+physical-V pastes regardless of layout.
     let paste_result = (|| -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
             enigo.key(Key::Meta, Direction::Press).map_err(|e| format!("cmd press: {}", e))?;
             thread::sleep(Duration::from_millis(20));
-            enigo.key(Key::Unicode('v'), Direction::Press).map_err(|e| format!("v press: {}", e))?;
+            enigo.key(Key::Other(0x09), Direction::Press).map_err(|e| format!("v press: {}", e))?;
             thread::sleep(Duration::from_millis(20));
-            enigo.key(Key::Unicode('v'), Direction::Release).map_err(|e| format!("v release: {}", e))?;
+            enigo.key(Key::Other(0x09), Direction::Release).map_err(|e| format!("v release: {}", e))?;
             thread::sleep(Duration::from_millis(20));
             enigo.key(Key::Meta, Direction::Release).map_err(|e| format!("cmd release: {}", e))?;
             debug_log::log("Cmd+V simulated");
