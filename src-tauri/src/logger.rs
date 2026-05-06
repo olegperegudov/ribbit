@@ -87,7 +87,14 @@ pub fn read_recent_entries(limit: usize) -> Vec<serde_json::Value> {
         }
     }
 
-    all_entries.reverse(); // newest first
+    // Sort by ts descending (newest first). Naive reverse() ломался когда
+    // вчерашних записей > limit — сегодняшние оказывались в хвосте и резались
+    // truncate'ом, хотя фактически они новее.
+    all_entries.sort_by(|a, b| {
+        let ta = a["ts"].as_str().unwrap_or("");
+        let tb = b["ts"].as_str().unwrap_or("");
+        tb.cmp(ta)
+    });
     all_entries.truncate(limit);
     all_entries
 }

@@ -6,6 +6,7 @@ mod debug_log;
 mod usage;
 mod sound;
 mod vocab;
+mod tcc_reset;
 
 use std::sync::{Arc, Mutex};
 use tauri::{
@@ -483,6 +484,7 @@ fn register_shortcut(app: &AppHandle, shortcut: Shortcut) -> Result<(), String> 
 pub fn run() {
     debug_log::log("=== Ribbit starting ===");
     logger::cleanup_old_logs();
+    tcc_reset::ensure_permissions("com.ribbit.app");
 
     // Load .env from config dir (primary)
     if let Some(config_dir) = dirs::config_dir() {
