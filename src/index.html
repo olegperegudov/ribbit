@@ -38,25 +38,25 @@
       <div id="settings-panel" style="display:none">
         <div class="settings-content">
           <div class="setting-row">
-            <span class="setting-label">hotkey <span class="hint-icon" title="Click the shortcut, press your new combo, then Enter to save or Esc to cancel.">?</span></span>
+            <span class="setting-label">hotkey <span class="hint-icon" data-hint="Click the shortcut, press your new combo, then Enter to save or Esc to cancel." tabindex="0" role="button" aria-label="Help: hotkey">?</span></span>
             <kbd id="shortcut-display">ctrl+alt+space</kbd>
           </div>
           <div class="setting-row">
-            <span class="setting-label">always on top <span class="hint-icon" title="Keep the Ribbit window above all other windows.">?</span></span>
+            <span class="setting-label">always on top <span class="hint-icon" data-hint="Keep the Ribbit window above all other windows." tabindex="0" role="button" aria-label="Help: always on top">?</span></span>
             <label class="toggle">
               <input type="checkbox" id="always-on-top" />
               <span class="toggle-slider"></span>
             </label>
           </div>
           <div class="setting-row">
-            <span class="setting-label">sound <span class="hint-icon" title="Audio feedback when recording starts. Frog = quack, Ping = subtle knock.">?</span></span>
+            <span class="setting-label">sound <span class="hint-icon" data-hint="Audio feedback when recording starts. Frog = quack, Ping = subtle knock." tabindex="0" role="button" aria-label="Help: sound">?</span></span>
             <select id="sound-select">
               <option value="frog">frog</option>
               <option value="ping">ping</option>
             </select>
           </div>
           <div class="setting-row setting-row-lang">
-            <span class="setting-label">languages <span class="hint-icon" title="Optional. Groq auto-detects the language, but selecting yours reduces errors — especially for short phrases.">?</span></span>
+            <span class="setting-label">languages <span class="hint-icon" data-hint="Optional. Groq auto-detects the language, but selecting yours reduces errors — especially for short phrases." tabindex="0" role="button" aria-label="Help: languages">?</span></span>
             <div class="lang-right">
               <div id="lang-chips"></div>
               <select id="lang-select">
@@ -79,11 +79,11 @@
             </div>
           </div>
           <div class="setting-row">
-            <span class="setting-label">vocabulary <span class="hint-icon" title="Custom word replacements. Fix recurring transcription mistakes — e.g. 'def' → 'dev'. Select a word in the log to add it quickly.">?</span></span>
+            <span class="setting-label">vocabulary <span class="hint-icon" data-hint="Custom word replacements. Fix recurring transcription mistakes — e.g. 'def' → 'dev'. Select a word in the log to add it quickly." tabindex="0" role="button" aria-label="Help: vocabulary">?</span></span>
             <button id="vocab-btn" class="setting-btn">abc</button>
           </div>
           <div class="setting-row">
-            <span class="setting-label">debug log <span class="hint-icon" title="Internal log for troubleshooting. Shows recording events, API calls, and errors.">?</span></span>
+            <span class="setting-label">debug log <span class="hint-icon" data-hint="Internal log for troubleshooting. Shows recording events, API calls, and errors." tabindex="0" role="button" aria-label="Help: debug log">?</span></span>
             <button id="debug-btn" class="setting-btn">&gt;_</button>
           </div>
           <div class="setting-row">
@@ -138,6 +138,8 @@
           <button type="submit">save</button>
         </form>
       </div>
+
+      <div id="tooltip" role="tooltip" aria-hidden="true"></div>
     </main>
   </body>
 </html>

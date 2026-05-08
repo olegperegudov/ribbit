@@ -448,9 +448,38 @@ kbd.capturing {
   transition: color 0.15s, border-color 0.15s;
 }
 
-.hint-icon:hover {
+.hint-icon:hover,
+.hint-icon:focus-visible {
   color: #4ade80;
   border-color: rgba(74, 222, 128, 0.5);
+  outline: none;
+}
+
+/* Custom tooltip — replaces native title="" which is unreliable across webview engines
+   (silent on WKWebView/macOS, slow on WebView2/Windows). Pure DOM, identical on both. */
+#tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: 240px;
+  padding: 6px 9px;
+  background: #1a1f2e;
+  color: #d1d5db;
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  visibility: hidden;
+}
+
+#tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
 }
 
 /* Language selector */

@@ -818,4 +818,97 @@ window.addEventListener("DOMContentLoaded", async () => {
       hidePopup();
     }
   });
+
+  initTooltips();
 });
+
+// --- Tooltips ---
+// Custom hover/focus/tap tooltip for [data-hint] elements. Replaces native
+// title="" which is unreliable across webview engines (silent on WKWebView/macOS,
+// slow on WebView2/Windows). Pure DOM, identical behaviour on both platforms.
+function initTooltips() {
+  const tip = document.getElementById("tooltip");
+  if (!tip) return;
+
+  let tapHideTimer = null;
+
+  function show(el) {
+    const text = el.getAttribute("data-hint");
+    if (!text) return;
+    tip.textContent = text;
+    tip.classList.add("visible");
+    tip.setAttribute("aria-hidden", "false");
+    position(el);
+  }
+
+  function hide() {
+    tip.classList.remove("visible");
+    tip.setAttribute("aria-hidden", "true");
+    clearTimeout(tapHideTimer);
+    tapHideTimer = null;
+  }
+
+  // Position under the icon, centered. Clamp to viewport so it never clips off-screen.
+  function position(el) {
+    const r = el.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const margin = 6;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let top = r.bottom + margin;
+    let left = r.left + r.width / 2 - tipRect.width / 2;
+
+    // Flip above if no room below.
+    if (top + tipRect.height > vh - 4) {
+      top = r.top - tipRect.height - margin;
+    }
+    // Clamp horizontally.
+    left = Math.max(4, Math.min(left, vw - tipRect.width - 4));
+
+    tip.style.top = `${top}px`;
+    tip.style.left = `${left}px`;
+  }
+
+  // Pointer events cover mouse + touch + pen uniformly across both webviews.
+  document.addEventListener("pointerover", (e) => {
+    const el = e.target.closest("[data-hint]");
+    if (el) show(el);
+  });
+  document.addEventListener("pointerout", (e) => {
+    const el = e.target.closest("[data-hint]");
+    if (!el) return;
+    // Ignore moves between child nodes of the same hint icon.
+    if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+    hide();
+  });
+
+  // Keyboard navigation (Tab to icon → show; Esc → hide).
+  document.addEventListener("focusin", (e) => {
+    const el = e.target.closest("[data-hint]");
+    if (el) show(el);
+  });
+  document.addEventListener("focusout", (e) => {
+    if (e.target.closest("[data-hint]")) hide();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hide();
+  });
+
+  // Tap on touch / trackpad click — toggle with auto-hide so it works without hover.
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-hint]");
+    if (!el) return;
+    if (tip.classList.contains("visible") && tip.textContent === el.getAttribute("data-hint")) {
+      hide();
+    } else {
+      show(el);
+      clearTimeout(tapHideTimer);
+      tapHideTimer = setTimeout(hide, 3500);
+    }
+  });
+
+  // Reposition / hide when layout shifts.
+  window.addEventListener("scroll", hide, true);
+  window.addEventListener("resize", hide);
+}
