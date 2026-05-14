@@ -55,6 +55,11 @@ fn get_log_history(limit: usize) -> Vec<serde_json::Value> {
 }
 
 #[tauri::command]
+fn js_debug_log(msg: String) {
+    debug_log::log(&format!("[js] {}", msg));
+}
+
+#[tauri::command]
 fn get_debug_log() -> String {
     let log_path = match dirs::config_dir() {
         Some(d) => d.join("ribbit").join("logs").join("debug.log"),
@@ -527,7 +532,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry])
         .setup(move |app| {
             let handle = app.handle().clone();
 

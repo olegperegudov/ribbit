@@ -16,6 +16,10 @@ dist-ssr
 .env
 *.env
 
+# Claude config (private, symlinked to membeme)
+CLAUDE.md
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

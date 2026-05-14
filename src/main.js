@@ -162,17 +162,29 @@ function applyVocab(text) {
   return result;
 }
 
+function dlog(msg) {
+  try { invoke("js_debug_log", { msg: String(msg) }); } catch (_) {}
+}
+
 // Re-scan all visible log entries and apply vocab replacements
 function rescanLogEntries() {
-  for (const entry of document.querySelectorAll("#log-entries .log-entry")) {
+  const entries = document.querySelectorAll("#log-entries .log-entry");
+  dlog(`rescan start: entries=${entries.length}, vocab_keys=${Object.keys(vocabData).join("|")}`);
+  let changed = 0, skipped = 0, no_change = 0;
+  for (const entry of entries) {
     const textEl = entry.querySelector(".log-text");
-    if (!textEl) continue;
+    if (!textEl) { skipped++; continue; }
     const original = textEl.textContent;
     const replaced = applyVocab(original);
     if (replaced !== original) {
+      dlog(`replace: ${JSON.stringify(original.slice(0, 100))} -> ${JSON.stringify(replaced.slice(0, 100))}`);
       textEl.textContent = replaced;
+      changed++;
+    } else {
+      no_change++;
     }
   }
+  dlog(`rescan done: changed=${changed} no_change=${no_change} skipped_no_textel=${skipped}`);
 }
 
 function startEditingKey(span, oldKey) {
@@ -806,9 +818,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     const target = popupInput.value.trim();
     if (!target || !popupSelectedWord) return;
     try {
+      const alias_cp = [...popupSelectedWord].map(c => c.codePointAt(0).toString(16)).join(",");
+      dlog(`add_vocab_entry call: target=${JSON.stringify(target)} alias=${JSON.stringify(popupSelectedWord)} alias_codepoints=${alias_cp}`);
       vocabData = await invoke("add_vocab_entry", { target, alias: popupSelectedWord });
+      dlog(`add_vocab_entry OK, vocab_keys=${Object.keys(vocabData).join("|")}`);
       rescanLogEntries();
-    } catch (err) { console.error(err); }
+    } catch (err) { dlog(`add_vocab_entry FAILED: ${err}`); }
     hidePopup();
   });
 

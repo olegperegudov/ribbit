@@ -4,9 +4,12 @@
   box-sizing: border-box;
 }
 
+html, body {
+  background: transparent;
+}
+
 body {
   font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", "SF Mono", Consolas, monospace;
-  background: #0f1318;
   color: #d1d5db;
   min-height: 100vh;
   font-size: 13px;
@@ -17,6 +20,9 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  background: #0f1318;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 /* Header */
