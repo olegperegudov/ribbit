@@ -126,9 +126,10 @@ jobs:
 
       - name: Rust unit tests
         working-directory: src-tauri
-        # Use +stable so rustup picks the active toolchain even when the
-        # default isn't set (happens on macos-latest GitHub runners).
-        run: cargo +stable test --lib
+        # Use absolute path — macos-latest has a `cargo` shim earlier in PATH
+        # that ignores rustup syntax; dtolnay installs the real cargo here.
+        shell: bash
+        run: "$HOME/.cargo/bin/cargo test --lib"
 
       - name: Set signing key
         shell: bash
@@ -186,9 +187,10 @@ jobs:
 
       - name: Rust unit tests
         working-directory: src-tauri
-        # Use +stable so rustup picks the active toolchain even when the
-        # default isn't set (happens on macos-latest GitHub runners).
-        run: cargo +stable test --lib
+        # Use absolute path — macos-latest has a `cargo` shim earlier in PATH
+        # that ignores rustup syntax; dtolnay installs the real cargo here.
+        shell: bash
+        run: "$HOME/.cargo/bin/cargo test --lib"
 
       - name: Build Tauri app (Apple Silicon)
         uses: tauri-apps/tauri-action@v0
