@@ -57,21 +57,10 @@ pub fn parse_response(json: &serde_json::Value) -> Result<String, String> {
 fn clean_content(s: &str) -> String {
     let mut t = s.trim().to_string();
 
-    // Strip a leading "Some prefix:" if it occupies the first short segment
-    // (LLMs occasionally prepend "Исправленный текст:" despite the prompt).
-    if let Some(idx) = t.find(':') {
-        let prefix = &t[..idx];
-        let prefix_word_count = prefix.split_whitespace().count();
-        if prefix_word_count <= 4 && prefix.chars().count() <= 40 {
-            // Heuristic: short prefix ending in ':' is a label, not real content
-            let rest = t[idx + 1..].trim_start();
-            if !rest.is_empty() {
-                t = rest.to_string();
-            }
-        }
-    }
-
-    // Strip wrapping quotes (LLM sometimes returns "..." or «...»)
+    // Strip wrapping quotes if the LLM returned them despite the prompt
+    // ("..." or «...»). Anything more aggressive (label-stripping by `:`)
+    // is intentionally NOT done here — too easy to chop real sentence content.
+    // If the LLM consistently prepends labels, fix the prompt, not the parser.
     let pairs = [('"', '"'), ('\'', '\''), ('«', '»'), ('“', '”')];
     for (open, close) in pairs {
         if t.starts_with(open) && t.ends_with(close) && t.chars().count() >= 2 {
@@ -187,14 +176,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_response_strips_label_prefix() {
-        let r = serde_json::json!({
-            "choices": [{"message": {"content": "Исправленный текст: Привет, мир."}}]
-        });
-        assert_eq!(parse_response(&r).unwrap(), "Привет, мир.");
-    }
-
-    #[test]
     fn parse_response_strips_double_quotes() {
         let r = serde_json::json!({
             "choices": [{"message": {"content": "\"Привет, мир.\""}}]
@@ -211,15 +192,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_response_keeps_inline_colon() {
-        // Don't accidentally strip valid colons inside the actual sentence
-        // (long prefix → not a label).
+    fn parse_response_keeps_content_with_colons_intact() {
+        // Regression: an earlier overly-eager "label stripping" heuristic
+        // chopped off everything before the first ':', destroying real content.
+        // Whatever the LLM returns inside the sentence stays untouched.
         let r = serde_json::json!({
             "choices": [{"message": {"content": "Сегодня я сделал следующее: купил хлеб и молоко."}}]
         });
         let out = parse_response(&r).unwrap();
-        assert!(out.contains("Сегодня"));
-        assert!(out.contains("купил"));
+        assert_eq!(out, "Сегодня я сделал следующее: купил хлеб и молоко.");
     }
 
     #[test]
