@@ -384,6 +384,39 @@ window.addEventListener("DOMContentLoaded", async () => {
     await invoke("set_always_on_top", { value: e.target.checked });
   });
 
+  // LLM post-processing — toggle reveals the key row, which only shows
+  // a placeholder when a key is already stored (we never echo it back).
+  const postprocessToggle = $("#postprocess-toggle");
+  const routeraiKeyRow = $("#routerai-key-row");
+  const routeraiKeyInput = $("#routerai-key-input");
+
+  function updateRouteraiKeyRow(enabled, hasKey) {
+    routeraiKeyRow.style.display = enabled ? "" : "none";
+    routeraiKeyInput.placeholder = hasKey ? "key stored — paste to replace" : "paste token";
+  }
+
+  postprocessToggle.checked = config.postprocess_enabled === true;
+  updateRouteraiKeyRow(postprocessToggle.checked, config.has_routerai_key === true);
+
+  postprocessToggle.addEventListener("change", async (e) => {
+    const enabled = e.target.checked;
+    updateRouteraiKeyRow(enabled, config.has_routerai_key === true);
+    await invoke("set_postprocess_enabled", { enabled });
+  });
+
+  routeraiKeyInput.addEventListener("change", async (e) => {
+    const key = e.target.value.trim();
+    if (!key) return;
+    try {
+      await invoke("set_api_key", { key, provider: "router_ai" });
+      config.has_routerai_key = true;
+      routeraiKeyInput.value = "";
+      routeraiKeyInput.placeholder = "key stored — paste to replace";
+    } catch (err) {
+      console.error("save routerai key failed:", err);
+    }
+  });
+
   // Shortcut customization
   const shortcutEl = $("#shortcut-display");
   const shortcutLabel = shortcutEl.closest(".setting-row").querySelector(".setting-label");

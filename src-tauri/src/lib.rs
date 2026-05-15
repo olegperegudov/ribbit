@@ -6,6 +6,7 @@ mod debug_log;
 mod usage;
 mod sound;
 mod vocab;
+mod postprocess;
 mod tcc_reset;
 
 use std::sync::{Arc, Mutex};
@@ -42,11 +43,29 @@ fn get_config() -> Result<serde_json::Value, String> {
         "".to_string()
     };
 
+    let has_routerai_key = std::env::var("ROUTERAI_API_KEY")
+        .map(|k| !k.is_empty())
+        .unwrap_or(false);
+    let postprocess_enabled = read_config()["postprocess_enabled"]
+        .as_bool()
+        .unwrap_or(false);
+
     Ok(serde_json::json!({
         "has_api_key": !key.is_empty(),
         "api_key_preview": preview,
         "provider": provider,
+        "has_routerai_key": has_routerai_key,
+        "postprocess_enabled": postprocess_enabled,
     }))
+}
+
+#[tauri::command]
+fn set_postprocess_enabled(enabled: bool) -> Result<(), String> {
+    let mut config = read_config();
+    config["postprocess_enabled"] = serde_json::Value::Bool(enabled);
+    save_config(&config)?;
+    debug_log::log(&format!("postprocess_enabled set to: {}", enabled));
+    Ok(())
 }
 
 #[tauri::command]
@@ -219,12 +238,17 @@ async fn set_api_key(key: String, provider: Option<String>) -> Result<(), String
         if key.starts_with("gsk_") { "groq".into() } else { "openai".into() }
     });
 
-    let var_name = if prov == "groq" { "GROQ_API_KEY" } else { "OPENAI_API_KEY" };
+    let var_name = match prov.as_str() {
+        "groq" => "GROQ_API_KEY",
+        "router_ai" => "ROUTERAI_API_KEY",
+        _ => "OPENAI_API_KEY",
+    };
 
-    // Read existing env, replace/add the key
+    // Read existing env, replace/add the key (only strip the var we're writing)
+    let prefix = format!("{}=", var_name);
     let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
     let mut lines: Vec<String> = existing.lines()
-        .filter(|l| !l.starts_with("GROQ_API_KEY=") && !l.starts_with("OPENAI_API_KEY="))
+        .filter(|l| !l.starts_with(&prefix))
         .map(|l| l.to_string())
         .collect();
     lines.push(format!("{}={}", var_name, key));
@@ -388,7 +412,25 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
         match result {
             Ok(raw_text) => {
-                let text = vocab::apply(&raw_text);
+                let mut text = vocab::apply(&raw_text);
+
+                // Optional LLM post-processing — fixes punctuation/spelling
+                // before logging/emit/paste. On any failure, fall back to
+                // the vocab'd text. Never blocks the user beyond 3s timeout.
+                let postprocess_enabled = read_config()["postprocess_enabled"]
+                    .as_bool()
+                    .unwrap_or(false);
+                if postprocess_enabled {
+                    if let Ok(key) = std::env::var("ROUTERAI_API_KEY") {
+                        match postprocess::edit_text(&text, &key) {
+                            Ok(edited) => text = edited,
+                            Err(e) => debug_log::log(&format!("postprocess fallback: {}", e)),
+                        }
+                    } else {
+                        debug_log::log("postprocess enabled but no ROUTERAI_API_KEY — skipping");
+                    }
+                }
+
                 let preview: String = text.chars().take(80).collect();
                 debug_log::log(&format!("transcription OK: {:?}", preview));
                 if text.is_empty() {
@@ -426,6 +468,32 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
         let _ = app_handle.emit("transcribing", false);
     });
+}
+
+/// On a dev machine where `~/membeme/system/secrets/routerai.key` exists,
+/// copy it into the Ribbit `.env` on first launch. Quiet no-op otherwise.
+fn bootstrap_routerai_key() {
+    let Some(home) = dirs::home_dir() else { return };
+    let src = home.join("membeme/system/secrets/routerai.key");
+    let Ok(key) = std::fs::read_to_string(&src) else { return };
+    let key = key.trim();
+    if key.is_empty() {
+        return;
+    }
+    let Some(env_path) = dirs::config_dir().map(|d| d.join("ribbit").join(".env")) else { return };
+    if std::fs::create_dir_all(env_path.parent().unwrap()).is_err() {
+        return;
+    }
+    let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
+    let mut lines: Vec<String> = existing.lines()
+        .filter(|l| !l.starts_with("ROUTERAI_API_KEY="))
+        .map(|l| l.to_string())
+        .collect();
+    lines.push(format!("ROUTERAI_API_KEY={}", key));
+    if std::fs::write(&env_path, lines.join("\n") + "\n").is_ok() {
+        unsafe { std::env::set_var("ROUTERAI_API_KEY", key); }
+        debug_log::log("bootstrapped ROUTERAI_API_KEY from ~/membeme/system/secrets/routerai.key");
+    }
 }
 
 fn load_env_file(path: &std::path::Path, overwrite: bool) {
@@ -501,6 +569,13 @@ pub fn run() {
     // Also try .env in current directory (development fallback)
     load_env_file(std::path::Path::new(".env"), false);
 
+    // Bootstrap personal RouterAI key from ~/membeme/system/secrets/routerai.key
+    // if the user has membeme but hasn't entered the key in Ribbit yet.
+    // Convenience for the project owner; for everyone else this is a no-op.
+    if std::env::var("ROUTERAI_API_KEY").is_err() {
+        bootstrap_routerai_key();
+    }
+
     let has_key = std::env::var("OPENAI_API_KEY").is_ok();
     debug_log::log(&format!("API key present: {}", has_key));
 
@@ -532,7 +607,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled])
         .setup(move |app| {
             let handle = app.handle().clone();
 

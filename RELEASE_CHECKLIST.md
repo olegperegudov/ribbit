@@ -57,6 +57,19 @@ native window chrome, hardware) live here.
 - [ ] When an update is available: button glows, click downloads + installs
 - [ ] After install: app restarts on new version, settings preserved
 
+## LLM post-processing (optional feature)
+
+- [ ] Toggle off (default) → transcription behaves as before, no extra latency
+- [ ] Toggle on + valid RouterAI key → dictate "привет это девопс инжинер" →
+      log + paste show punctuation/casing fixed (e.g. "Привет, это DevOps-инженер")
+- [ ] Toggle on but no key set → `debug.log` shows
+      `postprocess enabled but no ROUTERAI_API_KEY — skipping`, paste falls back
+      to vocab'd text without freezing
+- [ ] Toggle on + network disabled → paste happens within ≤3s of stop with
+      vocab'd text; `debug.log` shows `postprocess fallback: network error: ...`
+- [ ] First Mac launch with `~/membeme/system/secrets/routerai.key` present →
+      key auto-loaded into config; toggle works immediately, no manual paste
+
 ---
 
 ## Why this file exists
