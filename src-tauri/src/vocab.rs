@@ -40,14 +40,24 @@ fn build_lookup(vocab: &HashMap<String, Vec<String>>) -> HashMap<String, String>
     lookup
 }
 
-/// Apply vocab replacements to text.
-/// Multi-word aliases are replaced first (phrase match), then single-word (whole word match).
+/// Apply vocab replacements to text (reads vocab from disk).
+/// Thin wrapper around `apply_with` that performs the IO.
 pub fn apply(text: &str) -> String {
     let vocab = read_vocab();
+    let result = apply_with(text, &vocab);
+    if result != text {
+        debug_log::log(&format!("vocab: {:?} → {:?}", text, result));
+    }
+    result
+}
+
+/// Pure version: replaces text using the provided vocab map. No IO.
+/// Multi-word aliases are replaced first (phrase match), then single-word (whole word match).
+pub fn apply_with(text: &str, vocab: &HashMap<String, Vec<String>>) -> String {
     if vocab.is_empty() {
         return text.to_string();
     }
-    let lookup = build_lookup(&vocab);
+    let lookup = build_lookup(vocab);
     if lookup.is_empty() {
         return text.to_string();
     }
@@ -124,9 +134,6 @@ pub fn apply(text: &str) -> String {
         result = word_result;
     }
 
-    if result != text {
-        debug_log::log(&format!("vocab: {:?} → {:?}", text, result));
-    }
     result
 }
 
@@ -159,8 +166,15 @@ fn match_case(source: &str, target: &str) -> String {
 mod tests {
     use super::*;
 
+    fn vocab(pairs: &[(&str, &[&str])]) -> HashMap<String, Vec<String>> {
+        pairs
+            .iter()
+            .map(|(t, a)| ((*t).to_string(), a.iter().map(|s| (*s).to_string()).collect()))
+            .collect()
+    }
+
     #[test]
-    fn test_match_case() {
+    fn match_case_handles_three_patterns() {
         assert_eq!(match_case("деф", "dev"), "dev");
         assert_eq!(match_case("Деф", "dev"), "Dev");
         assert_eq!(match_case("ДЕФ", "dev"), "DEV");
@@ -170,9 +184,71 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_with_empty_vocab() {
-        // With empty vocab, text should pass through unchanged
-        let text = "hello world";
-        assert_eq!(apply(text), text);
+    fn empty_vocab_returns_text_unchanged() {
+        assert_eq!(apply_with("hello world", &vocab(&[])), "hello world");
     }
+
+    #[test]
+    fn single_word_alias_replaced() {
+        let v = vocab(&[("dev", &["def"])]);
+        assert_eq!(apply_with("the def team", &v), "the dev team");
+    }
+
+    #[test]
+    fn cyrillic_alias_replaced() {
+        let v = vocab(&[("дев", &["деф"])]);
+        assert_eq!(apply_with("приветствую деф", &v), "приветствую дев");
+    }
+
+    #[test]
+    fn case_pattern_preserved_on_match() {
+        let v = vocab(&[("dev", &["def"])]);
+        assert_eq!(apply_with("Def is here", &v), "Dev is here");
+        assert_eq!(apply_with("DEF day", &v), "DEV day");
+        assert_eq!(apply_with("def night", &v), "dev night");
+    }
+
+    #[test]
+    fn word_boundaries_respected_no_substring_replace() {
+        // alias "def" should NOT match inside "define" or "default"
+        let v = vocab(&[("dev", &["def"])]);
+        assert_eq!(apply_with("define and default", &v), "define and default");
+    }
+
+    #[test]
+    fn multi_word_phrase_replaced() {
+        let v = vocab(&[("machine learning", &["mashine lerning"])]);
+        assert_eq!(apply_with("we use mashine lerning", &v), "we use machine learning");
+    }
+
+    #[test]
+    fn longer_multiword_wins_over_shorter() {
+        // both aliases could match; longer should be preferred
+        let v = vocab(&[
+            ("OK Computer", &["okay computer"]),
+            ("OK", &["okay"]),
+        ]);
+        assert_eq!(apply_with("listen to okay computer", &v), "listen to OK Computer");
+    }
+
+    #[test]
+    fn no_match_returns_input_verbatim() {
+        let v = vocab(&[("dev", &["def"])]);
+        assert_eq!(apply_with("nothing to replace here", &v), "nothing to replace here");
+    }
+
+    #[test]
+    fn multiple_aliases_for_same_target() {
+        let v = vocab(&[("dev", &["def", "deph", "дев"])]);
+        assert_eq!(apply_with("def and deph", &v), "dev and dev");
+    }
+
+    #[test]
+    fn alias_at_text_boundaries() {
+        let v = vocab(&[("dev", &["def"])]);
+        assert_eq!(apply_with("def", &v), "dev");
+        assert_eq!(apply_with("def is here", &v), "dev is here");
+        assert_eq!(apply_with("hello def", &v), "hello dev");
+    }
+
 }

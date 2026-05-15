@@ -1,3 +1,5 @@
+import { applyVocab, findBestMatch } from "./vocab.js";
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
@@ -95,72 +97,9 @@ async function showPanel(name) {
   }
 }
 
-// --- Vocab helpers ---
+// --- Vocab state (logic lives in ./vocab.js) ---
 
 let vocabData = {}; // target → [aliases]
-
-function levenshtein(a, b) {
-  a = a.toLowerCase(); b = b.toLowerCase();
-  const m = a.length, n = b.length;
-  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
-  return dp[m][n];
-}
-
-function findBestMatch(word) {
-  // Find the closest existing target by checking against all aliases AND targets
-  let best = null, bestDist = Infinity;
-  const w = word.toLowerCase();
-  for (const [target, aliases] of Object.entries(vocabData)) {
-    // Check distance to target itself
-    const dt = levenshtein(w, target);
-    if (dt < bestDist) { bestDist = dt; best = target; }
-    // Check distance to each alias
-    for (const alias of aliases) {
-      const da = levenshtein(w, alias);
-      if (da < bestDist) { bestDist = da; best = target; }
-    }
-  }
-  // Only suggest if reasonably close (distance <= half the word length)
-  if (best && bestDist <= Math.max(2, Math.ceil(w.length / 2))) return best;
-  return null;
-}
-
-// Apply vocab replacements to text (JS mirror of Rust vocab::apply)
-function applyVocab(text) {
-  const lookup = {};
-  for (const [target, aliases] of Object.entries(vocabData)) {
-    for (const alias of aliases) lookup[alias.toLowerCase()] = target;
-  }
-  if (Object.keys(lookup).length === 0) return text;
-
-  function matchCase(source, target) {
-    if (source === source.toUpperCase()) return target.toUpperCase();
-    if (source[0] === source[0].toUpperCase()) return target[0].toUpperCase() + target.slice(1);
-    return target;
-  }
-
-  // Phase 1: multi-word phrases (longest first)
-  const multi = Object.entries(lookup).filter(([a]) => a.includes(" ")).sort((a, b) => b[0].length - a[0].length);
-  let result = text;
-  for (const [alias, target] of multi) {
-    const re = new RegExp("(?<=^|[^\\w\u0400-\u04FF])" + alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?=$|[^\\w\u0400-\u04FF])", "gi");
-    result = result.replace(re, (m) => matchCase(m, target));
-  }
-
-  // Phase 2: single words
-  result = result.replace(/[\w\u0400-\u04FF]+/g, (word) => {
-    const target = lookup[word.toLowerCase()];
-    if (!target) return word;
-    return matchCase(word, target);
-  });
-
-  return result;
-}
 
 function dlog(msg) {
   try { invoke("js_debug_log", { msg: String(msg) }); } catch (_) {}
@@ -175,7 +114,7 @@ function rescanLogEntries() {
     const textEl = entry.querySelector(".log-text");
     if (!textEl) { skipped++; continue; }
     const original = textEl.textContent;
-    const replaced = applyVocab(original);
+    const replaced = applyVocab(original, vocabData);
     if (replaced !== original) {
       dlog(`replace: ${JSON.stringify(original.slice(0, 100))} -> ${JSON.stringify(replaced.slice(0, 100))}`);
       textEl.textContent = replaced;
@@ -787,7 +726,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     popup.style.display = "flex";
 
     // Find best match from existing vocab
-    const suggestion = findBestMatch(text);
+    const suggestion = findBestMatch(text, vocabData);
     if (suggestion) {
       popupSuggestion.textContent = suggestion;
       popupSuggestion.style.display = "block";

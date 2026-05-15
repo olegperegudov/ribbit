@@ -74,8 +74,31 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "skipped=false" >> "$GITHUB_OUTPUT"
 
-  build-windows:
+  # Run JS unit tests before any platform build. Rust tests run inside each
+  # platform build (below) so we don't need to install Linux GTK deps just
+  # to compile the Tauri crate on ubuntu.
+  test:
     needs: version
+    if: needs.version.outputs.skipped != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: JS unit tests (vitest)
+        run: npm test
+
+  build-windows:
+    needs: [version, test]
     if: needs.version.outputs.skipped != 'true'
     runs-on: windows-latest
     permissions:
@@ -100,6 +123,10 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+
+      - name: Rust unit tests
+        working-directory: src-tauri
+        run: cargo test --lib
 
       - name: Set signing key
         shell: bash
@@ -127,7 +154,7 @@ jobs:
           prerelease: false
 
   build-macos:
-    needs: version
+    needs: [version, test]
     if: needs.version.outputs.skipped != 'true'
     runs-on: macos-latest
     permissions:
@@ -154,6 +181,10 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+
+      - name: Rust unit tests
+        working-directory: src-tauri
+        run: cargo test --lib
 
       - name: Build Tauri app (Apple Silicon)
         uses: tauri-apps/tauri-action@v0
