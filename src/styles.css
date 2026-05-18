@@ -287,11 +287,15 @@ body {
 #settings-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .settings-content {
   padding: 0.5rem 0;
-  flex-shrink: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .setting-row {

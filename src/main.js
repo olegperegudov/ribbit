@@ -68,33 +68,15 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Show one panel at a time (log, settings, debug, vocab)
-let savedWindowSize = null;
-
-async function showPanel(name) {
-  const win = getCurrentWindow();
-
+// Show one panel at a time (log, settings, debug, vocab).
+// We don't resize the window on panel switch anymore — settings now scrolls
+// internally if it overflows, which avoids the previous bug where buttons
+// near the bottom (e.g. "check update") were clipped out of view.
+function showPanel(name) {
   $("#log-entries").style.display = name === "log" ? "" : "none";
   $("#settings-panel").style.display = name === "settings" ? "flex" : "none";
   $("#debug-panel").style.display = name === "debug" ? "flex" : "none";
   $("#vocab-panel").style.display = name === "vocab" ? "flex" : "none";
-
-  if (name === "settings") {
-    // Save current size, then fit window to settings content
-    const factor = await win.scaleFactor();
-    const phys = await win.outerSize();
-    savedWindowSize = { width: phys.width / factor, height: phys.height / factor };
-
-    // Wait for layout, then measure
-    await new Promise(r => setTimeout(r, 10));
-    const needed = document.querySelector(".container").scrollHeight;
-    const target = Math.max(needed + 2, 200);
-    await win.setSize(new window.__TAURI__.dpi.LogicalSize(savedWindowSize.width, target));
-  } else if (savedWindowSize) {
-    // Restore previous size
-    await win.setSize(new window.__TAURI__.dpi.LogicalSize(savedWindowSize.width, savedWindowSize.height));
-    savedWindowSize = null;
-  }
 }
 
 // --- Vocab state (logic lives in ./vocab.js) ---

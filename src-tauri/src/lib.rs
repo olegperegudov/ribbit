@@ -7,6 +7,7 @@ mod usage;
 mod sound;
 mod vocab;
 mod postprocess;
+mod mac_window;
 mod tcc_reset;
 
 use std::sync::{Arc, Mutex};
@@ -666,6 +667,13 @@ pub fn run() {
             }
 
             let _tray = tray_builder.build(app)?;
+
+            // Round the macOS window corners. No-op on other platforms.
+            if let Some(main_window) = app.get_webview_window("main") {
+                if let Err(e) = mac_window::apply_rounded_corners(&main_window, 10.0) {
+                    debug_log::log(&format!("rounded corners: {}", e));
+                }
+            }
 
             // Manage state for commands and shortcut handler
             app.manage(Arc::clone(&state));

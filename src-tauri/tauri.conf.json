@@ -12,7 +12,7 @@
       {
         "title": "Ribbit",
         "width": 400,
-        "height": 350,
+        "height": 500,
         "resizable": true,
         "center": true,
         "alwaysOnTop": false,
