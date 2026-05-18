@@ -27,6 +27,8 @@ native window chrome, hardware) live here.
 - [ ] Cyrillic phrase transcribed correctly
 - [ ] Numbers / mixed RU+EN handled
 - [ ] No double paste, no truncation
+- [ ] Clipboard manager (Maccy / Paste / Alfred) gains exactly one entry per
+      dictation — the transcript itself. No duplicates of the previous copy.
 
 ## Vocab replacement
 

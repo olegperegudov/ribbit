@@ -6,11 +6,13 @@ use std::time::Duration;
 use crate::debug_log;
 
 pub fn insert_text(text: &str) -> Result<(), String> {
-    // Save current clipboard content
+    // Put our text into the clipboard and paste it. We intentionally do NOT
+    // restore the previous clipboard contents afterwards — every clipboard
+    // touch creates a new entry in any clipboard manager (Maccy / Paste /
+    // Alfred), so a restore would double every paste in the user's history.
+    // The transcript stays in the clipboard; the previous copy is already
+    // preserved by the manager itself if one is installed.
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
-    let old_clipboard = clipboard.get_text().ok();
-
-    // Set our text to clipboard
     clipboard.set_text(text).map_err(|e| e.to_string())?;
     thread::sleep(Duration::from_millis(50));
 
@@ -55,11 +57,9 @@ pub fn insert_text(text: &str) -> Result<(), String> {
         debug_log::log("text typed via enigo.text() fallback");
     }
 
-    // Wait for paste to complete, then restore clipboard
+    // Wait for paste to complete. We leave the transcript in the clipboard
+    // on purpose — see the comment at the top of this function.
     thread::sleep(Duration::from_millis(100));
-    if let Some(old) = old_clipboard {
-        let _ = clipboard.set_text(old);
-    }
 
     paste_result
 }
