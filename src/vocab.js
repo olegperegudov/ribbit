@@ -42,10 +42,11 @@ function matchCase(source, target) {
   return target;
 }
 
-// Apply vocab replacements to text. Phase 1: multi-word aliases (longest first).
-// Phase 2: single words via \w + Cyrillic range. Aliases with non-word chars
-// (e.g. dots, hyphens) and no space are NOT matched — this is by design,
-// mirroring the Rust apply_with behavior.
+// Apply vocab replacements to text. Phase 1 handles any alias with a
+// non-word character (space, dot, hyphen, slash, ...) — those need literal
+// phrase matching because phase 2 tokenizes on word boundaries and would
+// split them. Pure word-character aliases go to phase 2 for fast lookup.
+// Mirrors src-tauri/src/vocab.rs `apply_with`.
 export function applyVocab(text, vocabData) {
   const lookup = {};
   for (const [target, aliases] of Object.entries(vocabData)) {
@@ -53,9 +54,9 @@ export function applyVocab(text, vocabData) {
   }
   if (Object.keys(lookup).length === 0) return text;
 
-  // Phase 1: multi-word phrases, longest first
+  // Phase 1: phrase-match anything with a non-word char, longest first
   const multi = Object.entries(lookup)
-    .filter(([a]) => a.includes(" "))
+    .filter(([a]) => /[^\wЀ-ӿ]/.test(a))
     .sort((a, b) => b[0].length - a[0].length);
   let result = text;
   for (const [alias, target] of multi) {

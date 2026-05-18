@@ -62,11 +62,15 @@ pub fn apply_with(text: &str, vocab: &HashMap<String, Vec<String>>) -> String {
         return text.to_string();
     }
 
-    // Separate multi-word and single-word aliases
+    // Phase 1 handles any alias that contains a non-word character (space,
+    // dot, hyphen, slash, ...) — those need literal phrase matching because
+    // phase 2 tokenizes on word boundaries and would split them. Pure
+    // word-character aliases go to phase 2 for fast lookup.
     let mut multi: Vec<(&str, &str)> = Vec::new();  // (alias_lower, target)
     let mut single: HashMap<&str, &str> = HashMap::new();
     for (alias, target) in &lookup {
-        if alias.contains(' ') {
+        let is_phrase = alias.chars().any(|c| !c.is_alphanumeric() && c != '_');
+        if is_phrase {
             multi.push((alias, target));
         } else {
             single.insert(alias, target);
@@ -241,6 +245,23 @@ mod tests {
     fn multiple_aliases_for_same_target() {
         let v = vocab(&[("dev", &["def", "deph", "дев"])]);
         assert_eq!(apply_with("def and deph", &v), "dev and dev");
+    }
+
+    #[test]
+    fn alias_with_dots_replaced() {
+        // STT may produce "router.ai.ru" when the user said "routerai.ru".
+        // Aliases containing non-word chars (dots, hyphens, slashes) must
+        // still match as a single literal phrase.
+        let v = vocab(&[("routerai.ru", &["router.ai.ru"])]);
+        assert_eq!(
+            apply_with("use router.ai.ru today", &v),
+            "use routerai.ru today"
+        );
+        // Boundary check: don't match if surrounded by word chars.
+        assert_eq!(
+            apply_with("xrouter.ai.ruy", &v),
+            "xrouter.ai.ruy"
+        );
     }
 
     #[test]

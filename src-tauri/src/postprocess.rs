@@ -1,6 +1,6 @@
 //! Optional LLM post-processing of transcribed text via RouterAI.
 //!
-//! Lives between `vocab::apply` and `inserter::insert_text` in the pipeline.
+//! Lives after `vocab::apply` in the pipeline, before the log entry is emitted.
 //! Disabled by default. When enabled and a key is present, runs a small,
 //! fast model (gemma-4-26b-a4b-it, ~150ms) to fix punctuation, spelling,
 //! and anglicisms. On any error/timeout we silently fall back to the

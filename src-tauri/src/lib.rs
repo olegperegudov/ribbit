@@ -1,6 +1,5 @@
 mod audio;
 mod transcribe;
-mod inserter;
 mod logger;
 mod debug_log;
 mod usage;
@@ -399,8 +398,8 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     let _ = app.emit("status-detail",
         format!("Ribbiting... ({:.1}s of audio)", duration_secs));
 
-    // Use a dedicated thread for the whole transcribe+insert flow.
-    // Avoids tokio runtime issues and ensures enigo runs on a proper thread.
+    // Use a dedicated thread for the transcribe flow.
+    // Avoids tokio runtime issues.
     let app_handle = app.clone();
     std::thread::spawn(move || {
         let _ = app_handle.emit("transcribing", true);
@@ -437,27 +436,17 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
-                    // Log transcription first — ensures text is saved even if paste fails
+                    // Transcript is only stored in the log + emitted to the UI.
+                    // We intentionally do NOT touch the clipboard — every
+                    // touch overwrites whatever the user had there and creates
+                    // a new entry in any clipboard manager. The user copies
+                    // a transcript by clicking the log entry in the app.
                     logger::log_transcription(&text, duration_secs);
                     usage::record(duration_secs);
                     let _ = app_handle.emit("transcription", serde_json::json!({
                         "text": &text,
                         "duration": duration_secs,
                     }));
-
-                    let _ = app_handle.emit("status-detail", "Inserting text...");
-
-                    // Small delay to let the UI update and the previous app regain focus
-                    std::thread::sleep(std::time::Duration::from_millis(200));
-
-                    if let Err(e) = inserter::insert_text(&text) {
-                        debug_log::log(&format!("insert error: {}", e));
-                        let _ = app_handle.emit("error",
-                            format!("Paste failed — text saved to log. {}", e));
-                    } else {
-                        debug_log::log("text inserted OK");
-                    }
-
                     let _ = app_handle.emit("status-detail", "Done!");
                 }
             }

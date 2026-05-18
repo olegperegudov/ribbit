@@ -60,6 +60,17 @@ describe("applyVocab", () => {
     const v = { dev: ["def"] };
     expect(applyVocab("DEF Def def", v)).toBe("DEV Dev dev");
   });
+
+  it("replaces an alias containing dots as a single phrase", () => {
+    // STT may mishear "routerai.ru" as "router.ai.ru".
+    // Aliases with non-word chars (dots, hyphens, slashes) must match
+    // as a single literal phrase, not get split on the punctuation.
+    const v = { "routerai.ru": ["router.ai.ru"] };
+    expect(applyVocab("use router.ai.ru today", v))
+      .toBe("use routerai.ru today");
+    expect(applyVocab("xrouter.ai.ruy", v))
+      .toBe("xrouter.ai.ruy");
+  });
 });
 
 describe("findBestMatch", () => {
