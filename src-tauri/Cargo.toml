@@ -25,6 +25,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15"
 reqwest = { version = "0.12", features = ["multipart", "json", "blocking"] }
+# Direct Unicode keyboard input — types the transcript at the cursor
+# without touching the system clipboard.
+enigo = "0.2"
 chrono = "0.4"
 dirs = "6"
 rusqlite = { version = "0.31", features = ["bundled"] }

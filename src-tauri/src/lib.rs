@@ -1,5 +1,6 @@
 mod audio;
 mod transcribe;
+mod inserter;
 mod logger;
 mod debug_log;
 mod usage;
@@ -436,17 +437,28 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
-                    // Transcript is only stored in the log + emitted to the UI.
-                    // We intentionally do NOT touch the clipboard — every
-                    // touch overwrites whatever the user had there and creates
-                    // a new entry in any clipboard manager. The user copies
-                    // a transcript by clicking the log entry in the app.
+                    // Log first — ensures text is saved even if insert fails.
                     logger::log_transcription(&text, duration_secs);
                     usage::record(duration_secs);
                     let _ = app_handle.emit("transcription", serde_json::json!({
                         "text": &text,
                         "duration": duration_secs,
                     }));
+
+                    let _ = app_handle.emit("status-detail", "Inserting text...");
+
+                    // Small delay so the UI updates and the previous app regains focus.
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+
+                    // Direct keyboard input — does NOT touch the clipboard.
+                    // If insert fails, the transcript is still in the log;
+                    // the user can click it to copy manually.
+                    if let Err(e) = inserter::insert_text(&text) {
+                        debug_log::log(&format!("insert error: {}", e));
+                        let _ = app_handle.emit("error",
+                            format!("Insert failed — text saved to log. {}", e));
+                    }
+
                     let _ = app_handle.emit("status-detail", "Done!");
                 }
             }
