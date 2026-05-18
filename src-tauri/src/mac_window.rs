@@ -11,19 +11,33 @@
 
 #[cfg(target_os = "macos")]
 pub fn apply_rounded_corners(window: &tauri::WebviewWindow, radius: f64) -> Result<(), String> {
-    use cocoa::base::{id, YES};
+    use cocoa::base::{id, nil, YES};
     use objc::{msg_send, sel, sel_impl};
 
     let ns_window = window.ns_window().map_err(|e| e.to_string())? as id;
     unsafe {
+        // contentView is the WKWebView. Its CALayer won't clip the window
+        // outline by itself, so we apply cornerRadius/masksToBounds to its
+        // *superview* — the private _NSThemeFrame that actually paints the
+        // window edge. This is the same trick used by most macOS Electron/
+        // Tauri apps that need round corners on a borderless window.
         let content_view: id = msg_send![ns_window, contentView];
-        let _: () = msg_send![content_view, setWantsLayer: YES];
-        let layer: id = msg_send![content_view, layer];
-        if layer.is_null() {
-            return Err("contentView.layer is null".into());
+        if content_view == nil {
+            return Err("contentView is nil".into());
         }
-        let _: () = msg_send![layer, setCornerRadius: radius];
+        let frame_view: id = msg_send![content_view, superview];
+        if frame_view == nil {
+            return Err("frame view is nil".into());
+        }
+        let _: () = msg_send![frame_view, setWantsLayer: YES];
+        let layer: id = msg_send![frame_view, layer];
+        if layer == nil {
+            return Err("frame view layer is nil".into());
+        }
+        let r: f64 = radius;
+        let _: () = msg_send![layer, setCornerRadius: r];
         let _: () = msg_send![layer, setMasksToBounds: YES];
+        crate::debug_log::log(&format!("rounded corners applied: radius={}", r));
     }
     Ok(())
 }
