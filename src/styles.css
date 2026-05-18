@@ -292,7 +292,9 @@ body {
 }
 
 .settings-content {
-  padding: 0.5rem 0;
+  /* right padding gives the scrollbar (when shown) its own gutter so the
+     thumb never overlaps row content. */
+  padding: 0.5rem 8px 0.5rem 0;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
