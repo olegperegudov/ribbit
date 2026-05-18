@@ -520,6 +520,38 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Single source of truth for showing/hiding the main window.
+///
+/// Behavior:
+/// - visible & focused → hide (orderOut on macOS, no Dock entry, no Space-flip)
+/// - otherwise → show + focus on the user's CURRENT Space
+///
+/// We deliberately avoid minimize/unminimize on macOS: minimize sends the
+/// window to the Dock and unminimize forces a Space switch back to the
+/// window's home Space, which is exactly the bug the user reported
+/// ("clicking the tray icon teleports me to another desktop").
+/// `apply_spaces_behavior` on the NSWindow ensures show() lands on the
+/// active Space.
+fn toggle_main_window<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    label: &tauri::menu::MenuItem<R>,
+) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    let visible = w.is_visible().unwrap_or(false);
+    let focused = w.is_focused().unwrap_or(false);
+    if visible && focused {
+        let _ = w.hide();
+        let _ = label.set_text("Show Ribbit");
+    } else {
+        // unminimize is harmless if the window isn't minimized — safety net
+        // in case the user hit Cmd+M or used the yellow traffic light.
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+        let _ = label.set_text("Hide Ribbit");
+    }
+}
+
 fn register_shortcut(app: &AppHandle, shortcut: Shortcut) -> Result<(), String> {
     use tauri_plugin_global_shortcut::ShortcutState;
     app.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
@@ -615,17 +647,7 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| {
                     if event.id() == "show" {
-                        if let Some(w) = app.get_webview_window("main") {
-                            if w.is_minimized().unwrap_or(false) || !w.is_visible().unwrap_or(true) {
-                                let _ = w.unminimize();
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                                let _ = show_for_menu.set_text("Hide Ribbit");
-                            } else {
-                                let _ = w.minimize();
-                                let _ = show_for_menu.set_text("Show Ribbit");
-                            }
-                        }
+                        toggle_main_window(app, &show_for_menu);
                     } else if event.id() == "quit" {
                         app.exit(0);
                     }
@@ -635,18 +657,7 @@ pub fn run() {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up, ..
                     } = event {
-                        let app = tray.app_handle();
-                        if let Some(w) = app.get_webview_window("main") {
-                            if w.is_minimized().unwrap_or(false) || !w.is_visible().unwrap_or(true) {
-                                let _ = w.unminimize();
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                                let _ = show_for_tray.set_text("Hide Ribbit");
-                            } else {
-                                let _ = w.minimize();
-                                let _ = show_for_tray.set_text("Show Ribbit");
-                            }
-                        }
+                        toggle_main_window(tray.app_handle(), &show_for_tray);
                     }
                 });
 
@@ -657,10 +668,14 @@ pub fn run() {
 
             let _tray = tray_builder.build(app)?;
 
-            // Round the macOS window corners. No-op on other platforms.
+            // macOS-only window tweaks: rounded corners + follow active Space
+            // when the tray icon is clicked. No-op on other platforms.
             if let Some(main_window) = app.get_webview_window("main") {
                 if let Err(e) = mac_window::apply_rounded_corners(&main_window, 10.0) {
                     debug_log::log(&format!("rounded corners: {}", e));
+                }
+                if let Err(e) = mac_window::apply_spaces_behavior(&main_window) {
+                    debug_log::log(&format!("spaces behavior: {}", e));
                 }
             }
 

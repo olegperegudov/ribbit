@@ -46,3 +46,27 @@ pub fn apply_rounded_corners(window: &tauri::WebviewWindow, radius: f64) -> Resu
 pub fn apply_rounded_corners(_window: &tauri::WebviewWindow, _radius: f64) -> Result<(), String> {
     Ok(())
 }
+
+/// Make the window follow the user's current Space instead of being pinned to
+/// the Space it was first shown on. Without this, clicking the tray icon while
+/// on a different Space teleports the user back to the window's home Space.
+///
+/// NSWindowCollectionBehaviorMoveToActiveSpace = 1 << 1 = 2.
+#[cfg(target_os = "macos")]
+pub fn apply_spaces_behavior(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use cocoa::base::id;
+    use objc::{msg_send, sel, sel_impl};
+
+    let ns_window = window.ns_window().map_err(|e| e.to_string())? as id;
+    unsafe {
+        let behavior: u64 = 1 << 1;
+        let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
+        crate::debug_log::log("collectionBehavior=MoveToActiveSpace applied");
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn apply_spaces_behavior(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
