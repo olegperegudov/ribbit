@@ -83,6 +83,10 @@
             <button id="vocab-btn" class="setting-btn">abc</button>
           </div>
           <div class="setting-row">
+            <span class="setting-label">debug log <span class="hint-icon" data-hint="Internal log for troubleshooting. Shows recording events, API calls, and errors." tabindex="0" role="button" aria-label="Help: debug log">?</span></span>
+            <button id="debug-btn" class="setting-btn">&gt;_</button>
+          </div>
+          <div class="setting-row">
             <span class="setting-label">groq key <span class="hint-icon" data-hint="Your Groq API key. Needed for speech-to-text. Free tier available at console.groq.com." tabindex="0" role="button" aria-label="Help: groq key">?</span></span>
             <input type="password" id="groq-key-input" placeholder="gsk_..." autocomplete="off" />
             <span id="groq-key-status" class="key-status" style="display:none">
@@ -99,7 +103,7 @@
             </label>
           </div>
           <div class="setting-row" id="llm-provider-row" style="display:none">
-            <span class="setting-label">llm provider <span class="hint-icon" data-hint="Which LLM service edits your transcripts. RouterAI = Russia-only. OpenAI/OpenRouter work worldwide." tabindex="0" role="button" aria-label="Help: llm provider">?</span></span>
+            <span class="setting-label">llm provider <span class="hint-icon" data-hint="Which LLM service edits your transcripts. routerai = Russia-only. openai/openrouter work worldwide." tabindex="0" role="button" aria-label="Help: llm provider">?</span></span>
             <select id="llm-provider-select"></select>
           </div>
           <div class="setting-row" id="llm-key-row" style="display:none">
@@ -110,10 +114,6 @@
               <span class="key-saved-text">saved</span>
               <a id="llm-key-edit" class="key-edit-link">change</a>
             </span>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">debug log <span class="hint-icon" data-hint="Internal log for troubleshooting. Shows recording events, API calls, and errors." tabindex="0" role="button" aria-label="Help: debug log">?</span></span>
-            <button id="debug-btn" class="setting-btn">&gt;_</button>
           </div>
           <div class="setting-row">
             <a class="setting-label version-link" id="version-label" href="#" title="see changelog">v0.7.34</a>
