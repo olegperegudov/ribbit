@@ -48,7 +48,9 @@ pub const PROVIDERS: &[ProviderConfig] = &[
 
 pub const DEFAULT_PROVIDER: &str = "routerai";
 
-const TIMEOUT_SECS: u64 = 3;
+// 5s gives the model headroom for occasional 3-4s responses while still
+// keeping the paste latency bearable. Worst-case with one retry: ~10s.
+const TIMEOUT_SECS: u64 = 5;
 
 pub fn find_provider(name: &str) -> Option<&'static ProviderConfig> {
     PROVIDERS.iter().find(|p| p.name == name)
@@ -143,6 +145,18 @@ fn clean_content(s: &str) -> String {
     t
 }
 
+/// Short label for the kind of reqwest error — useful in debug log when
+/// diagnosing why postprocess fell back. Native error text is verbose and
+/// often hides the actual class (timeout vs connect vs TLS, etc).
+fn error_kind(e: &reqwest::Error) -> &'static str {
+    if e.is_timeout() { "timeout" }
+    else if e.is_connect() { "connect" }
+    else if e.is_request() { "request" }
+    else if e.is_body() { "body" }
+    else if e.is_decode() { "decode" }
+    else { "other" }
+}
+
 static HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 
 fn client() -> &'static reqwest::blocking::Client {
@@ -172,13 +186,30 @@ pub fn edit_text(
     let t0 = std::time::Instant::now();
     let payload = build_payload(text, vocab, provider.default_model);
 
-    let response = client()
-        .post(provider.base_url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .json(&payload)
-        .send()
-        .map_err(|e| format!("network error: {}", e))?;
+    // Single retry on any send() error: pooled TLS connections occasionally
+    // go stale between dictations and reqwest reports a generic transport
+    // error. Chat completion is idempotent, so a duplicate POST is safe.
+    let send_once = || {
+        client()
+            .post(provider.base_url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+    };
+    let response = match send_once() {
+        Ok(r) => r,
+        Err(first) => {
+            crate::debug_log::log(&format!(
+                "postprocess retry after {} ({})",
+                error_kind(&first),
+                first
+            ));
+            send_once().map_err(|e| {
+                format!("{} after retry: {}", error_kind(&e), e)
+            })?
+        }
+    };
 
     let elapsed = t0.elapsed();
 
