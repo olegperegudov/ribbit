@@ -716,6 +716,22 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     // Wrap selected text in a highlight span so it stays visible after focus moves
     const range = sel.getRangeAt(0);
+
+    // Multi-click can extend selection across entries; wrapping such a range
+    // flattens the log via deleteContents+insertNode below. Require both
+    // endpoints inside the same .log-text.
+    const startTxt = (range.startContainer.nodeType === 3
+      ? range.startContainer.parentElement
+      : range.startContainer)?.closest(".log-text");
+    const endTxt = (range.endContainer.nodeType === 3
+      ? range.endContainer.parentElement
+      : range.endContainer)?.closest(".log-text");
+    if (!startTxt || startTxt !== endTxt) {
+      sel.removeAllRanges();
+      hidePopup();
+      return;
+    }
+
     const rect = range.getBoundingClientRect();
 
     // Remove previous highlight if any
