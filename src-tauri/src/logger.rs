@@ -6,7 +6,7 @@ fn log_dir() -> Option<std::path::PathBuf> {
     dirs::config_dir().map(|d| d.join("ribbit").join("logs"))
 }
 
-pub fn log_transcription(text: &str, duration_secs: f32) {
+pub fn log_transcription(text: &str, duration_secs: f32, edited: bool) {
     let log_dir = match log_dir() {
         Some(d) => d,
         None => return,
@@ -23,6 +23,7 @@ pub fn log_transcription(text: &str, duration_secs: f32) {
         "ts": now.to_rfc3339(),
         "text": text,
         "duration": duration_secs,
+        "edited": edited,
     });
 
     if let Ok(mut file) = OpenOptions::new()

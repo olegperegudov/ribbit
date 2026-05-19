@@ -26,7 +26,7 @@ function formatDate(isoString) {
   return d.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }).toUpperCase();
 }
 
-function addLogEntry(text, ts) {
+function addLogEntry(text, ts, edited) {
   const log = $("#log-entries");
   const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const dateLabel = ts ? formatDate(ts) : "TODAY";
@@ -41,7 +41,9 @@ function addLogEntry(text, ts) {
 
   const entry = document.createElement("div");
   entry.className = "log-entry";
-  entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span>`;
+  const dotClass = edited === true ? "edited" : "unedited";
+  const dotTitle = edited === true ? "edited by LLM" : "not edited by LLM";
+  entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span><span class="log-llm-dot ${dotClass}" title="${dotTitle}"></span>`;
   entry.title = "click to copy";
   entry.addEventListener("click", () => {
     // Don't copy if user is selecting text (for vocab popup)
@@ -275,7 +277,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   try {
     const history = await invoke("get_log_history", { limit: 50 });
     for (const entry of history.reverse()) {
-      addLogEntry(entry.text, entry.ts);
+      addLogEntry(entry.text, entry.ts, entry.edited);
     }
   } catch (e) {
     console.error("Failed to load history:", e);
@@ -341,8 +343,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await listen("transcription", (event) => {
-    const { text } = event.payload;
-    addLogEntry(text);
+    const { text, edited } = event.payload;
+    addLogEntry(text, null, edited);
   });
 
   await listen("error", (event) => {
@@ -366,62 +368,112 @@ window.addEventListener("DOMContentLoaded", async () => {
     await invoke("set_always_on_top", { value: e.target.checked });
   });
 
-  // LLM post-processing — toggle reveals the key row. When a key is stored
-  // we hide the input and show a "✓ saved · change" chip, otherwise the
-  // input is visible. We never echo the stored key back to the UI.
-  const postprocessToggle = $("#postprocess-toggle");
-  const routeraiKeyRow = $("#routerai-key-row");
-  const routeraiKeyInput = $("#routerai-key-input");
-  const routeraiKeyStatus = $("#routerai-key-status");
-  const routeraiKeyEdit = $("#routerai-key-edit");
-
-  function showKeyInput() {
-    routeraiKeyInput.style.display = "";
-    routeraiKeyStatus.style.display = "none";
-    routeraiKeyInput.value = "";
-  }
-
-  function showKeySaved(flash) {
-    routeraiKeyInput.style.display = "none";
-    routeraiKeyInput.value = "";
-    routeraiKeyStatus.style.display = "";
-    if (flash) {
-      routeraiKeyStatus.classList.remove("flash");
-      void routeraiKeyStatus.offsetWidth; // restart animation
-      routeraiKeyStatus.classList.add("flash");
+  // Generic "API key" cell: input ↔ "✓ saved · change" chip swap.
+  // Used for both the Groq audio key and the per-provider LLM key.
+  function makeKeyCell(inputEl, statusEl, editEl) {
+    function showInput() {
+      inputEl.style.display = "";
+      inputEl.value = "";
+      statusEl.style.display = "none";
     }
+    function showSaved(flash) {
+      inputEl.style.display = "none";
+      inputEl.value = "";
+      statusEl.style.display = "";
+      if (flash) {
+        statusEl.classList.remove("flash");
+        void statusEl.offsetWidth;
+        statusEl.classList.add("flash");
+      }
+    }
+    editEl.addEventListener("click", () => { showInput(); inputEl.focus(); });
+    return { showInput, showSaved };
   }
 
-  function updateRouteraiKeyRow(enabled, hasKey) {
-    routeraiKeyRow.style.display = enabled ? "" : "none";
-    if (!enabled) return;
-    if (hasKey) showKeySaved(false); else showKeyInput();
-  }
-
-  postprocessToggle.checked = config.postprocess_enabled === true;
-  updateRouteraiKeyRow(postprocessToggle.checked, config.has_routerai_key === true);
-
-  postprocessToggle.addEventListener("change", async (e) => {
-    const enabled = e.target.checked;
-    updateRouteraiKeyRow(enabled, config.has_routerai_key === true);
-    await invoke("set_postprocess_enabled", { enabled });
-  });
-
-  routeraiKeyInput.addEventListener("change", async (e) => {
+  // Groq (audio) key — always visible, re-editable from settings.
+  const groqCell = makeKeyCell($("#groq-key-input"), $("#groq-key-status"), $("#groq-key-edit"));
+  if (config.has_groq_key === true) groqCell.showSaved(false); else groqCell.showInput();
+  $("#groq-key-input").addEventListener("change", async (e) => {
     const key = e.target.value.trim();
     if (!key) return;
     try {
-      await invoke("set_api_key", { key, provider: "router_ai" });
-      config.has_routerai_key = true;
-      showKeySaved(true);
+      await invoke("set_api_key", { key, provider: "groq" });
+      config.has_groq_key = true;
+      groqCell.showSaved(true);
     } catch (err) {
-      console.error("save routerai key failed:", err);
+      console.error("save groq key failed:", err);
     }
   });
 
-  routeraiKeyEdit.addEventListener("click", () => {
-    showKeyInput();
-    routeraiKeyInput.focus();
+  // LLM post-processing: toggle reveals provider dropdown + key row.
+  // Provider dropdown picks which LLM service edits transcripts. The key cell
+  // below shows the saved-state for THAT provider — switching providers
+  // re-renders the chip/input from the cached `llm_provider_keys` map.
+  const postprocessToggle = $("#postprocess-toggle");
+  const llmProviderRow = $("#llm-provider-row");
+  const llmKeyRow = $("#llm-key-row");
+  const llmKeyLabel = $("#llm-key-label");
+  const llmProviderSelect = $("#llm-provider-select");
+  const logEntries = $("#log-entries");
+  const llmCell = makeKeyCell($("#llm-key-input"), $("#llm-key-status"), $("#llm-key-edit"));
+
+  // Populate provider dropdown from backend (single source of truth).
+  let providerLabels = {}; // name → label, for the key-row label
+  try {
+    const providers = await invoke("list_llm_providers");
+    for (const p of providers) {
+      const opt = document.createElement("option");
+      opt.value = p.name;
+      opt.textContent = p.label;
+      llmProviderSelect.appendChild(opt);
+      providerLabels[p.name] = p.label;
+    }
+  } catch (e) { console.error("list_llm_providers failed:", e); }
+
+  const llmProviderKeys = config.llm_provider_keys || {};
+  llmProviderSelect.value = config.llm_provider || "routerai";
+
+  function refreshLlmKeyCell() {
+    const prov = llmProviderSelect.value;
+    llmKeyLabel.firstChild.textContent = `${providerLabels[prov] || prov} key `;
+    if (llmProviderKeys[prov] === true) llmCell.showSaved(false); else llmCell.showInput();
+  }
+
+  function setLlmSectionVisible(enabled) {
+    llmProviderRow.style.display = enabled ? "" : "none";
+    llmKeyRow.style.display = enabled ? "" : "none";
+    logEntries.classList.toggle("show-llm-dots", enabled);
+    if (enabled) refreshLlmKeyCell();
+  }
+
+  postprocessToggle.checked = config.postprocess_enabled === true;
+  setLlmSectionVisible(postprocessToggle.checked);
+
+  postprocessToggle.addEventListener("change", async (e) => {
+    const enabled = e.target.checked;
+    setLlmSectionVisible(enabled);
+    await invoke("set_postprocess_enabled", { enabled });
+  });
+
+  llmProviderSelect.addEventListener("change", async (e) => {
+    const prov = e.target.value;
+    try {
+      await invoke("set_llm_provider", { provider: prov });
+      refreshLlmKeyCell();
+    } catch (err) { console.error("set_llm_provider failed:", err); }
+  });
+
+  $("#llm-key-input").addEventListener("change", async (e) => {
+    const key = e.target.value.trim();
+    if (!key) return;
+    const prov = llmProviderSelect.value;
+    try {
+      await invoke("set_api_key", { key, provider: prov });
+      llmProviderKeys[prov] = true;
+      llmCell.showSaved(true);
+    } catch (err) {
+      console.error(`save ${prov} key failed:`, err);
+    }
   });
 
   // Shortcut customization

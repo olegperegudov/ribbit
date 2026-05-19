@@ -1,34 +1,99 @@
-//! Optional LLM post-processing of transcribed text via RouterAI.
+//! Optional LLM post-processing of transcribed text via an OpenAI-compatible
+//! chat-completions endpoint (RouterAI, OpenAI, OpenRouter, ...).
 //!
-//! Lives between `vocab::apply` and `inserter::insert_text` in the pipeline.
-//! Disabled by default. When enabled and a key is present, runs a small,
-//! fast model (gemma-4-26b-a4b-it, ~150ms) to fix punctuation, spelling,
-//! and anglicisms. On any error/timeout we silently fall back to the
-//! vocab-processed text — never block the user.
+//! Pipeline role: replaces the strict `vocab::apply` step when enabled.
+//! The vocabulary is passed to the model as part of the system prompt so it
+//! can fix both exact aliases and obvious misheard variants by context (e.g.
+//! «Роса» → «Алроса» when "Алроса" is in vocab).
+//!
+//! On any error/timeout the caller falls back to plain `vocab::apply` so the
+//! user is never blocked beyond the 3s timeout.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
-/// Default model. Same one wiki_updater uses. ~150ms typical latency.
-pub const DEFAULT_MODEL: &str = "google/gemma-4-26b-a4b-it";
-const API_URL: &str = "https://routerai.ru/api/v1/chat/completions";
+/// Connection + defaults for one OpenAI-compatible LLM endpoint.
+pub struct ProviderConfig {
+    pub name: &'static str,
+    pub env_var: &'static str,
+    pub label: &'static str,
+    pub base_url: &'static str,
+    pub default_model: &'static str,
+}
+
+/// All providers Ribbit currently knows about. Order matches the UI dropdown.
+pub const PROVIDERS: &[ProviderConfig] = &[
+    ProviderConfig {
+        name: "routerai",
+        env_var: "ROUTERAI_API_KEY",
+        label: "RouterAI",
+        base_url: "https://routerai.ru/api/v1/chat/completions",
+        default_model: "google/gemma-4-26b-a4b-it",
+    },
+    ProviderConfig {
+        name: "openai",
+        env_var: "OPENAI_API_KEY",
+        label: "OpenAI",
+        base_url: "https://api.openai.com/v1/chat/completions",
+        default_model: "gpt-4o-mini",
+    },
+    ProviderConfig {
+        name: "openrouter",
+        env_var: "OPENROUTER_API_KEY",
+        label: "OpenRouter",
+        base_url: "https://openrouter.ai/api/v1/chat/completions",
+        default_model: "google/gemini-2.0-flash-001",
+    },
+];
+
+pub const DEFAULT_PROVIDER: &str = "routerai";
+
 const TIMEOUT_SECS: u64 = 3;
 
-/// System prompt — pinned by snapshot test so we change it intentionally.
-pub fn system_prompt() -> &'static str {
-    "Ты редактор русского текста. На вход — фраза, распознанная из речи. \
+pub fn find_provider(name: &str) -> Option<&'static ProviderConfig> {
+    PROVIDERS.iter().find(|p| p.name == name)
+}
+
+/// Vocab section appended to the system prompt. Empty when no vocab — keeps
+/// the prompt minimal for users who don't need this feature.
+fn vocab_section(vocab: &HashMap<String, Vec<String>>) -> String {
+    if vocab.is_empty() {
+        return String::new();
+    }
+    // Stable order so the prompt is deterministic across calls.
+    let mut keys: Vec<&String> = vocab.keys().collect();
+    keys.sort();
+    let mut s = String::from("\n\nСловарь поправок. Слева — правильное написание, справа — варианты, как речь могла быть распознана с ошибкой:\n");
+    for k in keys {
+        let aliases = &vocab[k];
+        if aliases.is_empty() {
+            s.push_str(&format!("- {}\n", k));
+        } else {
+            s.push_str(&format!("- {} ← {}\n", k, aliases.join(", ")));
+        }
+    }
+    s.push_str("Используй словарь как подсказку: подставляй правильное написание не только при точном совпадении с алиасом, но и при очевидных искажениях по смыслу (например, если в контексте речь явно про слово из словаря — заменяй, даже если форма отличается). Не подставляй когда смысл не подходит.");
+    s
+}
+
+/// System prompt for the editor. Pinned by snapshot test so we change it
+/// intentionally. With vocab the prompt grows by a list + one instruction.
+pub fn system_prompt(vocab: &HashMap<String, Vec<String>>) -> String {
+    let base = "Ты редактор русского текста. На вход — фраза, распознанная из речи. \
 Задача: исправь орфографию, расставь пунктуацию, приведи англицизмы \
 к привычному кириллическому написанию там где так общепринято \
 (например \"девопс\" а не \"DevOps\" в обычной речи). Не меняй смысл, \
 не добавляй ничего от себя, не пиши комментариев. Верни ТОЛЬКО \
-исправленный текст одной строкой без префиксов и кавычек."
+исправленный текст одной строкой без префиксов и кавычек.";
+    format!("{}{}", base, vocab_section(vocab))
 }
 
 /// Build the JSON request body. Deterministic — covered by unit tests.
-pub fn build_payload(text: &str, model: &str) -> serde_json::Value {
+pub fn build_payload(text: &str, vocab: &HashMap<String, Vec<String>>, model: &str) -> serde_json::Value {
     serde_json::json!({
         "model": model,
         "messages": [
-            {"role": "system", "content": system_prompt()},
+            {"role": "system", "content": system_prompt(vocab)},
             {"role": "user", "content": text}
         ],
         "temperature": 0.0,
@@ -37,7 +102,7 @@ pub fn build_payload(text: &str, model: &str) -> serde_json::Value {
 }
 
 /// Extract message content from an OpenAI-style chat-completion response,
-/// stripping common LLM-isms (surrounding quotes, "Исправленный текст:" prefix).
+/// stripping common LLM-isms (surrounding quotes).
 pub fn parse_response(json: &serde_json::Value) -> Result<String, String> {
     let content = json
         .get("choices")
@@ -89,21 +154,26 @@ fn client() -> &'static reqwest::blocking::Client {
     })
 }
 
-/// Call RouterAI with the given text. Returns the cleaned content on success.
-/// Caller is responsible for falling back to the original text on error.
-pub fn edit_text(text: &str, api_key: &str) -> Result<String, String> {
+/// Call the configured provider with the text + vocab. Returns the cleaned
+/// content on success. Caller is responsible for falling back on error.
+pub fn edit_text(
+    text: &str,
+    vocab: &HashMap<String, Vec<String>>,
+    provider: &ProviderConfig,
+    api_key: &str,
+) -> Result<String, String> {
     if text.trim().is_empty() {
         return Ok(text.to_string());
     }
     if api_key.is_empty() {
-        return Err("no routerai api key".into());
+        return Err(format!("no {} api key", provider.name));
     }
 
     let t0 = std::time::Instant::now();
-    let payload = build_payload(text, DEFAULT_MODEL);
+    let payload = build_payload(text, vocab, provider.default_model);
 
     let response = client()
-        .post(API_URL)
+        .post(provider.base_url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&payload)
@@ -124,7 +194,9 @@ pub fn edit_text(text: &str, api_key: &str) -> Result<String, String> {
 
     let edited = parse_response(&json)?;
     crate::debug_log::log(&format!(
-        "postprocess: {:?} → {:?} ({:.2}s)",
+        "postprocess[{}/{}]: {:?} → {:?} ({:.2}s)",
+        provider.name,
+        provider.default_model,
         text.chars().take(60).collect::<String>(),
         edited.chars().take(60).collect::<String>(),
         elapsed.as_secs_f32()
@@ -136,23 +208,78 @@ pub fn edit_text(text: &str, api_key: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    fn empty_vocab() -> HashMap<String, Vec<String>> {
+        HashMap::new()
+    }
+
+    fn sample_vocab() -> HashMap<String, Vec<String>> {
+        let mut v = HashMap::new();
+        v.insert("Алроса".into(), vec!["роса".into(), "алроза".into()]);
+        v.insert("девопс".into(), vec!["дев опс".into()]);
+        v
+    }
+
     #[test]
-    fn system_prompt_snapshot() {
-        // Pin the prompt — change here = visible diff in PR.
-        assert!(system_prompt().contains("редактор русского текста"));
-        assert!(system_prompt().contains("Верни ТОЛЬКО"));
-        assert!(system_prompt().contains("англицизмы"));
+    fn providers_table_well_formed() {
+        // Each provider has unique name and non-empty fields. UI relies on this.
+        let mut seen = std::collections::HashSet::new();
+        for p in PROVIDERS {
+            assert!(seen.insert(p.name), "duplicate provider name: {}", p.name);
+            assert!(!p.env_var.is_empty());
+            assert!(p.base_url.starts_with("https://"));
+            assert!(!p.default_model.is_empty());
+            assert!(!p.label.is_empty());
+        }
+        assert!(find_provider(DEFAULT_PROVIDER).is_some(), "default provider must be in PROVIDERS");
+    }
+
+    #[test]
+    fn find_provider_unknown() {
+        assert!(find_provider("nonesuch").is_none());
+    }
+
+    #[test]
+    fn system_prompt_snapshot_no_vocab() {
+        let p = system_prompt(&empty_vocab());
+        assert!(p.contains("редактор русского текста"));
+        assert!(p.contains("Верни ТОЛЬКО"));
+        assert!(p.contains("англицизмы"));
+        assert!(!p.contains("Словарь"));
+    }
+
+    #[test]
+    fn system_prompt_snapshot_with_vocab() {
+        let p = system_prompt(&sample_vocab());
+        assert!(p.contains("Словарь поправок"));
+        assert!(p.contains("- Алроса ← роса, алроза"));
+        assert!(p.contains("- девопс ← дев опс"));
+        assert!(p.contains("Используй словарь как подсказку"));
+    }
+
+    #[test]
+    fn system_prompt_vocab_is_deterministic() {
+        // Two builds with same vocab must produce identical prompt
+        let a = system_prompt(&sample_vocab());
+        let b = system_prompt(&sample_vocab());
+        assert_eq!(a, b);
     }
 
     #[test]
     fn build_payload_has_required_fields() {
-        let p = build_payload("привет", "google/gemma-4-26b-a4b-it");
+        let p = build_payload("привет", &empty_vocab(), "google/gemma-4-26b-a4b-it");
         assert_eq!(p["model"], "google/gemma-4-26b-a4b-it");
         assert_eq!(p["temperature"], 0.0);
         assert_eq!(p["max_tokens"], 512);
         assert_eq!(p["messages"][0]["role"], "system");
         assert_eq!(p["messages"][1]["role"], "user");
         assert_eq!(p["messages"][1]["content"], "привет");
+    }
+
+    #[test]
+    fn build_payload_includes_vocab_in_system_message() {
+        let p = build_payload("ехал к росе утром", &sample_vocab(), "x");
+        let sys = p["messages"][0]["content"].as_str().unwrap();
+        assert!(sys.contains("Алроса"), "vocab key missing from system prompt");
     }
 
     #[test]
@@ -205,13 +332,14 @@ mod tests {
 
     #[test]
     fn edit_text_returns_input_for_empty() {
-        // Empty input — no network call, return as-is
-        assert_eq!(edit_text("", "fake_key").unwrap(), "");
-        assert_eq!(edit_text("   ", "fake_key").unwrap(), "   ");
+        let p = find_provider("routerai").unwrap();
+        assert_eq!(edit_text("", &empty_vocab(), p, "fake_key").unwrap(), "");
+        assert_eq!(edit_text("   ", &empty_vocab(), p, "fake_key").unwrap(), "   ");
     }
 
     #[test]
     fn edit_text_errors_without_key() {
-        assert!(edit_text("hello", "").is_err());
+        let p = find_provider("routerai").unwrap();
+        assert!(edit_text("hello", &empty_vocab(), p, "").is_err());
     }
 }

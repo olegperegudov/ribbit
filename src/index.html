@@ -83,19 +83,32 @@
             <button id="vocab-btn" class="setting-btn">abc</button>
           </div>
           <div class="setting-row">
-            <span class="setting-label">edit transcription <span class="hint-icon" data-hint="Send each transcription through a small LLM to fix punctuation, spelling and anglicisms before it lands in the log. Adds ~150-300ms. Needs a RouterAI key." tabindex="0" role="button" aria-label="Help: edit transcription">?</span></span>
+            <span class="setting-label">groq key <span class="hint-icon" data-hint="Your Groq API key. Needed for speech-to-text. Free tier available at console.groq.com." tabindex="0" role="button" aria-label="Help: groq key">?</span></span>
+            <input type="password" id="groq-key-input" placeholder="gsk_..." autocomplete="off" />
+            <span id="groq-key-status" class="key-status" style="display:none">
+              <span class="key-saved-check">&check;</span>
+              <span class="key-saved-text">saved</span>
+              <a id="groq-key-edit" class="key-edit-link">change</a>
+            </span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">edit transcription <span class="hint-icon" data-hint="Send each transcription through a small LLM to fix punctuation, spelling and anglicisms before it lands in the log. Adds ~150-300ms. Needs an LLM provider key (pick below)." tabindex="0" role="button" aria-label="Help: edit transcription">?</span></span>
             <label class="toggle">
               <input type="checkbox" id="postprocess-toggle" />
               <span class="toggle-slider"></span>
             </label>
           </div>
-          <div class="setting-row" id="routerai-key-row" style="display:none">
-            <span class="setting-label">routerai key <span class="hint-icon" data-hint="Personal token from routerai.ru. Pasted here, stored locally in your config." tabindex="0" role="button" aria-label="Help: routerai key">?</span></span>
-            <input type="password" id="routerai-key-input" placeholder="paste token" autocomplete="off" />
-            <span id="routerai-key-status" style="display:none">
+          <div class="setting-row" id="llm-provider-row" style="display:none">
+            <span class="setting-label">llm provider <span class="hint-icon" data-hint="Which LLM service edits your transcripts. RouterAI = Russia-only. OpenAI/OpenRouter work worldwide." tabindex="0" role="button" aria-label="Help: llm provider">?</span></span>
+            <select id="llm-provider-select"></select>
+          </div>
+          <div class="setting-row" id="llm-key-row" style="display:none">
+            <span class="setting-label" id="llm-key-label">llm key <span class="hint-icon" data-hint="API token for the selected LLM provider. Stored locally in your config." tabindex="0" role="button" aria-label="Help: llm key">?</span></span>
+            <input type="password" id="llm-key-input" placeholder="paste token" autocomplete="off" />
+            <span id="llm-key-status" class="key-status" style="display:none">
               <span class="key-saved-check">&check;</span>
               <span class="key-saved-text">saved</span>
-              <a id="routerai-key-edit" class="key-edit-link">change</a>
+              <a id="llm-key-edit" class="key-edit-link">change</a>
             </span>
           </div>
           <div class="setting-row">

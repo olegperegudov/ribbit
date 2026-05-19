@@ -44,20 +44,53 @@ fn get_config() -> Result<serde_json::Value, String> {
         "".to_string()
     };
 
-    let has_routerai_key = std::env::var("ROUTERAI_API_KEY")
-        .map(|k| !k.is_empty())
-        .unwrap_or(false);
-    let postprocess_enabled = read_config()["postprocess_enabled"]
-        .as_bool()
-        .unwrap_or(false);
+    let cfg = read_config();
+    let postprocess_enabled = cfg["postprocess_enabled"].as_bool().unwrap_or(false);
+    let llm_provider = cfg["llm_provider"]
+        .as_str()
+        .unwrap_or(postprocess::DEFAULT_PROVIDER)
+        .to_string();
+
+    // Per-provider key presence (UI shows ✓-saved chip per provider).
+    let mut provider_keys = serde_json::Map::new();
+    for p in postprocess::PROVIDERS {
+        let has = std::env::var(p.env_var).map(|k| !k.is_empty()).unwrap_or(false);
+        provider_keys.insert(p.name.into(), serde_json::Value::Bool(has));
+    }
 
     Ok(serde_json::json!({
         "has_api_key": !key.is_empty(),
         "api_key_preview": preview,
         "provider": provider,
-        "has_routerai_key": has_routerai_key,
+        "has_groq_key": std::env::var("GROQ_API_KEY").map(|k| !k.is_empty()).unwrap_or(false),
         "postprocess_enabled": postprocess_enabled,
+        "llm_provider": llm_provider,
+        "llm_provider_keys": provider_keys,
     }))
+}
+
+#[tauri::command]
+fn set_llm_provider(provider: String) -> Result<(), String> {
+    if postprocess::find_provider(&provider).is_none() {
+        return Err(format!("unknown provider: {}", provider));
+    }
+    let mut config = read_config();
+    config["llm_provider"] = serde_json::Value::String(provider.clone());
+    save_config(&config)?;
+    debug_log::log(&format!("llm_provider set to: {}", provider));
+    Ok(())
+}
+
+#[tauri::command]
+fn list_llm_providers() -> Vec<serde_json::Value> {
+    postprocess::PROVIDERS
+        .iter()
+        .map(|p| serde_json::json!({
+            "name": p.name,
+            "label": p.label,
+            "default_model": p.default_model,
+        }))
+        .collect()
 }
 
 #[tauri::command]
@@ -241,7 +274,8 @@ async fn set_api_key(key: String, provider: Option<String>) -> Result<(), String
 
     let var_name = match prov.as_str() {
         "groq" => "GROQ_API_KEY",
-        "router_ai" => "ROUTERAI_API_KEY",
+        "router_ai" | "routerai" => "ROUTERAI_API_KEY",
+        "openrouter" => "OPENROUTER_API_KEY",
         _ => "OPENAI_API_KEY",
     };
 
@@ -413,36 +447,53 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
         match result {
             Ok(raw_text) => {
-                let mut text = vocab::apply(&raw_text);
+                // Pipeline: if LLM post-processing is enabled we send raw text +
+                // vocab to the model (it handles both punctuation and vocab
+                // mapping with context). Otherwise — strict vocab::apply.
+                // On LLM error we fall back to strict vocab::apply so the user
+                // is never blocked beyond the 3s timeout.
+                let cfg = read_config();
+                let postprocess_enabled = cfg["postprocess_enabled"].as_bool().unwrap_or(false);
+                let llm_provider_name = cfg["llm_provider"]
+                    .as_str()
+                    .unwrap_or(postprocess::DEFAULT_PROVIDER);
 
-                // Optional LLM post-processing — fixes punctuation/spelling
-                // before logging/emit/paste. On any failure, fall back to
-                // the vocab'd text. Never blocks the user beyond 3s timeout.
-                let postprocess_enabled = read_config()["postprocess_enabled"]
-                    .as_bool()
-                    .unwrap_or(false);
-                if postprocess_enabled {
-                    if let Ok(key) = std::env::var("ROUTERAI_API_KEY") {
-                        match postprocess::edit_text(&text, &key) {
-                            Ok(edited) => text = edited,
-                            Err(e) => debug_log::log(&format!("postprocess fallback: {}", e)),
-                        }
+                let (text, edited): (String, bool) = if postprocess_enabled {
+                    let provider = postprocess::find_provider(llm_provider_name)
+                        .unwrap_or_else(|| postprocess::find_provider(postprocess::DEFAULT_PROVIDER).unwrap());
+                    let key = std::env::var(provider.env_var).unwrap_or_default();
+                    if key.is_empty() {
+                        debug_log::log(&format!(
+                            "postprocess enabled but no {} — falling back to strict vocab",
+                            provider.env_var
+                        ));
+                        (vocab::apply(&raw_text), false)
                     } else {
-                        debug_log::log("postprocess enabled but no ROUTERAI_API_KEY — skipping");
+                        let vocab_data = vocab::read_vocab();
+                        match postprocess::edit_text(&raw_text, &vocab_data, provider, &key) {
+                            Ok(edited_text) => (edited_text, true),
+                            Err(e) => {
+                                debug_log::log(&format!("postprocess fallback: {}", e));
+                                (vocab::apply(&raw_text), false)
+                            }
+                        }
                     }
-                }
+                } else {
+                    (vocab::apply(&raw_text), false)
+                };
 
                 let preview: String = text.chars().take(80).collect();
-                debug_log::log(&format!("transcription OK: {:?}", preview));
+                debug_log::log(&format!("transcription OK (edited={}): {:?}", edited, preview));
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
                     // Log first — ensures text is saved even if insert fails.
-                    logger::log_transcription(&text, duration_secs);
+                    logger::log_transcription(&text, duration_secs, edited);
                     usage::record(duration_secs);
                     let _ = app_handle.emit("transcription", serde_json::json!({
                         "text": &text,
                         "duration": duration_secs,
+                        "edited": edited,
                     }));
 
                     let _ = app_handle.emit("status-detail", "Inserting text...");
@@ -641,7 +692,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, set_llm_provider, list_llm_providers])
         .setup(move |app| {
             let handle = app.handle().clone();
 
