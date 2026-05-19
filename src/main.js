@@ -42,8 +42,10 @@ function addLogEntry(text, ts, edited) {
   const entry = document.createElement("div");
   entry.className = "log-entry";
   const dotClass = edited === true ? "edited" : "unedited";
-  const dotTitle = edited === true ? "edited by LLM" : "not edited by LLM";
-  entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span><span class="log-llm-dot ${dotClass}" title="${dotTitle}"></span>`;
+  const dotHint = edited === true
+    ? "LLM editor: this transcription was edited."
+    : "LLM editor: not edited (toggle off, no API key, or the LLM call failed — check the Debug log).";
+  entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span><span class="log-llm-dot ${dotClass}" data-hint="${dotHint}" tabindex="0"></span>`;
   entry.title = "click to copy";
   entry.addEventListener("click", () => {
     // Don't copy if user is selecting text (for vocab popup)
