@@ -366,15 +366,36 @@ window.addEventListener("DOMContentLoaded", async () => {
     await invoke("set_always_on_top", { value: e.target.checked });
   });
 
-  // LLM post-processing — toggle reveals the key row, which only shows
-  // a placeholder when a key is already stored (we never echo it back).
+  // LLM post-processing — toggle reveals the key row. When a key is stored
+  // we hide the input and show a "✓ saved · change" chip, otherwise the
+  // input is visible. We never echo the stored key back to the UI.
   const postprocessToggle = $("#postprocess-toggle");
   const routeraiKeyRow = $("#routerai-key-row");
   const routeraiKeyInput = $("#routerai-key-input");
+  const routeraiKeyStatus = $("#routerai-key-status");
+  const routeraiKeyEdit = $("#routerai-key-edit");
+
+  function showKeyInput() {
+    routeraiKeyInput.style.display = "";
+    routeraiKeyStatus.style.display = "none";
+    routeraiKeyInput.value = "";
+  }
+
+  function showKeySaved(flash) {
+    routeraiKeyInput.style.display = "none";
+    routeraiKeyInput.value = "";
+    routeraiKeyStatus.style.display = "";
+    if (flash) {
+      routeraiKeyStatus.classList.remove("flash");
+      void routeraiKeyStatus.offsetWidth; // restart animation
+      routeraiKeyStatus.classList.add("flash");
+    }
+  }
 
   function updateRouteraiKeyRow(enabled, hasKey) {
     routeraiKeyRow.style.display = enabled ? "" : "none";
-    routeraiKeyInput.placeholder = hasKey ? "key stored — paste to replace" : "paste token";
+    if (!enabled) return;
+    if (hasKey) showKeySaved(false); else showKeyInput();
   }
 
   postprocessToggle.checked = config.postprocess_enabled === true;
@@ -392,11 +413,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     try {
       await invoke("set_api_key", { key, provider: "router_ai" });
       config.has_routerai_key = true;
-      routeraiKeyInput.value = "";
-      routeraiKeyInput.placeholder = "key stored — paste to replace";
+      showKeySaved(true);
     } catch (err) {
       console.error("save routerai key failed:", err);
     }
+  });
+
+  routeraiKeyEdit.addEventListener("click", () => {
+    showKeyInput();
+    routeraiKeyInput.focus();
   });
 
   // Shortcut customization

@@ -92,6 +92,11 @@
           <div class="setting-row" id="routerai-key-row" style="display:none">
             <span class="setting-label">routerai key <span class="hint-icon" data-hint="Personal token from routerai.ru. Pasted here, stored locally in your config." tabindex="0" role="button" aria-label="Help: routerai key">?</span></span>
             <input type="password" id="routerai-key-input" placeholder="paste token" autocomplete="off" />
+            <span id="routerai-key-status" style="display:none">
+              <span class="key-saved-check">&check;</span>
+              <span class="key-saved-text">saved</span>
+              <a id="routerai-key-edit" class="key-edit-link">change</a>
+            </span>
           </div>
           <div class="setting-row">
             <span class="setting-label">debug log <span class="hint-icon" data-hint="Internal log for troubleshooting. Shows recording events, API calls, and errors." tabindex="0" role="button" aria-label="Help: debug log">?</span></span>
