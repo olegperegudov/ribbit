@@ -7,6 +7,16 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.44] - 2026-05-21
+
+### Added
+- Every dictation now records a per-stage timing breakdown into the
+  daily log — speech-to-text, the LLM editor, and text insertion are
+  timed separately, alongside the audio length, character count, idle
+  gap since the previous dictation, and the models used. This makes it
+  possible to tell, after the fact, which stage is responsible when a
+  dictation feels slow. No effect on the dictation experience itself.
+
 ## [0.7.43] - 2026-05-21
 
 ### Fixed

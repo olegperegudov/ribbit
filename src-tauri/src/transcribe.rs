@@ -38,6 +38,18 @@ fn get_provider() -> Result<(&'static str, String, &'static str), String> {
     }
 }
 
+/// Short "provider/model" label of the currently active STT endpoint, for the
+/// transcription log. "none" when no key is configured.
+pub fn current_model_label() -> String {
+    match get_provider() {
+        Ok((url, _, model)) => {
+            let provider = if url.contains("groq") { "groq" } else { "openai" };
+            format!("{}/{}", provider, model)
+        }
+        Err(_) => "none".to_string(),
+    }
+}
+
 /// Encode f32 PCM audio data as WAV bytes
 fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Vec<u8> {
     let mut buf = Vec::new();

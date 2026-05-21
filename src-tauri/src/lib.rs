@@ -26,6 +26,16 @@ struct RecordingState {
     current_shortcut: String,
 }
 
+/// When the previous dictation finished. Read at the start of each new one to
+/// record the idle gap — a long gap usually means the pooled TLS connection to
+/// the STT/LLM endpoint went cold and the next request pays a reconnect.
+static LAST_DICTATION: std::sync::OnceLock<Mutex<Option<std::time::Instant>>> =
+    std::sync::OnceLock::new();
+
+fn last_dictation() -> &'static Mutex<Option<std::time::Instant>> {
+    LAST_DICTATION.get_or_init(|| Mutex::new(None))
+}
+
 #[tauri::command]
 fn get_config() -> Result<serde_json::Value, String> {
     let (provider, key) = if let Ok(k) = std::env::var("GROQ_API_KEY") {
@@ -454,11 +464,21 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     std::thread::spawn(move || {
         let _ = app_handle.emit("transcribing", true);
 
+        // Time the whole post-release pipeline. Each stage is timed separately
+        // so a slow dictation can be attributed to STT, the LLM editor, or
+        // text insertion after the fact — see logger::TranscriptionLog.
+        let t_pipeline = std::time::Instant::now();
+        let idle_secs = (*last_dictation().lock().unwrap())
+            .map(|t| t.elapsed().as_secs_f32());
+
         // Read configured languages for Whisper hint
         let languages = get_languages();
 
         // Create a blocking reqwest client instead of async
+        let t_stt = std::time::Instant::now();
         let result = transcribe::transcribe_audio_blocking(&audio_data, sample_rate, &languages);
+        let stt_secs = t_stt.elapsed().as_secs_f32();
+        let stt_model = transcribe::current_model_label();
 
         match result {
             Ok(raw_text) => {
@@ -473,6 +493,10 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     .as_str()
                     .unwrap_or(postprocess::DEFAULT_PROVIDER);
 
+                let mut llm_secs: Option<f32> = None;
+                let mut llm_model: Option<String> = None;
+                let mut llm_attempted = false;
+
                 let (text, edited): (String, bool) = if postprocess_enabled {
                     let provider = postprocess::find_provider(llm_provider_name)
                         .unwrap_or_else(|| postprocess::find_provider(postprocess::DEFAULT_PROVIDER).unwrap());
@@ -485,7 +509,15 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         (vocab::apply(&raw_text), false)
                     } else {
                         let vocab_data = vocab::read_vocab();
-                        match postprocess::edit_text(&raw_text, &vocab_data, provider, &key) {
+                        llm_attempted = true;
+                        llm_model = Some(format!("{}/{}", provider.name, provider.default_model));
+                        // Timed even on failure: a timed-out LLM burns its full
+                        // 5s timeout (+retry) before we fall back to vocab, and
+                        // that lost time must show up in the log.
+                        let t_llm = std::time::Instant::now();
+                        let outcome = postprocess::edit_text(&raw_text, &vocab_data, provider, &key);
+                        llm_secs = Some(t_llm.elapsed().as_secs_f32());
+                        match outcome {
                             Ok(edited_text) => (edited_text, true),
                             Err(e) => {
                                 debug_log::log(&format!("postprocess fallback: {}", e));
@@ -502,8 +534,6 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
-                    // Log first — ensures text is saved even if insert fails.
-                    logger::log_transcription(&text, duration_secs, edited);
                     usage::record(duration_secs);
                     let _ = app_handle.emit("transcription", serde_json::json!({
                         "text": &text,
@@ -519,13 +549,42 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     // Direct keyboard input — does NOT touch the clipboard.
                     // If insert fails, the transcript is still in the log;
                     // the user can click it to copy manually.
+                    let t_insert = std::time::Instant::now();
                     if let Err(e) = inserter::insert_text(&text) {
                         debug_log::log(&format!("insert error: {}", e));
                         let _ = app_handle.emit("error",
                             format!("Insert failed — text saved to log. {}", e));
                     }
+                    let insert_secs = t_insert.elapsed().as_secs_f32();
 
                     let _ = app_handle.emit("status-detail", "Done!");
+
+                    // Logged after insert so insert_secs/total_secs are real.
+                    // The UI history already received the transcript via the
+                    // `transcription` event above, so a crash here can't lose
+                    // it from the user's view.
+                    let total_secs = t_pipeline.elapsed().as_secs_f32();
+                    logger::log_transcription(&logger::TranscriptionLog {
+                        text: &text,
+                        raw_text: if llm_attempted { Some(raw_text.as_str()) } else { None },
+                        edited,
+                        audio_secs: duration_secs,
+                        stt_secs,
+                        stt_model: &stt_model,
+                        llm_secs,
+                        llm_model: llm_model.as_deref(),
+                        insert_secs,
+                        total_secs,
+                        idle_secs,
+                    });
+                    debug_log::log(&format!(
+                        "timing: stt={:.1}s llm={} insert={:.1}s total={:.1}s ({} chars)",
+                        stt_secs,
+                        llm_secs.map(|s| format!("{:.1}s", s)).unwrap_or_else(|| "off".into()),
+                        insert_secs,
+                        total_secs,
+                        text.chars().count(),
+                    ));
                 }
             }
             Err(e) => {
@@ -534,6 +593,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
             }
         }
 
+        *last_dictation().lock().unwrap() = Some(std::time::Instant::now());
         let _ = app_handle.emit("transcribing", false);
     });
 }
