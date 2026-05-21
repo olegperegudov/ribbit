@@ -7,6 +7,13 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.42] - 2026-05-21
+
+### Changed
+- The update auto-check now repeats every 30 minutes while Ribbit is
+  running, not just once at launch — the gear lights up on its own when
+  a release ships during the day, no manual "check update" needed.
+
 ## [0.7.41] - 2026-05-21
 
 ### Added

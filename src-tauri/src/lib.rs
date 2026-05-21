@@ -775,37 +775,36 @@ pub fn run() {
             debug_log::log(&format!("registering hotkey: {}", shortcut_str));
             register_shortcut(&handle, shortcut)?;
 
-            // Auto-check for updates on every launch
+            // Auto-check for updates: shortly after launch, then on an
+            // interval. Ribbit lives in the tray all day, so a release that
+            // ships while it's running must light the gear on its own —
+            // polling every 30 min spares the user the manual "check update".
             let update_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
-                // Small delay so the app finishes loading first
+                // Small delay so the app finishes loading first.
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-                debug_log::log("update: running auto-check...");
-                let now = chrono::Utc::now().timestamp();
-                let updater = match update_handle.updater() {
-                    Ok(u) => u,
-                    Err(e) => {
-                        debug_log::log(&format!("update: auto-check error: {}", e));
-                        return;
+                loop {
+                    debug_log::log("update: running auto-check...");
+                    match update_handle.updater() {
+                        Ok(updater) => match updater.check().await {
+                            Ok(Some(update)) => {
+                                debug_log::log(&format!("update: v{} available", update.version));
+                                let _ = update_handle.emit("update-available", &update.version);
+                                // Gear is lit — nothing more to poll for.
+                                break;
+                            }
+                            Ok(None) => debug_log::log("update: up to date"),
+                            Err(e) => debug_log::log(&format!("update: auto-check failed: {}", e)),
+                        },
+                        Err(e) => debug_log::log(&format!("update: auto-check error: {}", e)),
                     }
-                };
-                match updater.check().await {
-                    Ok(Some(update)) => {
-                        debug_log::log(&format!("update: v{} available", update.version));
-                        let _ = update_handle.emit("update-available", &update.version);
-                    }
-                    Ok(None) => {
-                        debug_log::log("update: up to date");
-                    }
-                    Err(e) => {
-                        debug_log::log(&format!("update: auto-check failed: {}", e));
-                    }
+                    let mut cfg = read_config();
+                    cfg["last_update_check"] = serde_json::json!(chrono::Utc::now().timestamp());
+                    let _ = save_config(&cfg);
+
+                    tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
                 }
-                // Save check timestamp regardless of result
-                let mut cfg = read_config();
-                cfg["last_update_check"] = serde_json::json!(now);
-                let _ = save_config(&cfg);
             });
 
             debug_log::log("setup complete");
