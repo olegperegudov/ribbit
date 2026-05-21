@@ -404,19 +404,30 @@ body {
  * Visible only when the postprocess toggle is currently ON
  * (gated by .show-llm-dots on #log-entries). Green = entry was LLM-edited,
  * yellow = it wasn't (LLM disabled at the time, key missing, or call failed). */
+/* The visible dot is 6px, but a 6px hover target is near-impossible to land
+ * on — the tooltip would seem broken. So the element itself is an 18px
+ * transparent box (the hover/tooltip target) with the colored dot drawn
+ * centered via ::before. */
 .log-llm-dot {
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  margin-right: 2px;
+  flex-shrink: 0;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.log-llm-dot::before {
+  content: "";
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  margin-left: auto;
-  margin-right: 8px;
-  flex-shrink: 0;
-  align-self: flex-end;
-  margin-bottom: 0.2rem;
 }
 #log-entries:not(.show-llm-dots) .log-llm-dot { display: none; }
-.log-llm-dot.edited { background: #4ade80; }
-.log-llm-dot.unedited { background: #facc15; }
+.log-llm-dot.edited::before { background: #4ade80; }
+.log-llm-dot.unedited::before { background: #facc15; }
 
 kbd {
   background: #1a1f28;

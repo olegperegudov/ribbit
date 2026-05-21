@@ -52,9 +52,7 @@ function addLogEntry(text, ts, edited) {
   const entry = document.createElement("div");
   entry.className = "log-entry";
   const dotClass = edited === true ? "edited" : "unedited";
-  const dotHint = edited === true
-    ? "LLM editor: this transcription was edited."
-    : "LLM editor: not edited (toggle off, no API key, or the LLM call failed — check the Debug log).";
+  const dotHint = edited === true ? "rephrased" : "not rephrased";
   entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span><span class="log-llm-dot ${dotClass}" data-hint="${dotHint}" tabindex="0"></span>`;
   entry.title = "click to copy";
   entry.addEventListener("click", () => {

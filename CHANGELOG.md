@@ -7,6 +7,16 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.43] - 2026-05-21
+
+### Fixed
+- The hover tooltip on the LLM status dot now reliably appears — the
+  hover target was only 6px wide and practically unhittable; it is now
+  an 18px transparent area around the same visible dot.
+
+### Changed
+- That tooltip now reads simply "rephrased" / "not rephrased".
+
 ## [0.7.42] - 2026-05-21
 
 ### Changed
