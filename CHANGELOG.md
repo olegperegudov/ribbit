@@ -7,6 +7,20 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.41] - 2026-05-21
+
+### Added
+- Quick search: a magnifier button in the header opens a small popup;
+  typing filters the log live to transcripts containing a word that
+  starts with the query (case-insensitive, Cyrillic-aware).
+- History retention setting — choose how many days of transcripts to
+  keep on disk (rolling window, today plus the previous N-1 days).
+  Default is 7 days, up from the previous fixed 24-hour window.
+
+### Changed
+- Day separators in the log are now a faded rule with the weekday and
+  date centered in it (e.g. "tu, may 5th").
+
 ## [0.7.40] - 2026-05-21
 
 ### Fixed

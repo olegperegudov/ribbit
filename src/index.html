@@ -21,6 +21,12 @@
           <div id="status-detail" data-tauri-drag-region></div>
         </div>
         <div class="header-right">
+          <button id="search-btn" class="win-btn" title="Search transcripts">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="6.8" cy="6.8" r="4.8" />
+              <line x1="10.4" y1="10.4" x2="14.5" y2="14.5" />
+            </svg>
+          </button>
           <button id="settings-btn" class="win-btn" title="Settings">&#x2699;</button>
           <button id="win-min" class="win-btn" title="Minimize">&#x2212;</button>
           <button id="win-close" class="win-btn win-close" title="Close">&#x2715;</button>
@@ -28,6 +34,11 @@
       </div>
 
       <div id="log-entries"></div>
+
+      <!-- Quick search popup (magnifier in header) -->
+      <div id="search-popup" style="display:none">
+        <input id="search-input" type="text" placeholder="Search..." autocomplete="off" />
+      </div>
 
       <!-- Selection popup for quick vocab add -->
       <div id="vocab-popup" style="display:none">
@@ -54,6 +65,13 @@
               <option value="frog">frog</option>
               <option value="ping">ping</option>
             </select>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">history <span class="hint-icon" data-hint="How many days of transcripts to keep on this computer, counting today. Older days are deleted automatically. Quick search looks across everything kept here. Set to 1 to keep only today." tabindex="0" role="button" aria-label="Help: history">?</span></span>
+            <div class="history-days">
+              <input type="number" id="history-days-input" min="1" max="365" />
+              <span class="history-days-unit">days</span>
+            </div>
           </div>
           <div class="setting-row setting-row-lang">
             <span class="setting-label">languages <span class="hint-icon" data-hint="Optional. Groq auto-detects the language, but selecting yours reduces errors — especially for short phrases." tabindex="0" role="button" aria-label="Help: languages">?</span></span>

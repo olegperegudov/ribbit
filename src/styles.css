@@ -122,6 +122,7 @@ body {
   background: #2a3040;
   color: #d1d5db;
 }
+.win-btn svg { display: block; }
 .win-close:hover {
   background: #dc2626;
   color: #fff;
@@ -134,12 +135,33 @@ body {
   padding-top: 0.5rem;
 }
 
+/* Day separator: faded rule with the weekday + date centered in it. */
 .date-sep {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0 0.3rem;
+}
+.date-sep::before,
+.date-sep::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+}
+.date-sep::before {
+  background: linear-gradient(to right, transparent, #2a3040);
+}
+.date-sep::after {
+  background: linear-gradient(to left, transparent, #2a3040);
+}
+
+.date-sep-label {
   font-size: 0.6rem;
-  color: #4b5563;
+  color: #6b7280;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  padding: 0.6rem 0 0.2rem;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .date-sep:first-child {
@@ -352,6 +374,30 @@ body {
   outline: none;
 }
 #groq-key-input:focus, #llm-key-input:focus { border-color: rgba(74, 222, 128, 0.4); }
+
+/* History retention input */
+.history-days {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.history-days-unit {
+  font-size: 0.7rem;
+  color: #6b7280;
+}
+#history-days-input {
+  background: #0f1318;
+  border: 1px solid #2a3040;
+  color: #d1d5db;
+  font-size: 0.7rem;
+  font-family: inherit;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  width: 48px;
+  outline: none;
+  text-align: center;
+}
+#history-days-input:focus { border-color: rgba(74, 222, 128, 0.4); }
 
 
 /* LLM-status dot on log entries.
@@ -649,6 +695,32 @@ kbd.capturing {
   white-space: pre-wrap;
   word-break: break-all;
   line-height: 1.4;
+}
+
+/* Quick search popup (under the header magnifier) */
+#search-popup {
+  position: fixed;
+  background: #1a1f28;
+  border: 1px solid #2a3040;
+  border-radius: 8px;
+  padding: 0.4rem;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+#search-input {
+  background: #0f1318;
+  border: 1px solid #2a3040;
+  border-radius: 5px;
+  color: #d1d5db;
+  font-size: 0.75rem;
+  font-family: inherit;
+  padding: 0.3rem 0.45rem;
+  outline: none;
+  width: 130px;
+}
+#search-input:focus {
+  border-color: rgba(74, 222, 128, 0.4);
 }
 
 /* Vocab popup (inline, near selection) */

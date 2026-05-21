@@ -35,22 +35,28 @@ pub fn log_transcription(text: &str, duration_secs: f32, edited: bool) {
     }
 }
 
-/// Delete log files older than yesterday
-pub fn cleanup_old_logs() {
+/// Day-file names to keep: today and the (history_days - 1) days before it.
+fn kept_dates(history_days: i64) -> Vec<String> {
+    let now = Local::now();
+    (0..history_days.max(1))
+        .map(|o| (now - chrono::Duration::days(o)).format("%Y-%m-%d").to_string())
+        .collect()
+}
+
+/// Delete log files that fall outside the rolling retention window.
+pub fn cleanup_old_logs(history_days: i64) {
     let log_dir = match log_dir() {
         Some(d) => d,
         None => return,
     };
 
-    let now = Local::now();
-    let today = now.format("%Y-%m-%d").to_string();
-    let yesterday = (now - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+    let keep = kept_dates(history_days);
 
     if let Ok(entries) = fs::read_dir(&log_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name.ends_with(".jsonl") && !name.starts_with(&today) && !name.starts_with(&yesterday) {
+            if name.ends_with(".jsonl") && !keep.iter().any(|k| name.starts_with(k.as_str())) {
                 let _ = fs::remove_file(entry.path());
                 crate::debug_log::log(&format!("cleaned up old log: {}", name));
             }
@@ -58,31 +64,21 @@ pub fn cleanup_old_logs() {
     }
 }
 
-pub fn read_recent_entries(limit: usize) -> Vec<serde_json::Value> {
+pub fn read_recent_entries(limit: usize, history_days: i64) -> Vec<serde_json::Value> {
     let log_dir = match log_dir() {
         Some(d) => d,
         None => return vec![],
     };
 
-    let now = Local::now();
-    let cutoff = now - chrono::Duration::days(1);
-
-    // Read today + yesterday files
+    // Each day-file already partitions entries by calendar day, so reading the
+    // files inside the retention window needs no extra per-entry time filter.
     let mut all_entries = Vec::new();
-    for offset in 0..=1 {
-        let date = (now - chrono::Duration::days(offset)).format("%Y-%m-%d").to_string();
+    for date in kept_dates(history_days) {
         let file = log_dir.join(format!("{}.jsonl", date));
         if let Ok(contents) = fs::read_to_string(&file) {
             for line in contents.lines() {
                 if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
-                    // Filter: only entries within last 24h
-                    if let Some(ts) = entry["ts"].as_str() {
-                        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
-                            if dt >= cutoff {
-                                all_entries.push(entry);
-                            }
-                        }
-                    }
+                    all_entries.push(entry);
                 }
             }
         }

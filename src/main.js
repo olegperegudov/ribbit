@@ -15,27 +15,37 @@ function formatTime(isoString) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function formatDate(isoString) {
-  const d = new Date(isoString);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+// English ordinal suffix: 1st, 2nd, 3rd, 4th, 21st, ...
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
 
-  if (d.toDateString() === today.toDateString()) return "TODAY";
-  if (d.toDateString() === yesterday.toDateString()) return "YESTERDAY";
-  return d.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }).toUpperCase();
+// Day-separator label, e.g. "tu, may 5th". Weekday + month + ordinal day —
+// easier to place a transcript in the week than a bare date. null = today.
+function formatDate(isoString) {
+  const d = isoString ? new Date(isoString) : new Date();
+  const wd = ["su", "mo", "tu", "we", "th", "fr", "sa"][d.getDay()];
+  const mon = d.toLocaleDateString("en-US", { month: "short" }).toLowerCase();
+  const day = d.getDate();
+  return `${wd}, ${mon} ${day}${ordinal(day)}`;
 }
 
 function addLogEntry(text, ts, edited) {
   const log = $("#log-entries");
   const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  const dateLabel = ts ? formatDate(ts) : "TODAY";
+  const dateLabel = formatDate(ts);
 
   const lastDateSep = log.querySelector(".date-sep:first-child");
-  if (!lastDateSep || lastDateSep.textContent !== dateLabel) {
+  if (!lastDateSep || lastDateSep.dataset.day !== dateLabel) {
     const sep = document.createElement("div");
     sep.className = "date-sep";
-    sep.textContent = dateLabel;
+    sep.dataset.day = dateLabel;
+    const label = document.createElement("span");
+    label.className = "date-sep-label";
+    label.textContent = dateLabel;
+    sep.appendChild(label);
     log.insertBefore(sep, log.firstChild);
   }
 
@@ -64,6 +74,9 @@ function addLogEntry(text, ts, edited) {
   } else {
     log.appendChild(entry);
   }
+
+  // A transcript arriving while search is active must obey the active filter.
+  if (searchQuery.trim()) applySearchFilter();
 }
 
 function escapeHtml(text) {
@@ -81,6 +94,63 @@ function showPanel(name) {
   $("#settings-panel").style.display = name === "settings" ? "flex" : "none";
   $("#debug-panel").style.display = name === "debug" ? "flex" : "none";
   $("#vocab-panel").style.display = name === "vocab" ? "flex" : "none";
+  // Leaving the log hides the search popup and drops the filter — the filtered
+  // view is meaningless when the log isn't on screen.
+  if (name !== "log") closeSearch();
+}
+
+// --- Quick search ---
+// A transcript matches when any of its words *starts with* the query
+// (prefix match, case-insensitive, Cyrillic-aware). Typing "маш" surfaces
+// both "машина" and "Маша" — anything beginning with those letters.
+
+let searchQuery = "";
+
+function entryMatchesQuery(text, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const words = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+  return words.some((w) => w.startsWith(q));
+}
+
+function applySearchFilter() {
+  const log = $("#log-entries");
+  const q = searchQuery.trim();
+  for (const entry of log.querySelectorAll(".log-entry")) {
+    const text = entry.querySelector(".log-text")?.textContent || "";
+    entry.style.display = entryMatchesQuery(text, q) ? "" : "none";
+  }
+  // A day separator is only useful if it still heads a visible entry.
+  for (const sep of log.querySelectorAll(".date-sep")) {
+    let visible = false;
+    for (let n = sep.nextElementSibling; n && !n.classList.contains("date-sep"); n = n.nextElementSibling) {
+      if (n.classList.contains("log-entry") && n.style.display !== "none") { visible = true; break; }
+    }
+    sep.style.display = visible ? "" : "none";
+  }
+}
+
+function openSearch() {
+  const btn = $("#search-btn");
+  const popup = $("#search-popup");
+  popup.style.display = "block";
+  // Anchor the popup's right edge under the magnifier so it never overflows.
+  const r = btn.getBoundingClientRect();
+  const w = popup.offsetWidth;
+  let left = Math.min(r.right - w, window.innerWidth - w - 8);
+  popup.style.left = `${Math.max(8, left)}px`;
+  popup.style.top = `${r.bottom + 6}px`;
+  $("#search-input").focus();
+}
+
+function closeSearch() {
+  const popup = $("#search-popup");
+  if (!popup) return;
+  popup.style.display = "none";
+  const input = $("#search-input");
+  if (input) input.value = "";
+  searchQuery = "";
+  applySearchFilter();
 }
 
 // --- Vocab state (logic lives in ./vocab.js) ---
@@ -277,7 +347,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Load history
   try {
-    const history = await invoke("get_log_history", { limit: 50 });
+    // limit 0 = load everything inside the retention window (search needs all days).
+    const history = await invoke("get_log_history", { limit: 0 });
     for (const entry of history.reverse()) {
       addLogEntry(entry.text, entry.ts, entry.edited);
     }
@@ -363,6 +434,19 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("#settings-btn").addEventListener("click", () => {
     const visible = $("#settings-panel").style.display !== "none";
     showPanel(visible ? "log" : "settings");
+  });
+
+  // Quick search (magnifier toggles a small popup; filtering is live)
+  $("#search-btn").addEventListener("click", () => {
+    if ($("#search-popup").style.display === "none") openSearch();
+    else closeSearch();
+  });
+  $("#search-input").addEventListener("input", (e) => {
+    searchQuery = e.target.value;
+    applySearchFilter();
+  });
+  $("#search-input").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); closeSearch(); }
   });
 
   // Always on top toggle
@@ -612,6 +696,17 @@ window.addEventListener("DOMContentLoaded", async () => {
   soundSelect.addEventListener("change", async () => {
     await invoke("set_sound_pack", { pack: soundSelect.value });
     invoke("test_sound");
+  });
+
+  // History retention — rolling window of days kept on disk and searchable.
+  const historyInput = $("#history-days-input");
+  historyInput.value = config.history_days ?? 7;
+  historyInput.addEventListener("change", async () => {
+    let v = parseInt(historyInput.value, 10);
+    if (!Number.isFinite(v) || v < 1) v = 1;
+    if (v > 365) v = 365;
+    historyInput.value = v;
+    await invoke("set_history_days", { days: v });
   });
 
   // Version display + changelog link

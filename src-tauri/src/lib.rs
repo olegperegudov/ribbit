@@ -66,6 +66,7 @@ fn get_config() -> Result<serde_json::Value, String> {
         "postprocess_enabled": postprocess_enabled,
         "llm_provider": llm_provider,
         "llm_provider_keys": provider_keys,
+        "history_days": history_days(),
     }))
 }
 
@@ -104,7 +105,21 @@ fn set_postprocess_enabled(enabled: bool) -> Result<(), String> {
 
 #[tauri::command]
 fn get_log_history(limit: usize) -> Vec<serde_json::Value> {
-    logger::read_recent_entries(if limit == 0 { 50 } else { limit })
+    // limit 0 = no cap (load the whole retention window so search covers it).
+    let cap = if limit == 0 { usize::MAX } else { limit };
+    logger::read_recent_entries(cap, history_days())
+}
+
+#[tauri::command]
+fn set_history_days(days: i64) -> Result<(), String> {
+    let d = days.clamp(1, 365);
+    let mut config = read_config();
+    config["history_days"] = serde_json::json!(d);
+    save_config(&config)?;
+    // Apply the new (possibly shorter) window right away.
+    logger::cleanup_old_logs(d);
+    debug_log::log(&format!("history_days set to: {}", d));
+    Ok(())
 }
 
 #[tauri::command]
@@ -569,6 +584,12 @@ fn config_path() -> Option<std::path::PathBuf> {
     dirs::config_dir().map(|d| d.join("ribbit").join("config.json"))
 }
 
+/// Days of transcript history to keep on disk. Default 7; the rolling window
+/// is today plus the previous (N-1) days.
+fn history_days() -> i64 {
+    read_config()["history_days"].as_i64().unwrap_or(7).clamp(1, 365)
+}
+
 fn read_config() -> serde_json::Value {
     config_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -641,7 +662,7 @@ fn register_shortcut(app: &AppHandle, shortcut: Shortcut) -> Result<(), String> 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     debug_log::log("=== Ribbit starting ===");
-    logger::cleanup_old_logs();
+    logger::cleanup_old_logs(history_days());
     tcc_reset::ensure_permissions("com.ribbit.app");
 
     // Load .env from config dir (primary)
@@ -692,7 +713,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, set_llm_provider, list_llm_providers])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, set_llm_provider, list_llm_providers])
         .setup(move |app| {
             let handle = app.handle().clone();
 
