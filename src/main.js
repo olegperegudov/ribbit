@@ -111,12 +111,35 @@ function entryMatchesQuery(text, query) {
   return words.some((w) => w.startsWith(q));
 }
 
+// Render the log text with the matched part of every matching word wrapped
+// in a highlight span. The query matches a word by prefix (entryMatchesQuery),
+// so searching "алр" marks the first three letters of "Алросы".
+function highlightMatches(text, query) {
+  const q = query.toLowerCase();
+  let out = "";
+  let last = 0;
+  for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const word = m[0];
+    if (!word.toLowerCase().startsWith(q)) continue;
+    out += escapeHtml(text.slice(last, m.index));
+    out += `<mark class="search-hit">${escapeHtml(word.slice(0, q.length))}</mark>`;
+    out += escapeHtml(word.slice(q.length));
+    last = m.index + word.length;
+  }
+  out += escapeHtml(text.slice(last));
+  return out;
+}
+
 function applySearchFilter() {
   const log = $("#log-entries");
   const q = searchQuery.trim();
   for (const entry of log.querySelectorAll(".log-entry")) {
-    const text = entry.querySelector(".log-text")?.textContent || "";
+    const textEl = entry.querySelector(".log-text");
+    const text = textEl?.textContent || "";
     entry.style.display = entryMatchesQuery(text, q) ? "" : "none";
+    // Re-render the text: matched prefixes highlighted while searching,
+    // plain (no markup) once the query is cleared.
+    if (textEl) textEl.innerHTML = q ? highlightMatches(text, q) : escapeHtml(text);
   }
   // A day separator is only useful if it still heads a visible entry.
   for (const sep of log.querySelectorAll(".date-sep")) {

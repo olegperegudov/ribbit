@@ -972,6 +972,14 @@ kbd.capturing {
   padding: 0 1px;
 }
 
+/* Search match highlight — pink-purple, same as MyFlow's search */
+.search-hit {
+  background: #c25cce;
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }

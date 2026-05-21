@@ -7,6 +7,13 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.46] - 2026-05-21
+
+### Added
+- Quick search now highlights the matched letters inside each log
+  entry — searching "алр" paints the "Алр" of "Алросы" pink-purple, so
+  the hit is visible at a glance instead of having to eyeball the row.
+
 ## [0.7.45] - 2026-05-21
 
 ### Changed
