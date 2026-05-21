@@ -7,6 +7,15 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.45] - 2026-05-21
+
+### Changed
+- Release builds now retry once automatically when uploading the
+  finished app fails on a transient network glitch with GitHub. Several
+  releases in a row had been marked failed purely because of a momentary
+  upload timeout, even though the build itself was fine. Internal CI
+  reliability only — no change to the app.
+
 ## [0.7.44] - 2026-05-21
 
 ### Added

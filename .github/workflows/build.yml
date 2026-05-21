@@ -143,7 +143,28 @@ jobs:
             echo '__EOF__'
           } >> "$GITHUB_ENV"
 
+      # tauri-action builds the app AND uploads it to the GitHub release in
+      # one step. The build is reliable; the upload occasionally fails on a
+      # transient GitHub API network timeout. GitHub has no native retry for a
+      # `uses:` step, so the step is repeated once on failure — the retry
+      # rebuilds from the warm Rust cache (~30s) and re-uploads.
       - name: Build Tauri app
+        id: build
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          args: --target x86_64-pc-windows-msvc --bundles nsis
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: Ribbit ${{ needs.version.outputs.tag }}
+          releaseBody: "See the assets below to download and install."
+          releaseDraft: false
+          prerelease: false
+
+      - name: Build Tauri app (retry)
+        if: steps.build.outcome == 'failure'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -192,7 +213,27 @@ jobs:
         shell: bash
         run: "$HOME/.cargo/bin/cargo test --lib"
 
+      # Each tauri-action step builds AND uploads in one go; the upload can
+      # fail on a transient GitHub API timeout. No native retry for `uses:`
+      # steps, so each is repeated once on failure (rebuild is cache-warm).
       - name: Build Tauri app (Apple Silicon)
+        id: build_arm
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          args: --target aarch64-apple-darwin --bundles app,dmg
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: Ribbit ${{ needs.version.outputs.tag }}
+          releaseBody: "See the assets below to download and install."
+          releaseDraft: false
+          prerelease: false
+
+      - name: Build Tauri app (Apple Silicon, retry)
+        if: steps.build_arm.outcome == 'failure'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -207,6 +248,23 @@ jobs:
           prerelease: false
 
       - name: Build Tauri app (Intel)
+        id: build_intel
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          args: --target x86_64-apple-darwin --bundles app,dmg
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: Ribbit ${{ needs.version.outputs.tag }}
+          releaseBody: "See the assets below to download and install."
+          releaseDraft: false
+          prerelease: false
+
+      - name: Build Tauri app (Intel, retry)
+        if: steps.build_intel.outcome == 'failure'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
