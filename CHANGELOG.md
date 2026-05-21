@@ -7,6 +7,12 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.40] - 2026-05-21
+
+### Fixed
+- The app title in the header is no longer selectable, so a drag that
+  starts elsewhere can't leave it stuck in a highlighted state.
+
 ## [0.7.38] - 2026-05-19
 
 ### Fixed
