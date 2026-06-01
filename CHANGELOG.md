@@ -7,6 +7,23 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.47] - 2026-06-01
+
+### Fixed
+- The LLM "edit transcription" feature no longer answers the dictation as
+  if it were a chat message. Dictating a command-like phrase such as
+  "подожди, давай начнём с аудита исправлений" used to come back as a
+  reply ("Хорошо, давай начнём с аудита"): the model treated the
+  transcript as something addressed to it. The post-processing prompt was
+  too thin — it said "don't add comments" but never said the input is not
+  a conversation. Rewrote it to frame the input as raw dictated text that
+  must be reformatted, never replied to / obeyed / continued, with an
+  explicit one-shot example (command-like phrase → same phrase, just
+  punctuated). The vocab section is now stated as mandatory and
+  authoritative over the anglicism-to-Cyrillic rule, so terms and app
+  names (Dev, Prod, Alrosa, …) keep their dictionary spelling. Snapshot
+  test updated to pin the new framing and the anti-reply example.
+
 ## [0.7.46] - 2026-05-21
 
 ### Added
