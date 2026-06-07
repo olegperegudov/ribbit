@@ -439,6 +439,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   await listen("transcription", (event) => {
     const { text, edited } = event.payload;
     addLogEntry(text, null, edited);
+    // Keep the Settings "last error" note in sync if the panel is open.
+    refreshLlmError();
   });
 
   await listen("error", (event) => {
@@ -521,11 +523,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   const llmKeyRow = $("#llm-key-row");
   const llmKeyLabel = $("#llm-key-label");
   const llmProviderSelect = $("#llm-provider-select");
+  const llmModelRow = $("#llm-model-row");
+  const llmModelInput = $("#llm-model-input");
+  const llmErrorRow = $("#llm-error-row");
+  const llmErrorText = $("#llm-error-text");
   const logEntries = $("#log-entries");
   const llmCell = makeKeyCell($("#llm-key-input"), $("#llm-key-status"), $("#llm-key-edit"));
 
   // Populate provider dropdown from backend (single source of truth).
   let providerLabels = {}; // name → label, for the key-row label
+  let providerDefaults = {}; // name → built-in default model, for the placeholder
   try {
     const providers = await invoke("list_llm_providers");
     for (const p of providers) {
@@ -534,10 +541,12 @@ window.addEventListener("DOMContentLoaded", async () => {
       opt.textContent = p.label;
       llmProviderSelect.appendChild(opt);
       providerLabels[p.name] = p.label;
+      providerDefaults[p.name] = p.default_model;
     }
   } catch (e) { console.error("list_llm_providers failed:", e); }
 
   const llmProviderKeys = config.llm_provider_keys || {};
+  const llmProviderModels = config.llm_provider_models || {};
   llmProviderSelect.value = config.llm_provider || "routerai";
 
   function refreshLlmKeyCell() {
@@ -546,11 +555,36 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (llmProviderKeys[prov] === true) llmCell.showSaved(false); else llmCell.showInput();
   }
 
+  // Model field shows the user's override; placeholder is the built-in default
+  // so an empty field clearly means "use the default".
+  function refreshLlmModelCell() {
+    const prov = llmProviderSelect.value;
+    llmModelInput.value = llmProviderModels[prov] || "";
+    llmModelInput.placeholder = providerDefaults[prov] ? `default: ${providerDefaults[prov]}` : "default";
+  }
+
+  // Surface the last LLM failure so the feature can't rot silently. Only
+  // meaningful while postprocess is on.
+  async function refreshLlmError() {
+    if (!postprocessToggle.checked) { llmErrorRow.style.display = "none"; return; }
+    try {
+      const err = await invoke("get_llm_last_error");
+      if (err) {
+        llmErrorText.textContent = `⚠ last LLM edit failed: ${err}`;
+        llmErrorRow.style.display = "";
+      } else {
+        llmErrorRow.style.display = "none";
+      }
+    } catch (_) { llmErrorRow.style.display = "none"; }
+  }
+
   function setLlmSectionVisible(enabled) {
     llmProviderRow.style.display = enabled ? "" : "none";
+    llmModelRow.style.display = enabled ? "" : "none";
     llmKeyRow.style.display = enabled ? "" : "none";
     logEntries.classList.toggle("show-llm-dots", enabled);
-    if (enabled) refreshLlmKeyCell();
+    if (enabled) { refreshLlmKeyCell(); refreshLlmModelCell(); refreshLlmError(); }
+    else { llmErrorRow.style.display = "none"; }
   }
 
   postprocessToggle.checked = config.postprocess_enabled === true;
@@ -567,7 +601,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     try {
       await invoke("set_llm_provider", { provider: prov });
       refreshLlmKeyCell();
+      refreshLlmModelCell();
+      refreshLlmError();
     } catch (err) { console.error("set_llm_provider failed:", err); }
+  });
+
+  llmModelInput.addEventListener("change", async (e) => {
+    const prov = llmProviderSelect.value;
+    const model = e.target.value.trim();
+    try {
+      await invoke("set_llm_model", { provider: prov, model });
+      if (model) llmProviderModels[prov] = model; else delete llmProviderModels[prov];
+    } catch (err) { console.error("set_llm_model failed:", err); }
   });
 
   $("#llm-key-input").addEventListener("change", async (e) => {

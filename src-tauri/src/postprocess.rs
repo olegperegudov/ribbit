@@ -42,7 +42,7 @@ pub const PROVIDERS: &[ProviderConfig] = &[
         env_var: "OPENROUTER_API_KEY",
         label: "openrouter",
         base_url: "https://openrouter.ai/api/v1/chat/completions",
-        default_model: "google/gemini-2.0-flash-001",
+        default_model: "google/gemini-2.5-flash",
     },
 ];
 
@@ -186,6 +186,7 @@ pub fn edit_text(
     vocab: &HashMap<String, Vec<String>>,
     provider: &ProviderConfig,
     api_key: &str,
+    model: &str,
 ) -> Result<String, String> {
     if text.trim().is_empty() {
         return Ok(text.to_string());
@@ -195,7 +196,7 @@ pub fn edit_text(
     }
 
     let t0 = std::time::Instant::now();
-    let payload = build_payload(text, vocab, provider.default_model);
+    let payload = build_payload(text, vocab, model);
 
     // Single retry on any send() error: pooled TLS connections occasionally
     // go stale between dictations and reqwest reports a generic transport
@@ -238,7 +239,7 @@ pub fn edit_text(
     crate::debug_log::log(&format!(
         "postprocess[{}/{}]: {:?} → {:?} ({:.2}s)",
         provider.name,
-        provider.default_model,
+        model,
         text.chars().take(60).collect::<String>(),
         edited.chars().take(60).collect::<String>(),
         elapsed.as_secs_f32()
@@ -381,13 +382,13 @@ mod tests {
     #[test]
     fn edit_text_returns_input_for_empty() {
         let p = find_provider("routerai").unwrap();
-        assert_eq!(edit_text("", &empty_vocab(), p, "fake_key").unwrap(), "");
-        assert_eq!(edit_text("   ", &empty_vocab(), p, "fake_key").unwrap(), "   ");
+        assert_eq!(edit_text("", &empty_vocab(), p, "fake_key", p.default_model).unwrap(), "");
+        assert_eq!(edit_text("   ", &empty_vocab(), p, "fake_key", p.default_model).unwrap(), "   ");
     }
 
     #[test]
     fn edit_text_errors_without_key() {
         let p = find_provider("routerai").unwrap();
-        assert!(edit_text("hello", &empty_vocab(), p, "").is_err());
+        assert!(edit_text("hello", &empty_vocab(), p, "", p.default_model).is_err());
     }
 }

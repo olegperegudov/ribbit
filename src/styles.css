@@ -361,8 +361,8 @@ body {
   100% { background: rgba(34, 197, 94, 0); }
 }
 
-/* Compact password inputs in settings rows */
-#groq-key-input, #llm-key-input {
+/* Compact inputs in settings rows */
+#groq-key-input, #llm-key-input, #llm-model-input {
   background: #0f1318;
   border: 1px solid #2a3040;
   color: #d1d5db;
@@ -373,7 +373,17 @@ body {
   max-width: 160px;
   outline: none;
 }
-#groq-key-input:focus, #llm-key-input:focus { border-color: rgba(74, 222, 128, 0.4); }
+#groq-key-input:focus, #llm-key-input:focus, #llm-model-input:focus { border-color: rgba(74, 222, 128, 0.4); }
+
+/* Postprocess failure note: shown under the LLM rows when the last edit failed,
+ * so a provider quietly retiring a model id is visible instead of silent. */
+#llm-error-row { border-bottom: none; padding-top: 0.15rem; }
+.llm-error-text {
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: #f87171;
+  word-break: break-word;
+}
 
 /* History retention input */
 .history-days {

@@ -7,6 +7,26 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.48] - 2026-06-07
+
+### Fixed
+- The "edit transcription" LLM stopped working for anyone on the **openrouter**
+  provider: its hardcoded model `google/gemini-2.0-flash-001` was retired by
+  OpenRouter and every request returned `http 404`, so the feature silently
+  fell back to plain vocab — looking like "the LLM does nothing". Updated the
+  built-in openrouter default to `google/gemini-2.5-flash`.
+
+### Added
+- **Editable model per provider** (Settings → edit transcription → *model*).
+  Leave it empty for the built-in default, or paste a specific model id. This is
+  the real fix for the rot above: when a provider drops a model id, you swap it
+  here in five seconds instead of waiting for an app release. Persists per
+  provider; the placeholder shows the current default.
+- **Last-error note** under the LLM rows (`⚠ last LLM edit failed: …`), cleared
+  on the next success. The post-process fallback used to be fully silent —
+  diagnosable only by digging through the debug log. Now a provider quietly
+  retiring a model, an expired key, or a network failure is visible in Settings.
+
 ## [0.7.47] - 2026-06-01
 
 ### Fixed

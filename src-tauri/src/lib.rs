@@ -36,6 +36,31 @@ fn last_dictation() -> &'static Mutex<Option<std::time::Instant>> {
     LAST_DICTATION.get_or_init(|| Mutex::new(None))
 }
 
+/// Last LLM post-process failure, surfaced in Settings. Without this the
+/// feature rots silently: a provider retires a model id, every call 404s, the
+/// code falls back to plain vocab, and the user just sees "the LLM does
+/// nothing" with no clue why. Cleared on the next successful edit.
+static LAST_LLM_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+fn set_last_llm_error(e: Option<String>) {
+    if let Ok(mut g) = LAST_LLM_ERROR.lock() {
+        *g = e;
+    }
+}
+
+/// Model to send for a provider: the user's per-provider override from config
+/// if set, else the provider's built-in default. The override is what lets the
+/// user swap a retired model id from Settings without waiting for a release.
+fn resolve_model(cfg: &serde_json::Value, provider: &postprocess::ProviderConfig) -> String {
+    cfg["llm_provider_models"]
+        .get(provider.name)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(provider.default_model)
+        .to_string()
+}
+
 #[tauri::command]
 fn get_config() -> Result<serde_json::Value, String> {
     let (provider, key) = if let Ok(k) = std::env::var("GROQ_API_KEY") {
@@ -76,6 +101,8 @@ fn get_config() -> Result<serde_json::Value, String> {
         "postprocess_enabled": postprocess_enabled,
         "llm_provider": llm_provider,
         "llm_provider_keys": provider_keys,
+        // Per-provider model overrides (empty/absent = use the built-in default).
+        "llm_provider_models": cfg["llm_provider_models"].clone(),
         "history_days": history_days(),
     }))
 }
@@ -102,6 +129,37 @@ fn list_llm_providers() -> Vec<serde_json::Value> {
             "default_model": p.default_model,
         }))
         .collect()
+}
+
+/// Override the model id for a provider. Empty string reverts to the provider's
+/// built-in default. Lets the user fix a retired model id from Settings instead
+/// of waiting for a release when a provider drops a model out from under us.
+#[tauri::command]
+fn set_llm_model(provider: String, model: String) -> Result<(), String> {
+    if postprocess::find_provider(&provider).is_none() {
+        return Err(format!("unknown provider: {}", provider));
+    }
+    let mut config = read_config();
+    if !config["llm_provider_models"].is_object() {
+        config["llm_provider_models"] = serde_json::json!({});
+    }
+    let models = config["llm_provider_models"].as_object_mut().unwrap();
+    let trimmed = model.trim();
+    if trimmed.is_empty() {
+        models.remove(&provider);
+    } else {
+        models.insert(provider.clone(), serde_json::Value::String(trimmed.to_string()));
+    }
+    save_config(&config)?;
+    debug_log::log(&format!("llm_model[{}] set to: {:?}", provider, trimmed));
+    Ok(())
+}
+
+/// Last LLM post-process failure (None once a later call succeeds). The
+/// Settings panel shows it so a silently-rotted provider is visible.
+#[tauri::command]
+fn get_llm_last_error() -> Option<String> {
+    LAST_LLM_ERROR.lock().ok().and_then(|g| g.clone())
 }
 
 #[tauri::command]
@@ -501,26 +559,36 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     let provider = postprocess::find_provider(llm_provider_name)
                         .unwrap_or_else(|| postprocess::find_provider(postprocess::DEFAULT_PROVIDER).unwrap());
                     let key = std::env::var(provider.env_var).unwrap_or_default();
+                    let model = resolve_model(&cfg, provider);
                     if key.is_empty() {
+                        let msg = format!("no {} key set", provider.name);
                         debug_log::log(&format!(
-                            "postprocess enabled but no {} — falling back to strict vocab",
-                            provider.env_var
+                            "postprocess enabled but {} — falling back to strict vocab",
+                            msg
                         ));
+                        set_last_llm_error(Some(msg));
                         (vocab::apply(&raw_text), false)
                     } else {
                         let vocab_data = vocab::read_vocab();
                         llm_attempted = true;
-                        llm_model = Some(format!("{}/{}", provider.name, provider.default_model));
+                        llm_model = Some(format!("{}/{}", provider.name, model));
                         // Timed even on failure: a timed-out LLM burns its full
                         // 5s timeout (+retry) before we fall back to vocab, and
                         // that lost time must show up in the log.
                         let t_llm = std::time::Instant::now();
-                        let outcome = postprocess::edit_text(&raw_text, &vocab_data, provider, &key);
+                        let outcome = postprocess::edit_text(&raw_text, &vocab_data, provider, &key, &model);
                         llm_secs = Some(t_llm.elapsed().as_secs_f32());
                         match outcome {
-                            Ok(edited_text) => (edited_text, true),
+                            // Clearing on success means the Settings note only
+                            // ever reflects the *current* state, not a stale
+                            // failure the user already fixed.
+                            Ok(edited_text) => {
+                                set_last_llm_error(None);
+                                (edited_text, true)
+                            }
                             Err(e) => {
                                 debug_log::log(&format!("postprocess fallback: {}", e));
+                                set_last_llm_error(Some(e));
                                 (vocab::apply(&raw_text), false)
                             }
                         }
@@ -773,7 +841,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, set_llm_provider, list_llm_providers])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, set_llm_provider, list_llm_providers, set_llm_model, get_llm_last_error])
         .setup(move |app| {
             let handle = app.handle().clone();
 

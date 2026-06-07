@@ -124,6 +124,10 @@
             <span class="setting-label">llm provider <span class="hint-icon" data-hint="Which LLM service edits your transcripts. routerai = Russia-only. openai/openrouter work worldwide." tabindex="0" role="button" aria-label="Help: llm provider">?</span></span>
             <select id="llm-provider-select"></select>
           </div>
+          <div class="setting-row" id="llm-model-row" style="display:none">
+            <span class="setting-label">model <span class="hint-icon" data-hint="Model id for the selected provider. Leave empty to use the default. If a provider retires a model and editing stops working, paste a current id here — no app update needed." tabindex="0" role="button" aria-label="Help: model">?</span></span>
+            <input type="text" id="llm-model-input" placeholder="default" autocomplete="off" spellcheck="false" />
+          </div>
           <div class="setting-row" id="llm-key-row" style="display:none">
             <span class="setting-label" id="llm-key-label">llm key <span class="hint-icon" data-hint="API token for the selected LLM provider. Stored locally in your config." tabindex="0" role="button" aria-label="Help: llm key">?</span></span>
             <input type="password" id="llm-key-input" placeholder="paste token" autocomplete="off" />
@@ -132,6 +136,9 @@
               <span class="key-saved-text">saved</span>
               <a id="llm-key-edit" class="key-edit-link">change</a>
             </span>
+          </div>
+          <div class="setting-row" id="llm-error-row" style="display:none">
+            <span class="llm-error-text" id="llm-error-text"></span>
           </div>
           <div class="setting-row">
             <a class="setting-label version-link" id="version-label" href="#" title="see changelog">v0.7.47</a>
