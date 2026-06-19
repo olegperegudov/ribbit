@@ -7,6 +7,23 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.49] - 2026-06-19
+
+### Changed
+- **Text-edit step now defaults to Groq** (`llama-3.3-70b-versatile`) instead of
+  RouterAI `gemma-4-26b`. RouterAI was the dominant source of paste lag: from
+  ~810 dictations in the log, ~28% timed out after ~10s and fell back to
+  unedited text, and another ~10% needed a retry (~8s). A 26B model on a
+  congested router is overkill for "fix the punctuation of one short phrase".
+  Groq reuses the speech-to-text key (no new setup), runs on LPUs, and returns
+  in ~0.5–1s — removing both the 10s timeouts and the silent fallbacks. Existing
+  users switch with one click in Settings → edit transcription → provider; the
+  model id stays editable there.
+- **Speech-to-text request timeout cut from 120s to 20s.** Groq's free tier
+  occasionally queues a transcription for tens of seconds (observed up to 89s in
+  the log — ~2% of calls run over 5s). A stuck call now fails fast so you can
+  re-dictate in a couple of seconds instead of watching a frozen "Ribbiting…".
+
 ## [0.7.48] - 2026-06-07
 
 ### Fixed

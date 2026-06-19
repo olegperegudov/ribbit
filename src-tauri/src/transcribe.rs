@@ -6,7 +6,11 @@ static HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 fn client() -> &'static reqwest::blocking::Client {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+            // Groq's free tier occasionally queues a request for tens of seconds
+            // (seen up to 89s in the wild). Whisper-turbo answers in ~1s when
+            // healthy, so a 20s cap fails a stuck call fast — re-dictating beats
+            // staring at a frozen "Ribbiting..." for a minute and a half.
+            .timeout(std::time::Duration::from_secs(20))
             .build()
             .expect("failed to build HTTP client")
     })

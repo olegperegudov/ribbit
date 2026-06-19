@@ -547,7 +547,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const llmProviderKeys = config.llm_provider_keys || {};
   const llmProviderModels = config.llm_provider_models || {};
-  llmProviderSelect.value = config.llm_provider || "routerai";
+  llmProviderSelect.value = config.llm_provider || "groq";
 
   function refreshLlmKeyCell() {
     const prov = llmProviderSelect.value;

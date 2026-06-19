@@ -23,6 +23,19 @@ pub struct ProviderConfig {
 
 /// All providers Ribbit currently knows about. Order matches the UI dropdown.
 pub const PROVIDERS: &[ProviderConfig] = &[
+    // Groq reuses the same key as speech-to-text (GROQ_API_KEY) and runs on
+    // LPUs, so this trivial fix-the-punctuation edit comes back in ~0.5-1s and
+    // almost never times out — unlike a 26B model on a congested router that
+    // would burn the 5s budget (+retry) on roughly a third of dictations. It's
+    // the default for exactly that reason. The model id is user-editable in
+    // Settings, so a retired one can be swapped without an app release.
+    ProviderConfig {
+        name: "groq",
+        env_var: "GROQ_API_KEY",
+        label: "groq",
+        base_url: "https://api.groq.com/openai/v1/chat/completions",
+        default_model: "llama-3.3-70b-versatile",
+    },
     ProviderConfig {
         name: "routerai",
         env_var: "ROUTERAI_API_KEY",
@@ -46,7 +59,7 @@ pub const PROVIDERS: &[ProviderConfig] = &[
     },
 ];
 
-pub const DEFAULT_PROVIDER: &str = "routerai";
+pub const DEFAULT_PROVIDER: &str = "groq";
 
 // 5s gives the model headroom for occasional 3-4s responses while still
 // keeping the paste latency bearable. Worst-case with one retry: ~10s.
