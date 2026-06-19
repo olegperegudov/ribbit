@@ -7,6 +7,23 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.50] - 2026-06-19
+
+### Fixed
+- **Dictations could vanish.** The previous release cut the speech-to-text
+  request timeout to 20s; when Groq's free tier was busy and a transcription ran
+  longer, the request was aborted and — because a failed transcription has no
+  text to fall back to — the whole dictation was lost (looked like the hotkey
+  "didn't register"). Restored the generous 120s timeout: a slow call now waits
+  instead of dropping your words.
+
+### Changed
+- **Audio is downsampled to 16 kHz before upload.** The Mac mic can't capture at
+  16 kHz and falls back to 48 kHz, which made every upload ~3× larger than the
+  model needs (a 40s dictation was a ~3.9 MB file). Sending 16 kHz — the model's
+  native rate, so no accuracy loss — cuts the upload threefold and noticeably
+  speeds up transcription, most visibly on longer dictations.
+
 ## [0.7.49] - 2026-06-19
 
 ### Changed
