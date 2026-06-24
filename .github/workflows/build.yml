@@ -178,7 +178,12 @@ jobs:
           prerelease: false
 
   build-macos:
-    needs: [version, test]
+    # Runs AFTER build-windows (not in parallel) on purpose: both jobs publish
+    # latest.json by read-modify-writing the same release asset, and concurrent
+    # uploads race on a stale read and silently drop platform keys. Serializing
+    # makes the macOS job the last, deterministic writer that merges the Windows
+    # entries already present.
+    needs: [version, test, build-windows]
     if: needs.version.outputs.skipped != 'true'
     runs-on: macos-latest
     permissions:
@@ -213,11 +218,18 @@ jobs:
         shell: bash
         run: "$HOME/.cargo/bin/cargo test --lib"
 
-      # Each tauri-action step builds AND uploads in one go; the upload can
-      # fail on a transient GitHub API timeout. No native retry for `uses:`
-      # steps, so each is repeated once on failure (rebuild is cache-warm).
-      - name: Build Tauri app (Apple Silicon)
-        id: build_arm
+      # ONE universal (arm64 + Intel) binary, not two separate per-arch builds.
+      # Previously each arch ran tauri-action separately, and every invocation
+      # regenerates latest.json from its OWN arch and re-uploads it — the Intel
+      # upload clobbered the arm64 one and dropped the darwin-aarch64 entry, so
+      # Apple-Silicon Macs (the common case) got "update failed": their platform
+      # key was simply absent from the manifest. A universal build emits a single
+      # bundle and a manifest carrying BOTH darwin-aarch64 and darwin-x86_64
+      # (updaterJsonKeepUniversal defaults to false), so the updater always
+      # matches. tauri-action builds AND uploads in one step; the upload can fail
+      # on a transient GitHub API timeout, so it's repeated once (cache-warm).
+      - name: Build Tauri app (macOS universal)
+        id: build_mac
         continue-on-error: true
         uses: tauri-apps/tauri-action@v0
         env:
@@ -225,55 +237,52 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target aarch64-apple-darwin --bundles app,dmg
+          args: --target universal-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
           prerelease: false
 
-      - name: Build Tauri app (Apple Silicon, retry)
-        if: steps.build_arm.outcome == 'failure'
+      - name: Build Tauri app (macOS universal, retry)
+        if: steps.build_mac.outcome == 'failure'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target aarch64-apple-darwin --bundles app,dmg
+          args: --target universal-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
           prerelease: false
 
-      - name: Build Tauri app (Intel)
-        id: build_intel
-        continue-on-error: true
-        uses: tauri-apps/tauri-action@v0
+      # Guard: the in-app updater is only as good as latest.json. Fetch the
+      # manifest we just published and fail the build if any platform key is
+      # missing or the version is wrong — a broken manifest must never ship
+      # silently again (this is exactly the bug that stranded Apple-Silicon
+      # users on an old version).
+      - name: Verify updater manifest
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        with:
-          args: --target x86_64-apple-darwin --bundles app,dmg
-          tagName: ${{ needs.version.outputs.tag }}
-          releaseName: Ribbit ${{ needs.version.outputs.tag }}
-          releaseBody: "See the assets below to download and install."
-          releaseDraft: false
-          prerelease: false
-
-      - name: Build Tauri app (Intel, retry)
-        if: steps.build_intel.outcome == 'failure'
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        with:
-          args: --target x86_64-apple-darwin --bundles app,dmg
-          tagName: ${{ needs.version.outputs.tag }}
-          releaseName: Ribbit ${{ needs.version.outputs.tag }}
-          releaseBody: "See the assets below to download and install."
-          releaseDraft: false
-          prerelease: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p latest.json --clobber
+          python3 - "$TAG" <<'PY'
+          import json, sys
+          tag = sys.argv[1]
+          want = {"windows-x86_64", "darwin-aarch64", "darwin-x86_64"}
+          m = json.load(open("latest.json"))
+          have = set(m.get("platforms", {}))
+          missing = want - have
+          if missing:
+              print(f"::error::latest.json missing platform keys: {sorted(missing)} (present: {sorted(have)})")
+              sys.exit(1)
+          if f"v{m.get('version')}" != tag:
+              print(f"::error::latest.json version {m.get('version')!r} != tag {tag!r}")
+              sys.exit(1)
+          print(f"latest.json OK: version {m['version']}, platforms {sorted(have)}")
+          PY

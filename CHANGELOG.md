@@ -7,6 +7,21 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.52] - 2026-06-24
+
+### Fixed
+- **In-app update failed on Apple-Silicon Macs.** The release manifest
+  (`latest.json`) listed only the Intel macOS build — the `darwin-aarch64` entry
+  was missing, so Apple-Silicon Macs couldn't find a matching download and the
+  updater reported "update failed". Root cause was in CI: the two Mac
+  architectures were built as separate steps that each regenerated and
+  re-uploaded the manifest, and the Intel upload raced ahead of the arm64 one and
+  dropped its entry. macOS now ships as a single **universal** (arm64 + Intel)
+  binary whose manifest always carries both Mac keys; the macOS job runs after
+  the Windows one so the two no longer race on the same file; and a new CI guard
+  fails the build if any platform key is ever missing from the published
+  manifest, so a broken updater can never ship silently again.
+
 ## [0.7.51] - 2026-06-24
 
 ### Changed
