@@ -7,6 +7,23 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.53] - 2026-06-24
+
+### Fixed
+- **Microphone broke on macOS after updating to 0.7.52.** Pressing the record
+  hotkey threw up repeated "Ribbit wants to access the microphone" prompts and
+  recording never worked, even after allowing every one. 0.7.52 had switched the
+  Mac build to a single **universal** (arm64 + Intel) binary to fix the updater
+  manifest; that turned out to break microphone access, because a universal,
+  ad-hoc-signed bundle doesn't anchor a macOS permission grant to a stable code
+  identity — so the system kept re-asking and the grant never stuck. Reverted to
+  the proven **per-architecture** Mac builds (a native arm64 binary for Apple
+  Silicon, native Intel for older Macs): the permission grant sticks again, with
+  just the usual single re-prompt the first time you record after an update. The
+  updater manifest stays correct via the build ordering already in place, and a
+  CI guard now also refuses to publish a universal macOS bundle, so this exact
+  regression can't ship again.
+
 ## [0.7.52] - 2026-06-24
 
 ### Fixed

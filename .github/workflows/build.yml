@@ -178,11 +178,21 @@ jobs:
           prerelease: false
 
   build-macos:
-    # Runs AFTER build-windows (not in parallel) on purpose: both jobs publish
-    # latest.json by read-modify-writing the same release asset, and concurrent
-    # uploads race on a stale read and silently drop platform keys. Serializing
-    # makes the macOS job the last, deterministic writer that merges the Windows
-    # entries already present.
+    # Native per-arch builds (arm64 + Intel), NOT a universal binary. A universal
+    # (lipo'd) ad-hoc-signed bundle does not anchor macOS TCC grants reliably: the
+    # microphone permission never sticks, so cpal re-triggers the system prompt on
+    # every stream open and recording stays broken no matter how many times the
+    # user clicks "Allow". A native per-arch bundle matches the running Mac exactly
+    # and keeps the grant stable across launches (one expected re-prompt per
+    # release, handled by tcc_reset). v0.7.52 shipped universal and broke the mic —
+    # this reverts to the proven per-arch build.
+    #
+    # Runs AFTER build-windows (not in parallel) on purpose: tauri-action publishes
+    # latest.json by read-modify-merging the same release asset, so two jobs
+    # uploading at once race on a stale read and silently drop platform keys (this
+    # is what stranded Apple-Silicon users on "update failed"). The two per-arch
+    # steps below run sequentially inside this one job, so the only cross-job
+    # ordering left to pin is windows-before-macos.
     needs: [version, test, build-windows]
     if: needs.version.outputs.skipped != 'true'
     runs-on: macos-latest
@@ -218,18 +228,15 @@ jobs:
         shell: bash
         run: "$HOME/.cargo/bin/cargo test --lib"
 
-      # ONE universal (arm64 + Intel) binary, not two separate per-arch builds.
-      # Previously each arch ran tauri-action separately, and every invocation
-      # regenerates latest.json from its OWN arch and re-uploads it — the Intel
-      # upload clobbered the arm64 one and dropped the darwin-aarch64 entry, so
-      # Apple-Silicon Macs (the common case) got "update failed": their platform
-      # key was simply absent from the manifest. A universal build emits a single
-      # bundle and a manifest carrying BOTH darwin-aarch64 and darwin-x86_64
-      # (updaterJsonKeepUniversal defaults to false), so the updater always
-      # matches. tauri-action builds AND uploads in one step; the upload can fail
-      # on a transient GitHub API timeout, so it's repeated once (cache-warm).
-      - name: Build Tauri app (macOS universal)
-        id: build_mac
+      # Two native per-arch builds, run sequentially (arm64, then Intel) inside
+      # this single job. tauri-action builds AND uploads each in one step, merging
+      # its platform key into the release's latest.json; running them in order —
+      # and the whole job after the windows job — means no two uploads ever touch
+      # latest.json at the same time, so every platform key survives. Each upload
+      # can fail on a transient GitHub API timeout, so each is repeated once (the
+      # rebuild is cache-warm).
+      - name: Build Tauri app (Apple Silicon)
+        id: build_arm
         continue-on-error: true
         uses: tauri-apps/tauri-action@v0
         env:
@@ -237,22 +244,53 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target universal-apple-darwin --bundles app,dmg
+          args: --target aarch64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
           prerelease: false
 
-      - name: Build Tauri app (macOS universal, retry)
-        if: steps.build_mac.outcome == 'failure'
+      - name: Build Tauri app (Apple Silicon, retry)
+        if: steps.build_arm.outcome == 'failure'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target universal-apple-darwin --bundles app,dmg
+          args: --target aarch64-apple-darwin --bundles app,dmg
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: Ribbit ${{ needs.version.outputs.tag }}
+          releaseBody: "See the assets below to download and install."
+          releaseDraft: false
+          prerelease: false
+
+      - name: Build Tauri app (Intel)
+        id: build_intel
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          args: --target x86_64-apple-darwin --bundles app,dmg
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: Ribbit ${{ needs.version.outputs.tag }}
+          releaseBody: "See the assets below to download and install."
+          releaseDraft: false
+          prerelease: false
+
+      - name: Build Tauri app (Intel, retry)
+        if: steps.build_intel.outcome == 'failure'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          args: --target x86_64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
@@ -276,7 +314,8 @@ jobs:
           tag = sys.argv[1]
           want = {"windows-x86_64", "darwin-aarch64", "darwin-x86_64"}
           m = json.load(open("latest.json"))
-          have = set(m.get("platforms", {}))
+          plats = m.get("platforms", {})
+          have = set(plats)
           missing = want - have
           if missing:
               print(f"::error::latest.json missing platform keys: {sorted(missing)} (present: {sorted(have)})")
@@ -284,5 +323,13 @@ jobs:
           if f"v{m.get('version')}" != tag:
               print(f"::error::latest.json version {m.get('version')!r} != tag {tag!r}")
               sys.exit(1)
+          # The macOS bundle must be per-arch, never universal: a lipo'd ad-hoc
+          # binary fails to anchor TCC grants, so the microphone silently stops
+          # working after an update. Catch a regression to universal here.
+          for key in ("darwin-aarch64", "darwin-x86_64"):
+              url = plats[key].get("url", "")
+              if "universal" in url.lower():
+                  print(f"::error::{key} points at a universal bundle ({url.split('/')[-1]}); macOS must ship per-arch or the mic breaks")
+                  sys.exit(1)
           print(f"latest.json OK: version {m['version']}, platforms {sorted(have)}")
           PY
