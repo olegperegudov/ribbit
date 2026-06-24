@@ -509,6 +509,10 @@ window.addEventListener("DOMContentLoaded", async () => {
       await invoke("set_api_key", { key, provider: "groq" });
       config.has_groq_key = true;
       groqCell.showSaved(true);
+      // The speech key and a Groq edit-key are one and the same GROQ_API_KEY,
+      // so saving here also satisfies the edit key — reflect that on its cell.
+      llmProviderKeys.groq = true;
+      if (llmProviderSelect.value === "groq") refreshLlmKeyCell();
     } catch (err) {
       console.error("save groq key failed:", err);
     }
@@ -519,11 +523,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   // below shows the saved-state for THAT provider — switching providers
   // re-renders the chip/input from the cached `llm_provider_keys` map.
   const postprocessToggle = $("#postprocess-toggle");
-  const llmProviderRow = $("#llm-provider-row");
-  const llmKeyRow = $("#llm-key-row");
-  const llmKeyLabel = $("#llm-key-label");
+  const llmBlock = $("#llm-block");
   const llmProviderSelect = $("#llm-provider-select");
-  const llmModelRow = $("#llm-model-row");
   const llmModelInput = $("#llm-model-input");
   const llmErrorRow = $("#llm-error-row");
   const llmErrorText = $("#llm-error-text");
@@ -549,9 +550,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   const llmProviderModels = config.llm_provider_models || {};
   llmProviderSelect.value = config.llm_provider || "groq";
 
+  // "edit key" label is static — it's the key for whichever provider is picked
+  // above. Show that provider's saved-state (switching providers re-renders it).
   function refreshLlmKeyCell() {
     const prov = llmProviderSelect.value;
-    llmKeyLabel.firstChild.textContent = `${providerLabels[prov] || prov} key `;
     if (llmProviderKeys[prov] === true) llmCell.showSaved(false); else llmCell.showInput();
   }
 
@@ -579,12 +581,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   function setLlmSectionVisible(enabled) {
-    llmProviderRow.style.display = enabled ? "" : "none";
-    llmModelRow.style.display = enabled ? "" : "none";
-    llmKeyRow.style.display = enabled ? "" : "none";
+    llmBlock.style.display = enabled ? "" : "none";
     logEntries.classList.toggle("show-llm-dots", enabled);
     if (enabled) { refreshLlmKeyCell(); refreshLlmModelCell(); refreshLlmError(); }
-    else { llmErrorRow.style.display = "none"; }
   }
 
   postprocessToggle.checked = config.postprocess_enabled === true;
@@ -623,6 +622,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       await invoke("set_api_key", { key, provider: prov });
       llmProviderKeys[prov] = true;
       llmCell.showSaved(true);
+      // A Groq edit-key IS the speech key (same GROQ_API_KEY) — reflect it above.
+      if (prov === "groq") { config.has_groq_key = true; groqCell.showSaved(true); }
     } catch (err) {
       console.error(`save ${prov} key failed:`, err);
     }

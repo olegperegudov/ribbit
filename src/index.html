@@ -97,15 +97,7 @@
             </div>
           </div>
           <div class="setting-row">
-            <span class="setting-label">vocabulary <span class="hint-icon" data-hint="Custom word replacements. Fix recurring transcription mistakes — e.g. 'def' → 'dev'. Select a word in the log to add it quickly." tabindex="0" role="button" aria-label="Help: vocabulary">?</span></span>
-            <button id="vocab-btn" class="setting-btn">abc</button>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">debug log <span class="hint-icon" data-hint="Internal log for troubleshooting. Shows recording events, API calls, and errors." tabindex="0" role="button" aria-label="Help: debug log">?</span></span>
-            <button id="debug-btn" class="setting-btn">&gt;_</button>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">groq key <span class="hint-icon" data-hint="Your Groq API key. Needed for speech-to-text. Free tier available at console.groq.com." tabindex="0" role="button" aria-label="Help: groq key">?</span></span>
+            <span class="setting-label">speech key <span class="hint-icon" data-hint="Key for turning speech into text. Use a Groq key (recommended — free tier at console.groq.com) or an OpenAI key." tabindex="0" role="button" aria-label="Help: speech key">?</span></span>
             <input type="password" id="groq-key-input" placeholder="gsk_..." autocomplete="off" />
             <span id="groq-key-status" class="key-status" style="display:none">
               <span class="key-saved-check">&check;</span>
@@ -114,31 +106,43 @@
             </span>
           </div>
           <div class="setting-row">
+            <span class="setting-label">vocabulary <span class="hint-icon" data-hint="Custom word replacements. Fix recurring transcription mistakes — e.g. 'def' → 'dev'. Select a word in the log to add it quickly." tabindex="0" role="button" aria-label="Help: vocabulary">?</span></span>
+            <button id="vocab-btn" class="setting-btn">abc</button>
+          </div>
+          <div class="setting-row">
             <span class="setting-label">edit transcription <span class="hint-icon" data-hint="Send each transcription through a small LLM to fix punctuation, spelling and anglicisms before it lands in the log. Adds ~150-300ms. Needs an LLM provider key (pick below)." tabindex="0" role="button" aria-label="Help: edit transcription">?</span></span>
             <label class="toggle">
               <input type="checkbox" id="postprocess-toggle" />
               <span class="toggle-slider"></span>
             </label>
           </div>
-          <div class="setting-row" id="llm-provider-row" style="display:none">
-            <span class="setting-label">llm provider <span class="hint-icon" data-hint="Which LLM service edits your transcripts. routerai = Russia-only. openai/openrouter work worldwide." tabindex="0" role="button" aria-label="Help: llm provider">?</span></span>
-            <select id="llm-provider-select"></select>
+          <!-- LLM post-processing block: grouped + recessed so it reads as
+               belonging to the toggle above, and collapses entirely when off. -->
+          <div id="llm-block" class="llm-block" style="display:none">
+            <div class="setting-row" id="llm-provider-row">
+              <span class="setting-label">llm provider <span class="hint-icon" data-hint="Which LLM service edits your transcripts. routerai = Russia-only. openai/openrouter work worldwide." tabindex="0" role="button" aria-label="Help: llm provider">?</span></span>
+              <select id="llm-provider-select"></select>
+            </div>
+            <div class="setting-row" id="llm-model-row">
+              <span class="setting-label">model <span class="hint-icon" data-hint="Model id for the selected provider. Leave empty to use the default. If a provider retires a model and editing stops working, paste a current id here — no app update needed." tabindex="0" role="button" aria-label="Help: model">?</span></span>
+              <input type="text" id="llm-model-input" placeholder="default" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="setting-row" id="llm-key-row">
+              <span class="setting-label">edit key <span class="hint-icon" data-hint="API token for the LLM provider selected above. Stored locally in your config. If the provider is Groq, this is the same key as your speech key." tabindex="0" role="button" aria-label="Help: edit key">?</span></span>
+              <input type="password" id="llm-key-input" placeholder="paste token" autocomplete="off" />
+              <span id="llm-key-status" class="key-status" style="display:none">
+                <span class="key-saved-check">&check;</span>
+                <span class="key-saved-text">saved</span>
+                <a id="llm-key-edit" class="key-edit-link">change</a>
+              </span>
+            </div>
+            <div class="setting-row" id="llm-error-row" style="display:none">
+              <span class="llm-error-text" id="llm-error-text"></span>
+            </div>
           </div>
-          <div class="setting-row" id="llm-model-row" style="display:none">
-            <span class="setting-label">model <span class="hint-icon" data-hint="Model id for the selected provider. Leave empty to use the default. If a provider retires a model and editing stops working, paste a current id here — no app update needed." tabindex="0" role="button" aria-label="Help: model">?</span></span>
-            <input type="text" id="llm-model-input" placeholder="default" autocomplete="off" spellcheck="false" />
-          </div>
-          <div class="setting-row" id="llm-key-row" style="display:none">
-            <span class="setting-label" id="llm-key-label">llm key <span class="hint-icon" data-hint="API token for the selected LLM provider. Stored locally in your config." tabindex="0" role="button" aria-label="Help: llm key">?</span></span>
-            <input type="password" id="llm-key-input" placeholder="paste token" autocomplete="off" />
-            <span id="llm-key-status" class="key-status" style="display:none">
-              <span class="key-saved-check">&check;</span>
-              <span class="key-saved-text">saved</span>
-              <a id="llm-key-edit" class="key-edit-link">change</a>
-            </span>
-          </div>
-          <div class="setting-row" id="llm-error-row" style="display:none">
-            <span class="llm-error-text" id="llm-error-text"></span>
+          <div class="setting-row">
+            <span class="setting-label">debug log <span class="hint-icon" data-hint="Internal log for troubleshooting. Shows recording events, API calls, and errors." tabindex="0" role="button" aria-label="Help: debug log">?</span></span>
+            <button id="debug-btn" class="setting-btn">&gt;_</button>
           </div>
           <div class="setting-row">
             <a class="setting-label version-link" id="version-label" href="#" title="see changelog">v0.7.50</a>

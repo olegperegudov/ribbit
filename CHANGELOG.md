@@ -7,6 +7,21 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.51] - 2026-06-24
+
+### Changed
+- **Settings keys renamed by role.** Two rows both read "groq key", which was
+  confusing — they serve different purposes. Renamed and made provider-agnostic:
+  **speech key** (turns your voice into text — a Groq or OpenAI key) and **edit
+  key** (the key for whichever LLM provider cleans up the text). When the edit
+  provider is Groq, the edit key and speech key are the same underlying token, so
+  saving one now marks the other saved automatically.
+- **LLM settings grouped under the toggle.** The provider / model / edit-key rows
+  now sit in one recessed panel with a green left edge directly under the "edit
+  transcription" toggle, so it reads as belonging to it; the panel collapses
+  entirely when the toggle is off. The speech key moved up next to languages, and
+  debug log moved down to the footer next to the version.
+
 ## [0.7.50] - 2026-06-19
 
 ### Fixed

@@ -385,6 +385,20 @@ body {
   word-break: break-word;
 }
 
+/* LLM post-processing block: the rows revealed by the "edit transcription"
+ * toggle, grouped into one recessed panel with a green left edge so it reads
+ * as belonging to the toggle. Collapses to nothing when the toggle is off. */
+.llm-block {
+  background: #0b0e13;
+  border-left: 2px solid rgba(74, 222, 128, 0.45);
+  border-radius: 0 6px 6px 0;
+  padding: 0.15rem 0.7rem;
+  margin: 0.1rem 0;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+/* Rows sit on the darker fill as one group — drop the per-row dividers. */
+.llm-block .setting-row { border-bottom: none; }
+
 /* History retention input */
 .history-days {
   display: flex;
