@@ -96,13 +96,15 @@
               </select>
             </div>
           </div>
-          <div class="setting-row">
-            <span class="setting-label">speech key <span class="hint-icon" data-hint="Key for turning speech into text. Use a Groq key (recommended — free tier at console.groq.com) or an OpenAI key." tabindex="0" role="button" aria-label="Help: speech key">?</span></span>
-            <input type="password" id="groq-key-input" placeholder="gsk_..." autocomplete="off" />
-            <span id="groq-key-status" class="key-status" style="display:none">
-              <span class="key-saved-check">&check;</span>
-              <span class="key-saved-text">saved</span>
-              <a id="groq-key-edit" class="key-edit-link">change</a>
+          <div class="setting-row stack-head">
+            <span class="setting-label">speech providers <span class="hint-icon" data-hint="Where speech is turned into text. The first is primary; add more as automatic fallbacks. Ribbit switches to the next on repeated rate-limit / outage / timeout and returns to the primary after the cooldown. Drag order = priority." tabindex="0" role="button" aria-label="Help: speech providers">?</span></span>
+          </div>
+          <div id="audio-stack" class="provider-stack"></div>
+          <div class="setting-row fallback-row">
+            <span class="setting-label">auto-fallback <span class="hint-icon" data-hint="Applies to both speech and edit stacks. Switch to the next provider after this many consecutive rate-limit / server-error / timeout failures, then return to the primary after the cooldown." tabindex="0" role="button" aria-label="Help: auto-fallback">?</span></span>
+            <span class="fallback-knobs">
+              after <input type="number" id="fb-threshold" min="1" max="100" /> fails ·
+              back after <input type="number" id="fb-cooldown" min="1" max="1440" /> min
             </span>
           </div>
           <div class="setting-row">
@@ -116,26 +118,10 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
-          <!-- LLM post-processing block: grouped + recessed so it reads as
-               belonging to the toggle above, and collapses entirely when off. -->
+          <!-- Edit-transcription provider stack: grouped + recessed so it reads
+               as belonging to the toggle above, and collapses when off. -->
           <div id="llm-block" class="llm-block" style="display:none">
-            <div class="setting-row" id="llm-provider-row">
-              <span class="setting-label">llm provider <span class="hint-icon" data-hint="Which LLM service edits your transcripts. routerai = Russia-only. openai/openrouter work worldwide." tabindex="0" role="button" aria-label="Help: llm provider">?</span></span>
-              <select id="llm-provider-select"></select>
-            </div>
-            <div class="setting-row" id="llm-model-row">
-              <span class="setting-label">model <span class="hint-icon" data-hint="Model id for the selected provider. Leave empty to use the default. If a provider retires a model and editing stops working, paste a current id here — no app update needed." tabindex="0" role="button" aria-label="Help: model">?</span></span>
-              <input type="text" id="llm-model-input" placeholder="default" autocomplete="off" spellcheck="false" />
-            </div>
-            <div class="setting-row" id="llm-key-row">
-              <span class="setting-label">edit key <span class="hint-icon" data-hint="API token for the LLM provider selected above. Stored locally in your config. If the provider is Groq, this is the same key as your speech key." tabindex="0" role="button" aria-label="Help: edit key">?</span></span>
-              <input type="password" id="llm-key-input" placeholder="paste token" autocomplete="off" />
-              <span id="llm-key-status" class="key-status" style="display:none">
-                <span class="key-saved-check">&check;</span>
-                <span class="key-saved-text">saved</span>
-                <a id="llm-key-edit" class="key-edit-link">change</a>
-              </span>
-            </div>
+            <div id="text-stack" class="provider-stack"></div>
             <div class="setting-row" id="llm-error-row" style="display:none">
               <span class="llm-error-text" id="llm-error-text"></span>
             </div>

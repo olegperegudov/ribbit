@@ -7,6 +7,32 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.55] - 2026-06-25
+
+### Added
+- **Provider stacks with automatic fallback — for both speech-to-text and the
+  text-cleanup step.** Settings now shows two ordered lists of providers instead
+  of a single one each: **speech providers** and (under *edit transcription*)
+  the edit providers. The first entry is the primary and is always tried first;
+  add more with **+ add provider** and they become fallbacks, in order. When the
+  primary keeps failing for a reason that means *it's unavailable right now* —
+  rate-limited (HTTP 429), a server error (5xx), or a timeout — Ribbit switches
+  to the next provider, uses it for a while, then returns to the primary
+  automatically. This is exactly the "Groq is fast but its free limit ran out,
+  fall back to RouterAI until it resets" case: set Groq as primary and RouterAI
+  as the fallback, and the switch happens on its own.
+  - **You tune the behavior**: switch after *N* consecutive failures (default
+    2) and return to the primary after *M* minutes (default 60) — both in the
+    new **auto-fallback** row.
+  - **It never switches on a real mistake.** A bad key, wrong URL or retired
+    model id (400/401/403/404) is shown as an error, not hidden behind a slower
+    backup — because the backup would fail the same way.
+  - **It's never silent.** While a fallback is active, Settings shows an amber
+    line — which provider you're on and when the primary will be retried.
+  - **Each provider has its own URL, model and key**, so you can point an entry
+    at any OpenAI-compatible endpoint. Your existing setup is migrated into the
+    new stacks automatically on first launch — nothing to re-enter.
+
 ## [0.7.54] - 2026-06-25
 
 ### Fixed

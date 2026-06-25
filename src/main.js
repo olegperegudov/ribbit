@@ -383,6 +383,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (key) {
       await invoke("set_api_key", { key });
       $("#setup").style.display = "none";
+      // The saved speech key belongs to the primary audio entry — reflect it.
+      renderStack("audio");
     }
   });
 
@@ -478,7 +480,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   // Generic "API key" cell: input ↔ "✓ saved · change" chip swap.
-  // Used for both the Groq audio key and the per-provider LLM key.
   function makeKeyCell(inputEl, statusEl, editEl) {
     function showInput() {
       inputEl.style.display = "";
@@ -499,74 +500,171 @@ window.addEventListener("DOMContentLoaded", async () => {
     return { showInput, showSaved };
   }
 
-  // Groq (audio) key — always visible, re-editable from settings.
-  const groqCell = makeKeyCell($("#groq-key-input"), $("#groq-key-status"), $("#groq-key-edit"));
-  if (config.has_groq_key === true) groqCell.showSaved(false); else groqCell.showInput();
-  $("#groq-key-input").addEventListener("change", async (e) => {
-    const key = e.target.value.trim();
-    if (!key) return;
-    try {
-      await invoke("set_api_key", { key, provider: "groq" });
-      config.has_groq_key = true;
-      groqCell.showSaved(true);
-      // The speech key and a Groq edit-key are one and the same GROQ_API_KEY,
-      // so saving here also satisfies the edit key — reflect that on its cell.
-      llmProviderKeys.groq = true;
-      if (llmProviderSelect.value === "groq") refreshLlmKeyCell();
-    } catch (err) {
-      console.error("save groq key failed:", err);
-    }
-  });
-
-  // LLM post-processing: toggle reveals provider dropdown + key row.
-  // Provider dropdown picks which LLM service edits transcripts. The key cell
-  // below shows the saved-state for THAT provider — switching providers
-  // re-renders the chip/input from the cached `llm_provider_keys` map.
+  // --- Provider stacks (speech + edit) with auto-fallback --------------
+  // Each stack is an ordered list of providers rendered as compact cards.
+  // Entry #1 is primary; the backend switches to the next on repeated
+  // 429 / 5xx / timeout and snaps back after the cooldown. Order = priority,
+  // reordered with the ↑/↓ controls. The whole UI is data-driven off
+  // get_config so a mutation just re-renders the affected stack.
+  const logEntries = $("#log-entries");
   const postprocessToggle = $("#postprocess-toggle");
   const llmBlock = $("#llm-block");
-  const llmProviderSelect = $("#llm-provider-select");
-  const llmModelInput = $("#llm-model-input");
   const llmErrorRow = $("#llm-error-row");
   const llmErrorText = $("#llm-error-text");
-  const logEntries = $("#log-entries");
-  const llmCell = makeKeyCell($("#llm-key-input"), $("#llm-key-status"), $("#llm-key-edit"));
 
-  // Populate provider dropdown from backend (single source of truth).
-  let providerLabels = {}; // name → label, for the key-row label
-  let providerDefaults = {}; // name → built-in default model, for the placeholder
-  try {
-    const providers = await invoke("list_llm_providers");
-    for (const p of providers) {
-      const opt = document.createElement("option");
-      opt.value = p.name;
-      opt.textContent = p.label;
-      llmProviderSelect.appendChild(opt);
-      providerLabels[p.name] = p.label;
-      providerDefaults[p.name] = p.default_model;
+  const catalogs = {}; // kind → [{name,label,default_model}], fetched once
+  async function loadCatalog(kind) {
+    if (!catalogs[kind]) {
+      try { catalogs[kind] = await invoke("list_provider_catalog", { kind }); }
+      catch (_) { catalogs[kind] = []; }
     }
-  } catch (e) { console.error("list_llm_providers failed:", e); }
-
-  const llmProviderKeys = config.llm_provider_keys || {};
-  const llmProviderModels = config.llm_provider_models || {};
-  llmProviderSelect.value = config.llm_provider || "groq";
-
-  // "edit key" label is static — it's the key for whichever provider is picked
-  // above. Show that provider's saved-state (switching providers re-renders it).
-  function refreshLlmKeyCell() {
-    const prov = llmProviderSelect.value;
-    if (llmProviderKeys[prov] === true) llmCell.showSaved(false); else llmCell.showInput();
+    return catalogs[kind];
   }
 
-  // Model field shows the user's override; placeholder is the built-in default
-  // so an empty field clearly means "use the default".
-  function refreshLlmModelCell() {
-    const prov = llmProviderSelect.value;
-    llmModelInput.value = llmProviderModels[prov] || "";
-    llmModelInput.placeholder = providerDefaults[prov] ? `default: ${providerDefaults[prov]}` : "default";
+  function miniBtn(label, disabled, title, onClick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "provider-mini-btn";
+    b.textContent = label;
+    b.title = title;
+    b.disabled = !!disabled;
+    if (!disabled) b.addEventListener("click", onClick);
+    return b;
   }
 
-  // Surface the last LLM failure so the feature can't rot silently. Only
-  // meaningful while postprocess is on.
+  function fieldRow(label, value, placeholder, onChange) {
+    const row = document.createElement("div");
+    row.className = "provider-field";
+    const l = document.createElement("span");
+    l.className = "provider-field-label";
+    l.textContent = label;
+    const i = document.createElement("input");
+    i.type = "text";
+    i.value = value || "";
+    i.placeholder = placeholder;
+    i.autocomplete = "off";
+    i.spellcheck = false;
+    i.className = "provider-input";
+    i.addEventListener("change", () => onChange(i.value.trim()));
+    row.append(l, i);
+    return row;
+  }
+
+  // One provider entry as a compact card: header (name + reorder/remove) over
+  // url, model and key fields. `entry` = {id,label,url,model,key_env,has_key}.
+  function providerCard(kind, entry, index, total) {
+    const card = document.createElement("div");
+    card.className = "provider-card";
+
+    const head = document.createElement("div");
+    head.className = "provider-head";
+    const name = document.createElement("span");
+    name.className = "provider-name";
+    name.textContent = entry.label || "custom";
+    if (index === 0) {
+      const tag = document.createElement("span");
+      tag.className = "provider-primary-tag";
+      tag.textContent = "primary";
+      name.appendChild(tag);
+    }
+    head.appendChild(name);
+
+    const ctrls = document.createElement("div");
+    ctrls.className = "provider-ctrls";
+    ctrls.appendChild(miniBtn("↑", index === 0, "Move up (higher priority)", async () => {
+      await invoke("move_provider", { kind, id: entry.id, up: true });
+      renderStack(kind);
+    }));
+    ctrls.appendChild(miniBtn("↓", index === total - 1, "Move down", async () => {
+      await invoke("move_provider", { kind, id: entry.id, up: false });
+      renderStack(kind);
+    }));
+    const del = miniBtn("✕", false, "Remove", async () => {
+      await invoke("remove_provider", { kind, id: entry.id });
+      renderStack(kind);
+    });
+    del.classList.add("provider-del");
+    ctrls.appendChild(del);
+    head.appendChild(ctrls);
+    card.appendChild(head);
+
+    card.appendChild(fieldRow("url", entry.url, "https://.../v1/...", (v) =>
+      invoke("set_provider_field", { kind, id: entry.id, field: "url", value: v })
+    ));
+    card.appendChild(fieldRow("model", entry.model, "model id", (v) =>
+      invoke("set_provider_field", { kind, id: entry.id, field: "model", value: v })
+    ));
+
+    // key field: a "saved" chip when set, an input otherwise.
+    const keyRow = document.createElement("div");
+    keyRow.className = "provider-field";
+    const keyLabel = document.createElement("span");
+    keyLabel.className = "provider-field-label";
+    keyLabel.textContent = "key";
+    const keyInput = document.createElement("input");
+    keyInput.type = "password";
+    keyInput.placeholder = "paste token";
+    keyInput.autocomplete = "off";
+    keyInput.className = "provider-input";
+    const keyStatus = document.createElement("span");
+    keyStatus.className = "key-status";
+    keyStatus.innerHTML = '<span class="key-saved-check">&check;</span><span class="key-saved-text">saved</span><a class="key-edit-link">change</a>';
+    keyRow.append(keyLabel, keyInput, keyStatus);
+    const cell = makeKeyCell(keyInput, keyStatus, keyStatus.querySelector(".key-edit-link"));
+    if (entry.has_key) cell.showSaved(false); else cell.showInput();
+    keyInput.addEventListener("change", async () => {
+      const k = keyInput.value.trim();
+      if (!k) return;
+      try { await invoke("set_provider_key", { kind, id: entry.id, key: k }); cell.showSaved(true); }
+      catch (e) { console.error("set_provider_key failed:", e); }
+    });
+    card.appendChild(keyRow);
+
+    return card;
+  }
+
+  // Re-render a whole stack from fresh config. Cheap — these lists are tiny.
+  async function renderStack(kind) {
+    const container = document.getElementById(kind === "audio" ? "audio-stack" : "text-stack");
+    if (!container) return;
+    let cfg;
+    try { cfg = await invoke("get_config"); } catch (_) { return; }
+    const entries = (kind === "audio" ? cfg.audio_providers : cfg.text_providers) || [];
+    container.innerHTML = "";
+
+    // Live status line — surfaces an active fallback so it's never silent.
+    const st = cfg.fallback_state && cfg.fallback_state[kind];
+    if (st) {
+      const line = document.createElement("div");
+      line.className = "fallback-status";
+      const mins = Math.max(1, Math.ceil((st.remaining_secs || 0) / 60));
+      const active = entries[st.active];
+      const who = active ? (active.label || active.url) : `#${st.active + 1}`;
+      line.textContent = `⚡ on fallback: ${who} (#${st.active + 1} of ${st.total}) · primary retries in ~${mins} min`;
+      container.appendChild(line);
+    }
+
+    entries.forEach((e, i) => container.appendChild(providerCard(kind, e, i, entries.length)));
+
+    // "+ add provider" picker — catalog names prefill url/model/key_env.
+    const add = document.createElement("div");
+    add.className = "provider-add";
+    const sel = document.createElement("select");
+    sel.innerHTML = '<option value="" disabled selected>+ add provider</option>';
+    for (const p of await loadCatalog(kind)) {
+      sel.insertAdjacentHTML("beforeend", `<option value="${p.name}">${p.label}</option>`);
+    }
+    sel.insertAdjacentHTML("beforeend", '<option value="custom">custom…</option>');
+    sel.addEventListener("change", async () => {
+      if (!sel.value) return;
+      try { await invoke("add_provider", { kind, provider: sel.value }); renderStack(kind); }
+      catch (e) { console.error("add_provider failed:", e); }
+    });
+    add.appendChild(sel);
+    container.appendChild(add);
+  }
+
+  // Surface the last LLM edit failure so the feature can't rot silently.
   async function refreshLlmError() {
     if (!postprocessToggle.checked) { llmErrorRow.style.display = "none"; return; }
     try {
@@ -580,10 +678,30 @@ window.addEventListener("DOMContentLoaded", async () => {
     } catch (_) { llmErrorRow.style.display = "none"; }
   }
 
+  // Speech (audio) stack is always present — STT can't run without it.
+  renderStack("audio");
+
+  // Fallback knobs — shared by both stacks.
+  const fbThreshold = $("#fb-threshold");
+  const fbCooldown = $("#fb-cooldown");
+  if (fbThreshold) {
+    fbThreshold.value = config.fallback_threshold ?? 2;
+    fbThreshold.addEventListener("change", () =>
+      invoke("set_fallback_threshold", { value: parseInt(fbThreshold.value, 10) || 2 })
+    );
+  }
+  if (fbCooldown) {
+    fbCooldown.value = config.fallback_cooldown_mins ?? 60;
+    fbCooldown.addEventListener("change", () =>
+      invoke("set_fallback_cooldown", { minutes: parseInt(fbCooldown.value, 10) || 60 })
+    );
+  }
+
+  // Edit-transcription (text) stack lives under its toggle, collapsed when off.
   function setLlmSectionVisible(enabled) {
     llmBlock.style.display = enabled ? "" : "none";
     logEntries.classList.toggle("show-llm-dots", enabled);
-    if (enabled) { refreshLlmKeyCell(); refreshLlmModelCell(); refreshLlmError(); }
+    if (enabled) { renderStack("text"); refreshLlmError(); }
   }
 
   postprocessToggle.checked = config.postprocess_enabled === true;
@@ -593,40 +711,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     const enabled = e.target.checked;
     setLlmSectionVisible(enabled);
     await invoke("set_postprocess_enabled", { enabled });
-  });
-
-  llmProviderSelect.addEventListener("change", async (e) => {
-    const prov = e.target.value;
-    try {
-      await invoke("set_llm_provider", { provider: prov });
-      refreshLlmKeyCell();
-      refreshLlmModelCell();
-      refreshLlmError();
-    } catch (err) { console.error("set_llm_provider failed:", err); }
-  });
-
-  llmModelInput.addEventListener("change", async (e) => {
-    const prov = llmProviderSelect.value;
-    const model = e.target.value.trim();
-    try {
-      await invoke("set_llm_model", { provider: prov, model });
-      if (model) llmProviderModels[prov] = model; else delete llmProviderModels[prov];
-    } catch (err) { console.error("set_llm_model failed:", err); }
-  });
-
-  $("#llm-key-input").addEventListener("change", async (e) => {
-    const key = e.target.value.trim();
-    if (!key) return;
-    const prov = llmProviderSelect.value;
-    try {
-      await invoke("set_api_key", { key, provider: prov });
-      llmProviderKeys[prov] = true;
-      llmCell.showSaved(true);
-      // A Groq edit-key IS the speech key (same GROQ_API_KEY) — reflect it above.
-      if (prov === "groq") { config.has_groq_key = true; groqCell.showSaved(true); }
-    } catch (err) {
-      console.error(`save ${prov} key failed:`, err);
-    }
   });
 
   // Shortcut customization

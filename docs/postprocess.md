@@ -9,18 +9,40 @@ Disabled by default. ~150–300 ms latency overhead per transcription when on.
 ## Enable
 
 1. Open **Settings → edit transcription** → toggle on.
-2. Three rows appear: **provider**, **model**, and the provider **key**.
-   - **provider** — routerai (Russia), openai, or openrouter.
-   - **model** — leave empty to use the provider's built-in default, or paste a
-     specific model id. This is the escape hatch: when a provider retires a
-     model id (and the LLM edit starts failing), paste a current id here — no
-     app update needed. The placeholder shows the current default.
-   - **key** — paste the provider's token. Stored locally
-     (`~/.config/ribbit/.env` on macOS) and never shown again.
-3. On the maintainer's Mac a personal RouterAI key is auto-loaded once from
-   `~/membeme/system/secrets/routerai.key` on first launch — no manual step.
+2. A **provider stack** appears — an ordered list of providers, each a card with
+   **url**, **model** and **key**:
+   - **url** — the OpenAI-compatible chat-completions endpoint. Prefilled from a
+     catalog pick (groq / routerai / openai / openrouter) or typed for a custom
+     one.
+   - **model** — the model id. Prefilled with the catalog default; editable, so a
+     retired id is fixed here with no app update.
+   - **key** — the provider's token. Stored locally (`~/.config/ribbit/.env` on
+     macOS), one `.env` var per entry, never shown again.
+3. The first card is the primary; **+ add provider** appends fallbacks (see
+   [Auto-fallback](#auto-fallback)). On the maintainer's Mac a personal RouterAI
+   key is auto-loaded once from `~/membeme/system/secrets/routerai.key`.
 
 Toggle off any time. The setting persists across restarts.
+
+The **speech (STT)** side has the same kind of stack (always visible, since STT
+can't run without a provider) — same cards, same fallback rules, audio
+`/audio/transcriptions` endpoints instead of chat ones.
+
+## Auto-fallback
+
+Both stacks switch to the next provider when the active one keeps failing for a
+reason that means *unavailable right now* — HTTP 429 (rate limit), 5xx (provider
+down) or a network timeout — after a configurable number of consecutive such
+failures (default 2). It stays on the fallback for a cooldown window (default
+60 min), then returns to the primary. With more than two entries it walks the
+whole chain. A **hard** client error (400/401/403/404 — bad key/url/model) never
+switches: it's a config bug to surface, not a reason to mask behind a backup.
+
+The switch state (active entry, fail tally, switch time) is in-memory and
+per-stack, so a restart starts fresh from the primary. Order is the priority and
+is reordered in the UI. Knobs live in the **auto-fallback** row. Implementation:
+`src-tauri/src/fallback.rs` (pure state machine, unit-tested); the two pipelines
+in `lib.rs` drive it on the `CallError` returned by `transcribe`/`postprocess`.
 
 ## What it does
 
@@ -44,10 +66,11 @@ model id → `http 404`), Ribbit falls back to the vocab-processed text. The use
 always gets a paste within the timeout of the hotkey release.
 
 The fallback is no longer *silent*: the last failure reason is shown in
-**Settings** under the LLM rows (`⚠ last LLM edit failed: …`) and cleared on the
-next success, so a provider quietly dropping a model can't rot the feature
-unnoticed. Full diagnostics also land in **Settings → debug log** as
-`postprocess fallback: <reason>`.
+**Settings** under the edit stack (`⚠ last LLM edit failed: …`) and cleared on
+the next success, so a provider quietly dropping a model can't rot the feature
+unnoticed. An active auto-fallback also shows an amber status line above the
+stack. Full diagnostics land in **Settings → debug log** as
+`postprocess … (no switch)` / `… active text idx -> N`.
 
 ## Cost
 

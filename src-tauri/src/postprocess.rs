@@ -206,20 +206,23 @@ fn client() -> &'static reqwest::blocking::Client {
     })
 }
 
-/// Call the configured provider with the text + vocab. Returns the cleaned
-/// content on success. Caller is responsible for falling back on error.
+/// Call one resolved chat-completions endpoint with the text + vocab. Returns
+/// the cleaned content on success, or a structured `CallError` the caller uses
+/// to drive fallback (429/5xx/timeout → switch; 4xx / rejected content → not).
 pub fn edit_text(
     text: &str,
     vocab: &HashMap<String, Vec<String>>,
-    provider: &ProviderConfig,
+    url: &str,
     api_key: &str,
     model: &str,
-) -> Result<String, String> {
+) -> Result<String, crate::fallback::CallError> {
+    use crate::fallback::CallError;
     if text.trim().is_empty() {
         return Ok(text.to_string());
     }
     if api_key.is_empty() {
-        return Err(format!("no {} api key", provider.name));
+        // No key is a config problem, not a provider outage — don't switch on it.
+        return Err(CallError::rejected("no api key".into()));
     }
 
     let t0 = std::time::Instant::now();
@@ -230,7 +233,7 @@ pub fn edit_text(
     // error. Chat completion is idempotent, so a duplicate POST is safe.
     let send_once = || {
         client()
-            .post(provider.base_url)
+            .post(url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&payload)
@@ -245,7 +248,7 @@ pub fn edit_text(
                 first
             ));
             send_once().map_err(|e| {
-                format!("{} after retry: {}", error_kind(&e), e)
+                CallError::transport(e.is_timeout(), format!("{} after retry: {}", error_kind(&e), e))
             })?
         }
     };
@@ -255,30 +258,34 @@ pub fn edit_text(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
-        return Err(format!("http {}: {}", status, body.chars().take(200).collect::<String>()));
+        return Err(CallError::http(
+            status.as_u16(),
+            format!("http {}: {}", status, body.chars().take(200).collect::<String>()),
+        ));
     }
 
     let json: serde_json::Value = response
         .json()
-        .map_err(|e| format!("parse error: {}", e))?;
+        .map_err(|e| CallError::rejected(format!("parse error: {}", e)))?;
 
-    let edited = parse_response(&json)?;
+    let edited = parse_response(&json).map_err(CallError::rejected)?;
 
     // Despite the prompt, the model occasionally answers a dictated question
     // instead of editing it, returning a wall of text. Reject it so the caller
     // falls back to strict vocab::apply — better the raw phrase than a stranger's
-    // answer pasted wherever the user is typing.
+    // answer pasted wherever the user is typing. A rejected answer is content,
+    // not a provider outage, so it must not trigger a fallback switch.
     if is_runaway_edit(text, &edited) {
-        return Err(format!(
+        return Err(CallError::rejected(format!(
             "runaway output ({} → {} chars): model answered instead of editing",
             text.chars().count(),
             edited.chars().count()
-        ));
+        )));
     }
 
     crate::debug_log::log(&format!(
         "postprocess[{}/{}]: {:?} → {:?} ({:.2}s)",
-        provider.name,
+        url.split('/').nth(2).unwrap_or("?"),
         model,
         text.chars().take(60).collect::<String>(),
         edited.chars().take(60).collect::<String>(),
@@ -447,13 +454,13 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
     #[test]
     fn edit_text_returns_input_for_empty() {
         let p = find_provider("routerai").unwrap();
-        assert_eq!(edit_text("", &empty_vocab(), p, "fake_key", p.default_model).unwrap(), "");
-        assert_eq!(edit_text("   ", &empty_vocab(), p, "fake_key", p.default_model).unwrap(), "   ");
+        assert_eq!(edit_text("", &empty_vocab(), p.base_url, "fake_key", p.default_model).unwrap(), "");
+        assert_eq!(edit_text("   ", &empty_vocab(), p.base_url, "fake_key", p.default_model).unwrap(), "   ");
     }
 
     #[test]
     fn edit_text_errors_without_key() {
         let p = find_provider("routerai").unwrap();
-        assert!(edit_text("hello", &empty_vocab(), p, "", p.default_model).is_err());
+        assert!(edit_text("hello", &empty_vocab(), p.base_url, "", p.default_model).is_err());
     }
 }

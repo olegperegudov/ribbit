@@ -361,8 +361,8 @@ body {
   100% { background: rgba(34, 197, 94, 0); }
 }
 
-/* Compact inputs in settings rows */
-#groq-key-input, #llm-key-input, #llm-model-input {
+/* Compact inputs inside provider cards — fill the row next to their label. */
+.provider-input {
   background: #0f1318;
   border: 1px solid #2a3040;
   color: #d1d5db;
@@ -370,10 +370,11 @@ body {
   font-family: inherit;
   padding: 0.25rem 0.4rem;
   border-radius: 4px;
-  max-width: 160px;
+  flex: 1;
+  min-width: 0;
   outline: none;
 }
-#groq-key-input:focus, #llm-key-input:focus, #llm-model-input:focus { border-color: rgba(74, 222, 128, 0.4); }
+.provider-input:focus { border-color: rgba(74, 222, 128, 0.4); }
 
 /* Postprocess failure note: shown under the LLM rows when the last edit failed,
  * so a provider quietly retiring a model id is visible instead of silent. */
@@ -422,6 +423,135 @@ body {
   text-align: center;
 }
 #history-days-input:focus { border-color: rgba(74, 222, 128, 0.4); }
+
+/* --- Provider stacks (speech + edit) ---------------------------------- */
+/* Header row that introduces a stack — groups with the panel below it, so
+   drop its bottom divider. */
+.stack-head { border-bottom: none; padding-bottom: 0.1rem; }
+
+/* The speech stack sits at top level, so it gets the same recessed panel +
+   green left edge as the edit block. The edit (text) stack already lives
+   inside .llm-block, so it inherits that panel and stays flush. */
+#audio-stack {
+  background: #0b0e13;
+  border-left: 2px solid rgba(74, 222, 128, 0.45);
+  border-radius: 0 6px 6px 0;
+  padding: 0.4rem 0.6rem;
+  margin: 0.1rem 0;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.provider-stack { display: flex; flex-direction: column; gap: 0.4rem; }
+#text-stack { padding: 0.2rem 0; }
+
+/* One provider entry. */
+.provider-card {
+  background: #0f141b;
+  border: 1px solid #1a2230;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.provider-head { display: flex; justify-content: space-between; align-items: center; }
+.provider-name {
+  font-size: 0.72rem;
+  color: #cbd5e1;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.provider-primary-tag {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  border-radius: 3px;
+  padding: 0 0.25rem;
+  font-weight: 700;
+}
+.provider-ctrls { display: flex; gap: 0.2rem; }
+.provider-mini-btn {
+  background: transparent;
+  border: 1px solid #2a3040;
+  color: #9ca3af;
+  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.provider-mini-btn:hover:not(:disabled) { border-color: #4b5563; color: #d1d5db; }
+.provider-mini-btn:disabled { opacity: 0.3; cursor: default; }
+.provider-del:hover:not(:disabled) { border-color: rgba(248, 113, 113, 0.5); color: #f87171; }
+
+.provider-field { display: flex; align-items: center; gap: 0.4rem; }
+.provider-field-label {
+  font-size: 0.62rem;
+  color: #6b7280;
+  width: 34px;
+  flex: none;
+  text-align: right;
+}
+/* The key cell swaps an input for the "saved" chip; both fill the row. */
+.provider-field .key-status { flex: 1; }
+
+/* "+ add provider" picker at the foot of each stack. */
+.provider-add { padding-top: 0.1rem; }
+.provider-add select {
+  width: 100%;
+  background: #0f1318;
+  border: 1px dashed #2a3040;
+  color: #9ca3af;
+  font-size: 0.7rem;
+  font-family: inherit;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+}
+.provider-add select:hover { border-color: rgba(74, 222, 128, 0.4); color: #d1d5db; }
+
+/* Live fallback banner — amber so an active fallback can't go unnoticed. */
+.fallback-status {
+  font-size: 0.66rem;
+  line-height: 1.3;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 4px;
+  padding: 0.25rem 0.4rem;
+}
+
+/* Threshold + cooldown knobs (shared by both stacks). Stacked vertically so
+   the label + its hint and the two inputs never fight for width in the narrow
+   panel. */
+.fallback-row { flex-direction: column; align-items: stretch; gap: 0.3rem; }
+.fallback-knobs {
+  font-size: 0.66rem;
+  color: #6b7280;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+#fb-threshold, #fb-cooldown {
+  background: #0f1318;
+  border: 1px solid #2a3040;
+  color: #d1d5db;
+  font-size: 0.68rem;
+  font-family: inherit;
+  padding: 0.2rem 0.25rem;
+  border-radius: 4px;
+  width: 40px;
+  outline: none;
+  text-align: center;
+}
+#fb-threshold:focus, #fb-cooldown:focus { border-color: rgba(74, 222, 128, 0.4); }
 
 
 /* LLM-status dot on log entries.

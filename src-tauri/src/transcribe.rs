@@ -24,36 +24,39 @@ pub fn warm_up_client() {
     crate::debug_log::log("HTTP client warmed up");
 }
 
-/// Detect which STT provider to use based on available API keys
-/// Priority: GROQ_API_KEY > OPENAI_API_KEY
-fn get_provider() -> Result<(&'static str, String, &'static str), String> {
-    if let Ok(key) = std::env::var("GROQ_API_KEY") {
-        Ok((
-            "https://api.groq.com/openai/v1/audio/transcriptions",
-            key,
-            "whisper-large-v3-turbo",
-        ))
-    } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-        Ok((
-            "https://api.openai.com/v1/audio/transcriptions",
-            key,
-            "whisper-1",
-        ))
-    } else {
-        Err("No API key set. Add GROQ_API_KEY or OPENAI_API_KEY.".into())
-    }
+/// Connection defaults for one OpenAI-compatible `/audio/transcriptions`
+/// endpoint. The catalog the "+ add provider" UI prefills audio entries from;
+/// url/model stay editable per entry afterward.
+pub struct AudioProvider {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub url: &'static str,
+    pub default_model: &'static str,
+    pub key_env: &'static str,
 }
 
-/// Short "provider/model" label of the currently active STT endpoint, for the
-/// transcription log. "none" when no key is configured.
-pub fn current_model_label() -> String {
-    match get_provider() {
-        Ok((url, _, model)) => {
-            let provider = if url.contains("groq") { "groq" } else { "openai" };
-            format!("{}/{}", provider, model)
-        }
-        Err(_) => "none".to_string(),
-    }
+/// Audio providers Ribbit knows about. Both speak the OpenAI multipart audio
+/// API, so a stack of them is uniform — that uniformity is what makes fallback
+/// across them work in the first place.
+pub const AUDIO_PROVIDERS: &[AudioProvider] = &[
+    AudioProvider {
+        name: "groq",
+        label: "groq",
+        url: "https://api.groq.com/openai/v1/audio/transcriptions",
+        default_model: "whisper-large-v3-turbo",
+        key_env: "GROQ_API_KEY",
+    },
+    AudioProvider {
+        name: "openai",
+        label: "openai",
+        url: "https://api.openai.com/v1/audio/transcriptions",
+        default_model: "whisper-1",
+        key_env: "OPENAI_API_KEY",
+    },
+];
+
+pub fn find_audio_provider(name: &str) -> Option<&'static AudioProvider> {
+    AUDIO_PROVIDERS.iter().find(|p| p.name == name)
 }
 
 /// Encode f32 PCM audio data as WAV bytes
@@ -130,9 +133,19 @@ fn resample_to_16k(input: &[f32], from_rate: u32) -> Vec<f32> {
     out
 }
 
-/// Blocking transcription — auto-selects Groq or OpenAI based on available keys
-pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32, languages: &[String]) -> Result<String, String> {
-    let (url, api_key, model) = get_provider()?;
+/// Blocking transcription against one resolved provider endpoint. The caller
+/// (lib.rs) picks the active audio-stack entry and drives fallback on the
+/// returned `CallError`; this fn is provider-agnostic — any OpenAI-compatible
+/// `/audio/transcriptions` URL works.
+pub fn transcribe_audio_blocking(
+    audio_data: &[f32],
+    sample_rate: u32,
+    languages: &[String],
+    url: &str,
+    api_key: &str,
+    model: &str,
+) -> Result<String, crate::fallback::CallError> {
+    use crate::fallback::CallError;
     crate::debug_log::log(&format!("STT: {} ({}), langs={:?}", model, url.split('/').nth(2).unwrap_or("?"), languages));
 
     // Send at 16 kHz: smaller upload = faster round-trip, no accuracy loss.
@@ -150,7 +163,7 @@ pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32, languages
     let file_part = reqwest::blocking::multipart::Part::bytes(wav_bytes)
         .file_name("audio.wav")
         .mime_str("audio/wav")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CallError::rejected(format!("multipart build: {}", e)))?;
 
     let mut form = reqwest::blocking::multipart::Form::new()
         .part("file", file_part)
@@ -172,7 +185,7 @@ pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32, languages
         .header("Authorization", format!("Bearer {}", api_key))
         .multipart(form)
         .send()
-        .map_err(|e| format!("Network error: {}", e))?;
+        .map_err(|e| CallError::transport(e.is_timeout(), format!("Network error: {}", e)))?;
 
     let elapsed = t0.elapsed();
     crate::debug_log::log(&format!("API response in {:.1}s, status={}", elapsed.as_secs_f32(), response.status()));
@@ -180,12 +193,15 @@ pub fn transcribe_audio_blocking(audio_data: &[f32], sample_rate: u32, languages
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(CallError::http(
+            status.as_u16(),
+            format!("API error {}: {}", status, body.chars().take(200).collect::<String>()),
+        ));
     }
 
     let result: serde_json::Value = response
         .json()
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| CallError::rejected(format!("Failed to parse response: {}", e)))?;
 
     Ok(result["text"].as_str().unwrap_or("").to_string())
 }

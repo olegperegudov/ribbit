@@ -7,6 +7,7 @@ mod usage;
 mod sound;
 mod vocab;
 mod postprocess;
+mod fallback;
 mod mac_window;
 mod tcc_reset;
 
@@ -48,111 +49,226 @@ fn set_last_llm_error(e: Option<String>) {
     }
 }
 
-/// Model to send for a provider: the user's per-provider override from config
-/// if set, else the provider's built-in default. The override is what lets the
-/// user swap a retired model id from Settings without waiting for a release.
-fn resolve_model(cfg: &serde_json::Value, provider: &postprocess::ProviderConfig) -> String {
-    cfg["llm_provider_models"]
-        .get(provider.name)
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(provider.default_model)
-        .to_string()
+fn parse_stack(kind: &str) -> Result<fallback::Stack, String> {
+    match kind {
+        "audio" => Ok(fallback::Stack::Audio),
+        "text" => Ok(fallback::Stack::Text),
+        _ => Err(format!("unknown stack: {}", kind)),
+    }
+}
+
+/// Catalog defaults for a known provider name in the given stack:
+/// `(label, url, default_model, key_env)`. `None` for an unknown name.
+fn catalog_lookup(stack: fallback::Stack, name: &str) -> Option<(String, String, String, String)> {
+    match stack {
+        fallback::Stack::Text => postprocess::find_provider(name).map(|p| {
+            (p.label.to_string(), p.base_url.to_string(), p.default_model.to_string(), p.env_var.to_string())
+        }),
+        fallback::Stack::Audio => transcribe::find_audio_provider(name).map(|p| {
+            (p.label.to_string(), p.url.to_string(), p.default_model.to_string(), p.key_env.to_string())
+        }),
+    }
+}
+
+/// Stack entries as JSON for the UI, each tagged with whether its key is set —
+/// so the panel can show a "saved" chip vs an input without exposing the key.
+fn stack_json(cfg: &serde_json::Value, stack: fallback::Stack) -> serde_json::Value {
+    let entries = fallback::read_stack(cfg, stack);
+    let arr: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| {
+            let has_key = std::env::var(&e.key_env).map(|k| !k.is_empty()).unwrap_or(false);
+            serde_json::json!({
+                "id": e.id, "label": e.label, "url": e.url,
+                "model": e.model, "key_env": e.key_env, "has_key": has_key,
+            })
+        })
+        .collect();
+    serde_json::Value::Array(arr)
+}
+
+/// Live status for the Settings status line: which fallback we sit on and how
+/// long until the cooldown returns us to the primary. `null` while on primary.
+fn stack_state_json(cfg: &serde_json::Value, stack: fallback::Stack) -> serde_json::Value {
+    let total = fallback::read_stack(cfg, stack).len();
+    match fallback::snapshot(stack) {
+        Some((active, ago)) => {
+            let cooldown = fallback::cooldown(cfg).as_secs();
+            let remaining = cooldown.saturating_sub(ago.as_secs());
+            serde_json::json!({ "active": active, "total": total, "remaining_secs": remaining })
+        }
+        None => serde_json::Value::Null,
+    }
+}
+
+/// Smallest unused `p<N>` id across both stacks — stable, no clock needed.
+fn next_provider_id(cfg: &serde_json::Value) -> String {
+    let mut max = 0u64;
+    for s in [fallback::Stack::Audio, fallback::Stack::Text] {
+        for e in fallback::read_stack(cfg, s) {
+            if let Some(n) = e.id.strip_prefix('p').and_then(|d| d.parse::<u64>().ok()) {
+                max = max.max(n);
+            }
+        }
+    }
+    format!("p{}", max + 1)
 }
 
 #[tauri::command]
 fn get_config() -> Result<serde_json::Value, String> {
-    let (provider, key) = if let Ok(k) = std::env::var("GROQ_API_KEY") {
-        ("groq", k)
-    } else if let Ok(k) = std::env::var("OPENAI_API_KEY") {
-        ("openai", k)
-    } else {
-        ("none", String::new())
-    };
-
-    let preview = if key.len() > 8 {
-        format!("{}...{}", &key[..4], &key[key.len()-4..])
-    } else if !key.is_empty() {
-        "****".to_string()
-    } else {
-        "".to_string()
-    };
-
     let cfg = read_config();
-    let postprocess_enabled = cfg["postprocess_enabled"].as_bool().unwrap_or(false);
-    let llm_provider = cfg["llm_provider"]
-        .as_str()
-        .unwrap_or(postprocess::DEFAULT_PROVIDER)
-        .to_string();
 
-    // Per-provider key presence (UI shows ✓-saved chip per provider).
-    let mut provider_keys = serde_json::Map::new();
-    for p in postprocess::PROVIDERS {
-        let has = std::env::var(p.env_var).map(|k| !k.is_empty()).unwrap_or(false);
-        provider_keys.insert(p.name.into(), serde_json::Value::Bool(has));
-    }
+    // First usable audio key gates the first-run setup screen.
+    let has_api_key = fallback::read_stack(&cfg, fallback::Stack::Audio)
+        .iter()
+        .any(|e| std::env::var(&e.key_env).map(|k| !k.is_empty()).unwrap_or(false));
 
     Ok(serde_json::json!({
-        "has_api_key": !key.is_empty(),
-        "api_key_preview": preview,
-        "provider": provider,
+        "has_api_key": has_api_key,
         "has_groq_key": std::env::var("GROQ_API_KEY").map(|k| !k.is_empty()).unwrap_or(false),
-        "postprocess_enabled": postprocess_enabled,
-        "llm_provider": llm_provider,
-        "llm_provider_keys": provider_keys,
-        // Per-provider model overrides (empty/absent = use the built-in default).
-        "llm_provider_models": cfg["llm_provider_models"].clone(),
+        "postprocess_enabled": cfg["postprocess_enabled"].as_bool().unwrap_or(false),
+        "audio_providers": stack_json(&cfg, fallback::Stack::Audio),
+        "text_providers": stack_json(&cfg, fallback::Stack::Text),
+        "fallback_threshold": fallback::threshold(&cfg),
+        "fallback_cooldown_mins": fallback::cooldown(&cfg).as_secs() / 60,
+        "fallback_state": serde_json::json!({
+            "audio": stack_state_json(&cfg, fallback::Stack::Audio),
+            "text": stack_state_json(&cfg, fallback::Stack::Text),
+        }),
         "history_days": history_days(),
     }))
 }
 
+/// Known providers for the "+ add provider" picker in the given stack.
 #[tauri::command]
-fn set_llm_provider(provider: String) -> Result<(), String> {
-    if postprocess::find_provider(&provider).is_none() {
-        return Err(format!("unknown provider: {}", provider));
-    }
-    let mut config = read_config();
-    config["llm_provider"] = serde_json::Value::String(provider.clone());
-    save_config(&config)?;
-    debug_log::log(&format!("llm_provider set to: {}", provider));
-    Ok(())
+fn list_provider_catalog(kind: String) -> Result<Vec<serde_json::Value>, String> {
+    let stack = parse_stack(&kind)?;
+    let v = match stack {
+        fallback::Stack::Text => postprocess::PROVIDERS
+            .iter()
+            .map(|p| serde_json::json!({ "name": p.name, "label": p.label, "default_model": p.default_model }))
+            .collect(),
+        fallback::Stack::Audio => transcribe::AUDIO_PROVIDERS
+            .iter()
+            .map(|p| serde_json::json!({ "name": p.name, "label": p.label, "default_model": p.default_model }))
+            .collect(),
+    };
+    Ok(v)
 }
 
+/// Append a provider to a stack. `provider` is a catalog name (prefills
+/// url/model/key) or "custom" (blank, user fills the url). Returns the updated
+/// stack so the UI re-renders.
 #[tauri::command]
-fn list_llm_providers() -> Vec<serde_json::Value> {
-    postprocess::PROVIDERS
-        .iter()
-        .map(|p| serde_json::json!({
-            "name": p.name,
-            "label": p.label,
-            "default_model": p.default_model,
-        }))
-        .collect()
-}
-
-/// Override the model id for a provider. Empty string reverts to the provider's
-/// built-in default. Lets the user fix a retired model id from Settings instead
-/// of waiting for a release when a provider drops a model out from under us.
-#[tauri::command]
-fn set_llm_model(provider: String, model: String) -> Result<(), String> {
-    if postprocess::find_provider(&provider).is_none() {
-        return Err(format!("unknown provider: {}", provider));
-    }
+fn add_provider(kind: String, provider: String) -> Result<serde_json::Value, String> {
+    let stack = parse_stack(&kind)?;
     let mut config = read_config();
-    if !config["llm_provider_models"].is_object() {
-        config["llm_provider_models"] = serde_json::json!({});
-    }
-    let models = config["llm_provider_models"].as_object_mut().unwrap();
-    let trimmed = model.trim();
-    if trimmed.is_empty() {
-        models.remove(&provider);
+    let id = next_provider_id(&config);
+    let entry = if provider == "custom" {
+        serde_json::json!({
+            "id": id, "label": "custom", "url": "", "model": "",
+            "key_env": format!("RIBBIT_KEY_{}", id),
+        })
     } else {
-        models.insert(provider.clone(), serde_json::Value::String(trimmed.to_string()));
+        let (label, url, model, key_env) = catalog_lookup(stack, &provider)
+            .ok_or_else(|| format!("unknown provider: {}", provider))?;
+        serde_json::json!({ "id": id, "label": label, "url": url, "model": model, "key_env": key_env })
+    };
+    if !config[stack.config_key()].is_array() {
+        config[stack.config_key()] = serde_json::json!([]);
+    }
+    config[stack.config_key()].as_array_mut().unwrap().push(entry);
+    save_config(&config)?;
+    debug_log::log(&format!("add_provider {}/{} -> {}", kind, provider, id));
+    Ok(stack_json(&config, stack))
+}
+
+#[tauri::command]
+fn remove_provider(kind: String, id: String) -> Result<serde_json::Value, String> {
+    let stack = parse_stack(&kind)?;
+    let mut config = read_config();
+    if let Some(arr) = config[stack.config_key()].as_array_mut() {
+        arr.retain(|e| e.get("id").and_then(|v| v.as_str()) != Some(id.as_str()));
     }
     save_config(&config)?;
-    debug_log::log(&format!("llm_model[{}] set to: {:?}", provider, trimmed));
+    debug_log::log(&format!("remove_provider {}/{}", kind, id));
+    Ok(stack_json(&config, stack))
+}
+
+/// Edit one editable field (url / model / label) of a stack entry.
+#[tauri::command]
+fn set_provider_field(kind: String, id: String, field: String, value: String) -> Result<(), String> {
+    if !matches!(field.as_str(), "url" | "model" | "label") {
+        return Err(format!("field not editable: {}", field));
+    }
+    let stack = parse_stack(&kind)?;
+    let mut config = read_config();
+    let arr = config[stack.config_key()].as_array_mut().ok_or("stack missing")?;
+    let entry = arr
+        .iter_mut()
+        .find(|e| e.get("id").and_then(|v| v.as_str()) == Some(id.as_str()))
+        .ok_or("unknown provider entry")?;
+    entry[field.as_str()] = serde_json::Value::String(value.trim().to_string());
+    save_config(&config)?;
     Ok(())
+}
+
+/// Move an entry up or down — the order IS the fallback priority.
+#[tauri::command]
+fn move_provider(kind: String, id: String, up: bool) -> Result<serde_json::Value, String> {
+    let stack = parse_stack(&kind)?;
+    let mut config = read_config();
+    let arr = config[stack.config_key()].as_array_mut().ok_or("stack missing")?;
+    let pos = arr
+        .iter()
+        .position(|e| e.get("id").and_then(|v| v.as_str()) == Some(id.as_str()))
+        .ok_or("unknown provider entry")?;
+    let target = if up { pos.checked_sub(1) } else if pos + 1 < arr.len() { Some(pos + 1) } else { None };
+    if let Some(t) = target {
+        arr.swap(pos, t);
+        save_config(&config)?;
+    }
+    Ok(stack_json(&config, stack))
+}
+
+/// Store a stack entry's API key into the entry's `key_env` (in `.env` + live).
+#[tauri::command]
+async fn set_provider_key(kind: String, id: String, key: String) -> Result<(), String> {
+    let stack = parse_stack(&kind)?;
+    let config = read_config();
+    let entry = fallback::read_stack(&config, stack)
+        .into_iter()
+        .find(|e| e.id == id)
+        .ok_or("unknown provider entry")?;
+    write_env_var(&entry.key_env, key.trim())?;
+    debug_log::log(&format!("provider key saved: {}/{} -> {}", kind, id, entry.key_env));
+    Ok(())
+}
+
+#[tauri::command]
+fn set_fallback_threshold(value: u64) -> Result<(), String> {
+    let mut config = read_config();
+    config["fallback_threshold"] = serde_json::json!(value.clamp(1, 100));
+    save_config(&config)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_fallback_cooldown(minutes: u64) -> Result<(), String> {
+    let mut config = read_config();
+    config["fallback_cooldown_mins"] = serde_json::json!(minutes.clamp(1, 1440));
+    save_config(&config)?;
+    Ok(())
+}
+
+/// Live fallback state for both stacks — polled by the Settings status line.
+#[tauri::command]
+fn get_fallback_state() -> serde_json::Value {
+    let cfg = read_config();
+    serde_json::json!({
+        "audio": stack_state_json(&cfg, fallback::Stack::Audio),
+        "text": stack_state_json(&cfg, fallback::Stack::Text),
+    })
 }
 
 /// Last LLM post-process failure (None once a later call succeeds). The
@@ -340,16 +456,30 @@ fn set_always_on_top(app: AppHandle, value: bool) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn set_api_key(key: String, provider: Option<String>) -> Result<(), String> {
+/// Write (or replace) one `KEY=value` line in the app's `.env` and update the
+/// live process env. Single source of truth for key persistence — used by the
+/// setup screen and by per-entry provider keys.
+fn write_env_var(name: &str, value: &str) -> Result<(), String> {
     let env_path = dirs::config_dir()
         .ok_or("Cannot find config directory")?
         .join("ribbit")
         .join(".env");
+    std::fs::create_dir_all(env_path.parent().unwrap()).map_err(|e| e.to_string())?;
+    let prefix = format!("{}=", name);
+    let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
+    let mut lines: Vec<String> = existing
+        .lines()
+        .filter(|l| !l.starts_with(&prefix))
+        .map(|l| l.to_string())
+        .collect();
+    lines.push(format!("{}={}", name, value));
+    std::fs::write(&env_path, lines.join("\n") + "\n").map_err(|e| e.to_string())?;
+    unsafe { std::env::set_var(name, value); }
+    Ok(())
+}
 
-    std::fs::create_dir_all(env_path.parent().unwrap())
-        .map_err(|e| e.to_string())?;
-
+#[tauri::command]
+async fn set_api_key(key: String, provider: Option<String>) -> Result<(), String> {
     // Detect provider from key prefix or explicit parameter
     let prov = provider.unwrap_or_else(|| {
         if key.starts_with("gsk_") { "groq".into() } else { "openai".into() }
@@ -362,19 +492,7 @@ async fn set_api_key(key: String, provider: Option<String>) -> Result<(), String
         _ => "OPENAI_API_KEY",
     };
 
-    // Read existing env, replace/add the key (only strip the var we're writing)
-    let prefix = format!("{}=", var_name);
-    let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
-    let mut lines: Vec<String> = existing.lines()
-        .filter(|l| !l.starts_with(&prefix))
-        .map(|l| l.to_string())
-        .collect();
-    lines.push(format!("{}={}", var_name, key));
-
-    std::fs::write(&env_path, lines.join("\n") + "\n")
-        .map_err(|e| e.to_string())?;
-
-    unsafe { std::env::set_var(var_name, &key); }
+    write_env_var(var_name, &key)?;
     debug_log::log(&format!("API key saved: {} ({})", var_name, prov));
     Ok(())
 }
@@ -532,11 +650,57 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
         // Read configured languages for Whisper hint
         let languages = get_languages();
 
-        // Create a blocking reqwest client instead of async
+        // Config read once for the whole pipeline (audio stack + text stack).
+        let cfg = read_config();
+
+        // STT against the active audio-stack entry. A transient failure
+        // (429/5xx/timeout) counts toward the switch threshold; a hard error
+        // (bad key/url/model) is surfaced without switching.
         let t_stt = std::time::Instant::now();
-        let result = transcribe::transcribe_audio_blocking(&audio_data, sample_rate, &languages);
+        let (result, stt_model): (Result<String, String>, String) = {
+            let entries = fallback::read_stack(&cfg, fallback::Stack::Audio);
+            if entries.is_empty() {
+                (Err("No audio provider configured. Add one in Settings.".into()), "none".to_string())
+            } else {
+                let idx = fallback::active_index(fallback::Stack::Audio, fallback::cooldown(&cfg))
+                    .min(entries.len() - 1);
+                let entry = &entries[idx];
+                let key = std::env::var(&entry.key_env).unwrap_or_default();
+                let host = entry.url.split('/').nth(2).unwrap_or("?");
+                let prov = if entry.label.is_empty() { host } else { entry.label.as_str() };
+                let label = format!("{}/{}", prov, entry.model);
+                if key.is_empty() {
+                    (Err(format!("no key for audio provider '{}'", prov)), label)
+                } else {
+                    match transcribe::transcribe_audio_blocking(
+                        &audio_data, sample_rate, &languages, &entry.url, &key, &entry.model,
+                    ) {
+                        Ok(text) => {
+                            fallback::on_success(fallback::Stack::Audio);
+                            (Ok(text), label)
+                        }
+                        Err(e) => {
+                            match fallback::classify(e.status, e.is_timeout) {
+                                fallback::FailKind::Switch => {
+                                    let new_idx = fallback::on_switch_fail(
+                                        fallback::Stack::Audio, entries.len(), fallback::threshold(&cfg),
+                                    );
+                                    debug_log::log(&format!(
+                                        "STT transient fail on '{}' ({}); active audio idx -> {}",
+                                        prov, e.message, new_idx
+                                    ));
+                                }
+                                fallback::FailKind::Hard => {
+                                    debug_log::log(&format!("STT hard fail on '{}': {} (no switch)", prov, e.message));
+                                }
+                            }
+                            (Err(e.message), label)
+                        }
+                    }
+                }
+            }
+        };
         let stt_secs = t_stt.elapsed().as_secs_f32();
-        let stt_model = transcribe::current_model_label();
 
         match result {
             Ok(raw_text) => {
@@ -545,50 +709,59 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 // mapping with context). Otherwise — strict vocab::apply.
                 // On LLM error we fall back to strict vocab::apply so the user
                 // is never blocked beyond the 3s timeout.
-                let cfg = read_config();
                 let postprocess_enabled = cfg["postprocess_enabled"].as_bool().unwrap_or(false);
-                let llm_provider_name = cfg["llm_provider"]
-                    .as_str()
-                    .unwrap_or(postprocess::DEFAULT_PROVIDER);
 
                 let mut llm_secs: Option<f32> = None;
                 let mut llm_model: Option<String> = None;
                 let mut llm_attempted = false;
 
-                let (text, edited): (String, bool) = if postprocess_enabled {
-                    let provider = postprocess::find_provider(llm_provider_name)
-                        .unwrap_or_else(|| postprocess::find_provider(postprocess::DEFAULT_PROVIDER).unwrap());
-                    let key = std::env::var(provider.env_var).unwrap_or_default();
-                    let model = resolve_model(&cfg, provider);
+                let text_entries = fallback::read_stack(&cfg, fallback::Stack::Text);
+                let (text, edited): (String, bool) = if postprocess_enabled && !text_entries.is_empty() {
+                    let idx = fallback::active_index(fallback::Stack::Text, fallback::cooldown(&cfg))
+                        .min(text_entries.len() - 1);
+                    let entry = &text_entries[idx];
+                    let key = std::env::var(&entry.key_env).unwrap_or_default();
+                    let host = entry.url.split('/').nth(2).unwrap_or("?");
+                    let prov = if entry.label.is_empty() { host } else { entry.label.as_str() };
                     if key.is_empty() {
-                        let msg = format!("no {} key set", provider.name);
-                        debug_log::log(&format!(
-                            "postprocess enabled but {} — falling back to strict vocab",
-                            msg
-                        ));
+                        let msg = format!("no key for text provider '{}'", prov);
+                        debug_log::log(&format!("postprocess: {} — falling back to strict vocab", msg));
                         set_last_llm_error(Some(msg));
                         (vocab::apply(&raw_text), false)
                     } else {
                         let vocab_data = vocab::read_vocab();
                         llm_attempted = true;
-                        llm_model = Some(format!("{}/{}", provider.name, model));
+                        llm_model = Some(format!("{}/{}", prov, entry.model));
                         // Timed even on failure: a timed-out LLM burns its full
                         // 5s timeout (+retry) before we fall back to vocab, and
                         // that lost time must show up in the log.
                         let t_llm = std::time::Instant::now();
-                        let outcome = postprocess::edit_text(&raw_text, &vocab_data, provider, &key, &model);
+                        let outcome = postprocess::edit_text(&raw_text, &vocab_data, &entry.url, &key, &entry.model);
                         llm_secs = Some(t_llm.elapsed().as_secs_f32());
                         match outcome {
-                            // Clearing on success means the Settings note only
-                            // ever reflects the *current* state, not a stale
-                            // failure the user already fixed.
+                            // Clearing on success means the Settings note only ever
+                            // reflects the *current* state, not a stale failure.
                             Ok(edited_text) => {
+                                fallback::on_success(fallback::Stack::Text);
                                 set_last_llm_error(None);
                                 (edited_text, true)
                             }
                             Err(e) => {
-                                debug_log::log(&format!("postprocess fallback: {}", e));
-                                set_last_llm_error(Some(e));
+                                match fallback::classify(e.status, e.is_timeout) {
+                                    fallback::FailKind::Switch => {
+                                        let new_idx = fallback::on_switch_fail(
+                                            fallback::Stack::Text, text_entries.len(), fallback::threshold(&cfg),
+                                        );
+                                        debug_log::log(&format!(
+                                            "postprocess transient fail on '{}' ({}); active text idx -> {}",
+                                            prov, e.message, new_idx
+                                        ));
+                                    }
+                                    fallback::FailKind::Hard => {
+                                        debug_log::log(&format!("postprocess hard fail on '{}': {} (no switch)", prov, e.message));
+                                    }
+                                }
+                                set_last_llm_error(Some(e.message));
                                 (vocab::apply(&raw_text), false)
                             }
                         }
@@ -787,6 +960,152 @@ fn register_shortcut(app: &AppHandle, shortcut: Shortcut) -> Result<(), String> 
     })
 }
 
+/// Build an audio-stack entry from a catalog provider name.
+fn audio_entry_json(id: &str, name: &str) -> serde_json::Value {
+    let p = transcribe::find_audio_provider(name).expect("known audio provider");
+    serde_json::json!({
+        "id": id, "label": p.label, "url": p.url,
+        "model": p.default_model, "key_env": p.key_env,
+    })
+}
+
+/// Fold legacy single-provider settings into the audio/text stacks. Idempotent:
+/// once a stack array exists it's left untouched, so this is safe on every
+/// launch. Reads key presence from the env (already loaded) to seed sensibly.
+fn migrate_stacks(config: &mut serde_json::Value) -> bool {
+    let groq = std::env::var("GROQ_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+    let openai = std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+    migrate_stacks_inner(config, groq, openai)
+}
+
+/// Pure core of the migration — `groq`/`openai` are "is that key present".
+/// Split out so it can be unit-tested without touching process env.
+fn migrate_stacks_inner(config: &mut serde_json::Value, groq: bool, openai: bool) -> bool {
+    let mut changed = false;
+
+    if !config.get("audio_providers").map(|v| v.is_array()).unwrap_or(false) {
+        // Primary = groq unless only an OpenAI key exists. A fresh install with
+        // no key still seeds groq so the setup screen has an entry to fill.
+        let mut arr = Vec::new();
+        if groq || !openai {
+            arr.push(audio_entry_json("a_groq", "groq"));
+            if openai {
+                arr.push(audio_entry_json("a_openai", "openai"));
+            }
+        } else {
+            arr.push(audio_entry_json("a_openai", "openai"));
+        }
+        config["audio_providers"] = serde_json::Value::Array(arr);
+        changed = true;
+    }
+
+    if !config.get("text_providers").map(|v| v.is_array()).unwrap_or(false) {
+        // Seed from the old llm_provider + its model override (or default).
+        let prov_name = config["llm_provider"]
+            .as_str()
+            .unwrap_or(postprocess::DEFAULT_PROVIDER)
+            .to_string();
+        let p = postprocess::find_provider(&prov_name)
+            .unwrap_or_else(|| postprocess::find_provider(postprocess::DEFAULT_PROVIDER).unwrap());
+        let model = config["llm_provider_models"]
+            .get(p.name)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(p.default_model)
+            .to_string();
+        config["text_providers"] = serde_json::json!([{
+            "id": "t_primary", "label": p.label, "url": p.base_url,
+            "model": model, "key_env": p.env_var,
+        }]);
+        changed = true;
+    }
+
+    if !config.get("fallback_threshold").map(|v| v.is_u64()).unwrap_or(false) {
+        config["fallback_threshold"] = serde_json::json!(2);
+        changed = true;
+    }
+    if !config.get("fallback_cooldown_mins").map(|v| v.is_u64()).unwrap_or(false) {
+        config["fallback_cooldown_mins"] = serde_json::json!(60);
+        changed = true;
+    }
+
+    changed
+}
+
+#[cfg(test)]
+mod stack_tests {
+    use super::*;
+
+    #[test]
+    fn migrate_seeds_groq_primary_with_openai_fallback() {
+        let mut cfg = serde_json::json!({});
+        assert!(migrate_stacks_inner(&mut cfg, true, true));
+        let audio = fallback::read_stack(&cfg, fallback::Stack::Audio);
+        assert_eq!(audio.len(), 2);
+        assert_eq!(audio[0].label, "groq");
+        assert_eq!(audio[1].label, "openai");
+        assert_eq!(audio[0].key_env, "GROQ_API_KEY");
+    }
+
+    #[test]
+    fn migrate_seeds_openai_primary_when_only_openai_key() {
+        let mut cfg = serde_json::json!({});
+        migrate_stacks_inner(&mut cfg, false, true);
+        let audio = fallback::read_stack(&cfg, fallback::Stack::Audio);
+        assert_eq!(audio.len(), 1);
+        assert_eq!(audio[0].label, "openai");
+    }
+
+    #[test]
+    fn migrate_seeds_groq_on_fresh_install() {
+        let mut cfg = serde_json::json!({});
+        migrate_stacks_inner(&mut cfg, false, false);
+        let audio = fallback::read_stack(&cfg, fallback::Stack::Audio);
+        assert_eq!(audio.len(), 1);
+        assert_eq!(audio[0].label, "groq");
+    }
+
+    #[test]
+    fn migrate_seeds_text_from_legacy_provider_and_model() {
+        let mut cfg = serde_json::json!({
+            "llm_provider": "routerai",
+            "llm_provider_models": { "routerai": "custom/model-x" }
+        });
+        migrate_stacks_inner(&mut cfg, true, false);
+        let text = fallback::read_stack(&cfg, fallback::Stack::Text);
+        assert_eq!(text.len(), 1);
+        assert_eq!(text[0].label, "routerai");
+        assert_eq!(text[0].model, "custom/model-x");
+        assert_eq!(text[0].key_env, "ROUTERAI_API_KEY");
+    }
+
+    #[test]
+    fn migrate_is_idempotent() {
+        let mut cfg = serde_json::json!({});
+        assert!(migrate_stacks_inner(&mut cfg, true, true));
+        // Second pass over an already-migrated config changes nothing.
+        assert!(!migrate_stacks_inner(&mut cfg, true, true));
+    }
+
+    #[test]
+    fn migrate_sets_default_knobs() {
+        let mut cfg = serde_json::json!({});
+        migrate_stacks_inner(&mut cfg, true, false);
+        assert_eq!(cfg["fallback_threshold"], 2);
+        assert_eq!(cfg["fallback_cooldown_mins"], 60);
+    }
+
+    #[test]
+    fn next_id_avoids_collisions() {
+        let cfg = serde_json::json!({
+            "audio_providers": [{"id": "p1", "url": "u", "key_env": "K"}],
+            "text_providers": [{"id": "p3", "url": "u", "key_env": "K"}]
+        });
+        assert_eq!(next_provider_id(&cfg), "p4");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     debug_log::log("=== Ribbit starting ===");
@@ -808,6 +1127,19 @@ pub fn run() {
     // Convenience for the project owner; for everyone else this is a no-op.
     if std::env::var("ROUTERAI_API_KEY").is_err() {
         bootstrap_routerai_key();
+    }
+
+    // One-time migration: fold the old single-provider settings into the new
+    // audio/text provider stacks. No-op once the stacks exist, so it's safe to
+    // run on every launch. Runs after env load so key presence can seed it.
+    {
+        let mut cfg = read_config();
+        if migrate_stacks(&mut cfg) {
+            match save_config(&cfg) {
+                Ok(()) => debug_log::log("migrated config to provider stacks"),
+                Err(e) => debug_log::log(&format!("stack migration save failed: {}", e)),
+            }
+        }
     }
 
     let has_key = std::env::var("OPENAI_API_KEY").is_ok();
@@ -841,7 +1173,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, set_llm_provider, list_llm_providers, set_llm_model, get_llm_last_error])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown, get_fallback_state])
         .setup(move |app| {
             let handle = app.handle().clone();
 
