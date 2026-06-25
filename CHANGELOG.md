@@ -7,6 +7,20 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.54] - 2026-06-25
+
+### Fixed
+- **The text cleanup step sometimes answered your dictation instead of typing
+  it.** When the dictated phrase looked like a question or a command (e.g.
+  asking for "an example of what a space dictionary looks like"), the cleanup
+  model would occasionally drop its editor role and reply — pasting a wall of
+  invented text where the transcript should have been. The prompt already tells
+  the model it's a filter and must never answer; this adds a last-resort safety
+  net behind it: if the "edited" text comes back implausibly longer than what
+  you said (the signature of an answer, not an edit), Ribbit discards it and
+  falls back to the strict dictionary pass, so you get your own words — never
+  someone else's answer — in the paste.
+
 ## [0.7.53] - 2026-06-24
 
 ### Fixed

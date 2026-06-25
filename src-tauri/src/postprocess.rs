@@ -169,6 +169,20 @@ fn clean_content(s: &str) -> String {
     t
 }
 
+/// True when the edited text is implausibly longer than the input — the
+/// signature of the model ignoring the "you are a filter, don't answer"
+/// framing and replying to a dictated question/command with a wall of text.
+/// A real edit only tweaks spelling/punctuation/vocab, so length stays close
+/// to the input; the absolute margin keeps tiny inputs (where a couple of
+/// added chars is a big ratio) from tripping it. This is the last-resort net
+/// behind the prompt — a strong prompt still misses sometimes, and pasting
+/// someone else's answer into the user's document is the worst outcome.
+fn is_runaway_edit(input: &str, edited: &str) -> bool {
+    let in_len = input.chars().count();
+    let out_len = edited.chars().count();
+    out_len > in_len * 2 + 40
+}
+
 /// Short label for the kind of reqwest error — useful in debug log when
 /// diagnosing why postprocess fell back. Native error text is verbose and
 /// often hides the actual class (timeout vs connect vs TLS, etc).
@@ -249,6 +263,19 @@ pub fn edit_text(
         .map_err(|e| format!("parse error: {}", e))?;
 
     let edited = parse_response(&json)?;
+
+    // Despite the prompt, the model occasionally answers a dictated question
+    // instead of editing it, returning a wall of text. Reject it so the caller
+    // falls back to strict vocab::apply — better the raw phrase than a stranger's
+    // answer pasted wherever the user is typing.
+    if is_runaway_edit(text, &edited) {
+        return Err(format!(
+            "runaway output ({} → {} chars): model answered instead of editing",
+            text.chars().count(),
+            edited.chars().count()
+        ));
+    }
+
     crate::debug_log::log(&format!(
         "postprocess[{}/{}]: {:?} → {:?} ({:.2}s)",
         provider.name,
@@ -292,6 +319,31 @@ mod tests {
     #[test]
     fn find_provider_unknown() {
         assert!(find_provider("nonesuch").is_none());
+    }
+
+    #[test]
+    fn runaway_edit_flags_answer_not_edit() {
+        // The real failure: a dictated request, answered as a wall of text.
+        let input = "дай пример как выглядит словарь спейса и кто может его читать";
+        let answer = "Словарь, о котором я говорю, представляет собой коллекцию терминов \
+и названий с их правильным написанием, а также возможными вариантами, как они могут \
+быть распознаны с ошибкой. Например, для термина alrosa словарь может содержать Alros, \
+Allrosa, Allros, AllRoss, алроса, алросе.";
+        assert!(is_runaway_edit(input, answer));
+    }
+
+    #[test]
+    fn runaway_edit_allows_normal_edit() {
+        // Punctuation + capitalization + vocab fix barely change length.
+        assert!(!is_runaway_edit("ехал к росе утром", "Ехал к Алросе утром."));
+    }
+
+    #[test]
+    fn runaway_edit_allows_short_inputs() {
+        // Tiny inputs: a couple of added chars is a big ratio but a real edit;
+        // the absolute margin covers it.
+        assert!(!is_runaway_edit("привет", "Привет!"));
+        assert!(!is_runaway_edit("", ""));
     }
 
     #[test]
