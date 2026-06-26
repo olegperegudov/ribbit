@@ -29,6 +29,10 @@ pub struct TranscriptionLog<'a> {
     /// its full timeout, and that time must show up somewhere.
     pub llm_secs: Option<f32>,
     pub llm_model: Option<&'a str>,
+    /// Endpoint host of the text LLM that produced this entry (e.g.
+    /// "routerai.ru"). Shown next to the green/yellow indicator in the history
+    /// so a glance tells which provider — and which fallback rung — was live.
+    pub llm_host: Option<&'a str>,
     /// Wall time of typing the text into the focused app.
     pub insert_secs: f32,
     /// Whole post-release pipeline. `total - stt - llm - insert` is the fixed
@@ -78,6 +82,7 @@ fn build_entry(rec: &TranscriptionLog, ts: &str) -> serde_json::Value {
         "stt_model": rec.stt_model,
         "llm_secs": rec.llm_secs,
         "llm_model": rec.llm_model,
+        "llm_host": rec.llm_host,
         "insert_secs": rec.insert_secs,
         "total_secs": rec.total_secs,
         "idle_secs": rec.idle_secs,
@@ -161,7 +166,8 @@ mod tests {
             stt_secs: 2.0,
             stt_model: "groq/whisper-large-v3-turbo",
             llm_secs: Some(1.5),
-            llm_model: Some("routerai/google/gemma-4-26b-a4b-it"),
+            llm_model: Some("google/gemma-4-26b-a4b-it"),
+            llm_host: Some("routerai.ru"),
             insert_secs: 0.5,
             total_secs: 3.75,
             idle_secs: Some(42.0),
@@ -175,7 +181,8 @@ mod tests {
         assert_eq!(e["stt_secs"], 2.0);
         assert_eq!(e["stt_model"], "groq/whisper-large-v3-turbo");
         assert_eq!(e["llm_secs"], 1.5);
-        assert_eq!(e["llm_model"], "routerai/google/gemma-4-26b-a4b-it");
+        assert_eq!(e["llm_model"], "google/gemma-4-26b-a4b-it");
+        assert_eq!(e["llm_host"], "routerai.ru");
         assert_eq!(e["insert_secs"], 0.5);
         assert_eq!(e["total_secs"], 3.75);
         assert_eq!(e["idle_secs"], 42.0);
@@ -192,6 +199,7 @@ mod tests {
             stt_model: "groq/whisper-large-v3-turbo",
             llm_secs: None,
             llm_model: None,
+            llm_host: None,
             insert_secs: 0.1,
             total_secs: 1.1,
             idle_secs: None,
@@ -199,6 +207,7 @@ mod tests {
         let e = build_entry(&rec, "ts");
         assert!(e["llm_secs"].is_null());
         assert!(e["llm_model"].is_null());
+        assert!(e["llm_host"].is_null());
         assert!(e["raw_text"].is_null());
         assert!(e["idle_secs"].is_null());
     }

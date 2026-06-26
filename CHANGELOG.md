@@ -7,6 +7,19 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.56] - 2026-06-26
+
+### Changed
+- **The green/yellow LLM indicator moved under each message, and now names the
+  provider that ran.** Before, a small dot sat at the far right of the row.
+  Now it sits on its own line directly below the transcript, and when the text
+  cleanup actually ran (green) it's followed by the endpoint and model that did
+  it — e.g. `routerai.ru | meta-llama/llama-3.3-70b-instruct`. This makes the
+  new auto-fallback legible at a glance: you can see, message by message, which
+  provider (and which fallback rung) was live at that moment. A yellow dot — no
+  cleanup happened — stands alone with no label. Hover the label to see the full
+  endpoint/model if it's truncated.
+
 ## [0.7.55] - 2026-06-25
 
 ### Added

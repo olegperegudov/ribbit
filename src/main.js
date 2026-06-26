@@ -32,7 +32,7 @@ function formatDate(isoString) {
   return `${wd}, ${mon} ${day}${ordinal(day)}`;
 }
 
-function addLogEntry(text, ts, edited) {
+function addLogEntry(text, ts, edited, llmHost, llmModel) {
   const log = $("#log-entries");
   const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const dateLabel = formatDate(ts);
@@ -53,7 +53,14 @@ function addLogEntry(text, ts, edited) {
   entry.className = "log-entry";
   const dotClass = edited === true ? "edited" : "unedited";
   const dotHint = edited === true ? "rephrased" : "not rephrased";
-  entry.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${escapeHtml(text)}</span><span class="log-llm-dot ${dotClass}" data-hint="${dotHint}" tabindex="0"></span>`;
+  // Provider label rides under the message, next to the indicator — but only
+  // when the LLM actually ran (green). A yellow entry had no provider, so the
+  // dot stands alone.
+  const labelText = `${llmHost} | ${llmModel}`;
+  const labelHtml = (edited === true && llmHost && llmModel)
+    ? `<span class="log-llm-label" data-hint="${escapeHtml(labelText)}" tabindex="0">${escapeHtml(labelText)}</span>`
+    : "";
+  entry.innerHTML = `<span class="log-time">${time}</span><div class="log-body"><span class="log-text">${escapeHtml(text)}</span><div class="log-meta"><span class="log-llm-dot ${dotClass}" data-hint="${dotHint}" tabindex="0"></span>${labelHtml}</div></div>`;
   entry.title = "click to copy";
   entry.addEventListener("click", () => {
     // Don't copy if user is selecting text (for vocab popup)
@@ -371,7 +378,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // limit 0 = load everything inside the retention window (search needs all days).
     const history = await invoke("get_log_history", { limit: 0 });
     for (const entry of history.reverse()) {
-      addLogEntry(entry.text, entry.ts, entry.edited);
+      addLogEntry(entry.text, entry.ts, entry.edited, entry.llm_host, entry.llm_model);
     }
   } catch (e) {
     console.error("Failed to load history:", e);
@@ -439,8 +446,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await listen("transcription", (event) => {
-    const { text, edited } = event.payload;
-    addLogEntry(text, null, edited);
+    const { text, edited, llm_host, llm_model } = event.payload;
+    addLogEntry(text, null, edited, llm_host, llm_model);
     // Keep the Settings "last error" note in sync if the panel is open.
     refreshLlmError();
   });

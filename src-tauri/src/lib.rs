@@ -713,6 +713,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
                 let mut llm_secs: Option<f32> = None;
                 let mut llm_model: Option<String> = None;
+                let mut llm_host: Option<String> = None;
                 let mut llm_attempted = false;
 
                 let text_entries = fallback::read_stack(&cfg, fallback::Stack::Text);
@@ -731,7 +732,11 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     } else {
                         let vocab_data = vocab::read_vocab();
                         llm_attempted = true;
-                        llm_model = Some(format!("{}/{}", prov, entry.model));
+                        // Host (not the label) so the history shows the real
+                        // endpoint that ran — the whole point of the indicator is
+                        // telling groq from routerai at a glance.
+                        llm_host = Some(host.to_string());
+                        llm_model = Some(entry.model.clone());
                         // Timed even on failure: a timed-out LLM burns its full
                         // 5s timeout (+retry) before we fall back to vocab, and
                         // that lost time must show up in the log.
@@ -780,6 +785,8 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         "text": &text,
                         "duration": duration_secs,
                         "edited": edited,
+                        "llm_host": llm_host,
+                        "llm_model": llm_model,
                     }));
 
                     let _ = app_handle.emit("status-detail", "Inserting text...");
@@ -814,6 +821,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         stt_model: &stt_model,
                         llm_secs,
                         llm_model: llm_model.as_deref(),
+                        llm_host: llm_host.as_deref(),
                         insert_secs,
                         total_secs,
                         idle_secs,
