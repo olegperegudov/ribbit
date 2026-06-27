@@ -32,6 +32,8 @@ All transcriptions are saved in a local log with timestamps, grouped by date.
 
 ## Quick start
 
+> **Best on macOS.** Ribbit is built and tested primarily on macOS (Apple Silicon & Intel). A Windows build is available, but it isn't regularly tested at the moment and may have rough edges — give it a try, and feedback is welcome.
+
 ### 1. Download
 
 <p>
