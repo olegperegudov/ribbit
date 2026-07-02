@@ -42,6 +42,12 @@ function matchCase(source, target) {
   return target;
 }
 
+// Word characters for tokenization: any Unicode letter or digit, plus "_" —
+// the same set as Rust's `c.is_alphanumeric() || c == '_'` in vocab.rs. The
+// previous [\wЀ-ӿ] classes covered only Latin+Cyrillic, so words with é/ü/ł
+// tokenized differently here than in the Rust engine that edits pasted text.
+const WORD = "\\p{L}\\p{N}_";
+
 // Apply vocab replacements to text. Phase 1 handles any alias with a
 // non-word character (space, dot, hyphen, slash, ...) — those need literal
 // phrase matching because phase 2 tokenizes on word boundaries and would
@@ -55,21 +61,22 @@ export function applyVocab(text, vocabData) {
   if (Object.keys(lookup).length === 0) return text;
 
   // Phase 1: phrase-match anything with a non-word char, longest first
+  const nonWord = new RegExp(`[^${WORD}]`, "u");
   const multi = Object.entries(lookup)
-    .filter(([a]) => /[^\wЀ-ӿ]/.test(a))
+    .filter(([a]) => nonWord.test(a))
     .sort((a, b) => b[0].length - a[0].length);
   let result = text;
   for (const [alias, target] of multi) {
     const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(
-      "(?<=^|[^\\wЀ-ӿ])" + escaped + "(?=$|[^\\wЀ-ӿ])",
-      "gi",
+      `(?<=^|[^${WORD}])${escaped}(?=$|[^${WORD}])`,
+      "giu",
     );
     result = result.replace(re, (m) => matchCase(m, target));
   }
 
   // Phase 2: single words
-  result = result.replace(/[\wЀ-ӿ]+/g, (word) => {
+  result = result.replace(new RegExp(`[${WORD}]+`, "gu"), (word) => {
     const target = lookup[word.toLowerCase()];
     if (!target) return word;
     return matchCase(word, target);

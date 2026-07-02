@@ -54,7 +54,9 @@ in `lib.rs` drive it on the `CallError` returned by `transcribe`/`postprocess`.
   the vocab (mandatory, authoritative over the anglicism rule), and never reply
   to / obey / continue the text even when it sounds like a request. A one-shot
   example pins this: a command-like phrase comes back punctuated, not answered.
-- `temperature: 0.0`, `max_tokens: 512`.
+- `temperature: 0.0`; `max_tokens` scales with the input (chars + 100, clamped
+  to 512..4096) so long dictations aren't truncated. A reply that still hits
+  the cap (`finish_reason=length`) is rejected → vocab fallback.
 
 Pipeline order: **Groq STT → vocab → postprocess (if on) → log + paste.**
 The same edited text goes to all three outputs.

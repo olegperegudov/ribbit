@@ -7,6 +7,60 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.58] - 2026-07-02
+
+Stability audit release: two data-loss paths in dictation, four small bugs,
+and a dead-code sweep. No new features.
+
+### Fixed
+- **Long dictations are no longer silently truncated by the text cleanup.**
+  The cleanup model's reply was capped at a fixed 512 tokens; a dictation past
+  roughly 1.5–2 minutes came back cut off and the shortened text was pasted as
+  if complete (the runaway-length guard only catches replies that are too
+  *long*, not too short). The cap now scales with the input length, and a
+  reply that still hits it (`finish_reason=length`) is rejected in favor of
+  the strict dictionary pass — you always keep your full words.
+- **A provider hiccup no longer loses the current dictation.** A rate limit,
+  outage or timeout on the active provider used to fail the dictation
+  outright — the fallback stack only helped *subsequent* ones (and only after
+  the switch threshold). Now the same request walks down the stack
+  immediately, for both speech-to-text and the text cleanup, while the sticky
+  switch logic still moves the starting provider after repeated failures.
+  Two related gaps closed alongside:
+  - Providers with no key saved are skipped instead of blocking the stack
+    (previously a key-less primary made every dictation fail even when a
+    fully-configured fallback sat right under it).
+  - Speech-to-text retries once on a dropped connection (stale pooled TLS
+    after a long idle gap) — the same courtesy the cleanup step already had.
+    Timeouts are not retried; they move on to the next provider instead.
+- **The window X button hides to the tray again.** It actually minimized —
+  on macOS that sends Ribbit to the Dock, and restoring later teleports you
+  to the window's home Space (the exact bug the tray toggle had already
+  fixed). X now uses the same hide path as the tray, and the tray menu label
+  ("Show/Hide Ribbit") stays in sync.
+- **"Check update" no longer double-fires.** After an update was found the
+  button carried two click handlers at once, so clicking it started the
+  install *and* a parallel re-check with flickering label text. One handler,
+  one state.
+- Word replacements applied to the on-screen log now treat every Unicode
+  letter as a word character (é, ü, ł, …), matching the Rust engine that
+  edits the pasted text — previously only Latin and Cyrillic counted, so
+  e.g. an alias "caf" could match inside "café" in the log view.
+- Vocabulary entries containing quotes no longer break the list markup
+  (the HTML escaper now escapes quotes for attribute contexts).
+
+### Removed
+- Ghost usage-statistics module: every dictation was recorded into a separate
+  SQLite database that no screen ever read. Transcript history (the log you
+  see and search) lives in the daily jsonl files and is unaffected; the
+  `usage.db` file simply stops growing and can be deleted by hand if desired.
+  Drops the bundled SQLite dependency from the build.
+- Dead code sweep: unused `show_from_tray` / `get_fallback_state` commands, a
+  bootstrap path reading a secrets file that no longer exists, and a config
+  write every 30 minutes whose value nothing ever read (it could also race a
+  concurrent settings change and lose it). Stale "3s timeout" comments
+  corrected to the real 5s.
+
 ## [0.7.56] - 2026-06-26
 
 ### Changed

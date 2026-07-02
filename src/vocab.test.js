@@ -61,6 +61,14 @@ describe("applyVocab", () => {
     expect(applyVocab("DEF Def def", v)).toBe("DEV Dev dev");
   });
 
+  it("treats all Unicode letters as word characters (parity with vocab.rs)", () => {
+    // Regression: the old Latin+Cyrillic-only classes tokenized "café" as
+    // "caf"+"é", so an alias "caf" wrongly matched inside it.
+    expect(applyVocab("nice café here", { CAF: ["caf"] })).toBe("nice café here");
+    expect(applyVocab("go to cafe now", { "café": ["cafe"] })).toBe("go to café now");
+    expect(applyVocab("jadę do łodzi", { "Łódź": ["łodzi"] })).toBe("jadę do Łódź");
+  });
+
   it("replaces an alias containing dots as a single phrase", () => {
     // STT may mishear "routerai.ru" as "router.ai.ru".
     // Aliases with non-word chars (dots, hyphens, slashes) must match

@@ -3,7 +3,6 @@ mod transcribe;
 mod inserter;
 mod logger;
 mod debug_log;
-mod usage;
 mod sound;
 mod vocab;
 mod postprocess;
@@ -47,6 +46,18 @@ fn set_last_llm_error(e: Option<String>) {
     if let Ok(mut g) = LAST_LLM_ERROR.lock() {
         *g = e;
     }
+}
+
+/// Endpoint host of a stack entry, e.g. "routerai.ru".
+fn entry_host(e: &fallback::ProviderEntry) -> &str {
+    e.url.split('/').nth(2).unwrap_or("?")
+}
+
+/// "provider/model" label for the transcription log; label falls back to the
+/// endpoint host for custom entries.
+fn entry_label(e: &fallback::ProviderEntry) -> String {
+    let prov = if e.label.is_empty() { entry_host(e) } else { e.label.as_str() };
+    format!("{}/{}", prov, e.model)
 }
 
 fn parse_stack(kind: &str) -> Result<fallback::Stack, String> {
@@ -261,16 +272,6 @@ fn set_fallback_cooldown(minutes: u64) -> Result<(), String> {
     Ok(())
 }
 
-/// Live fallback state for both stacks — polled by the Settings status line.
-#[tauri::command]
-fn get_fallback_state() -> serde_json::Value {
-    let cfg = read_config();
-    serde_json::json!({
-        "audio": stack_state_json(&cfg, fallback::Stack::Audio),
-        "text": stack_state_json(&cfg, fallback::Stack::Text),
-    })
-}
-
 /// Last LLM post-process failure (None once a later call succeeds). The
 /// Settings panel shows it so a silently-rotted provider is visible.
 #[tauri::command]
@@ -329,11 +330,6 @@ fn get_debug_log() -> String {
 }
 
 #[tauri::command]
-fn get_usage_stats() -> Vec<serde_json::Value> {
-    usage::get_monthly()
-}
-
-#[tauri::command]
 fn test_sound(app: AppHandle) {
     app.state::<sound::SoundPlayer>().play(sound::SoundKind::Start);
 }
@@ -371,19 +367,19 @@ fn set_sound_pack(pack: String) -> Result<(), String> {
     Ok(())
 }
 
+/// The X button: hide to tray via the same hide() path as the tray toggle.
+/// Minimize is deliberately avoided — on macOS it sends the window to the
+/// Dock, and the later unminimize forces a Space switch back to the window's
+/// home Space (the "teleports me to another desktop" bug, see
+/// `toggle_main_window`).
 #[tauri::command]
 fn hide_to_tray(app: AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.minimize();
+        let _ = w.hide();
     }
-}
-
-#[tauri::command]
-fn show_from_tray(app: AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
+    // Keep the tray menu label in step with the window state.
+    if let Some(item) = app.try_state::<tauri::menu::MenuItem<tauri::Wry>>() {
+        let _ = item.set_text("Show Ribbit");
     }
 }
 
@@ -653,50 +649,26 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
         // Config read once for the whole pipeline (audio stack + text stack).
         let cfg = read_config();
 
-        // STT against the active audio-stack entry. A transient failure
-        // (429/5xx/timeout) counts toward the switch threshold; a hard error
-        // (bad key/url/model) is surfaced without switching.
+        // STT with in-request failover: walk the audio stack from the sticky
+        // active entry, so a transient failure (429/5xx/timeout) tries the
+        // next provider for THIS dictation — speech is never lost just because
+        // the primary blinked. Hard errors (bad key/url/model) still surface.
         let t_stt = std::time::Instant::now();
         let (result, stt_model): (Result<String, String>, String) = {
             let entries = fallback::read_stack(&cfg, fallback::Stack::Audio);
             if entries.is_empty() {
                 (Err("No audio provider configured. Add one in Settings.".into()), "none".to_string())
             } else {
-                let idx = fallback::active_index(fallback::Stack::Audio, fallback::cooldown(&cfg))
+                let start = fallback::active_index(fallback::Stack::Audio, fallback::cooldown(&cfg))
                     .min(entries.len() - 1);
-                let entry = &entries[idx];
-                let key = std::env::var(&entry.key_env).unwrap_or_default();
-                let host = entry.url.split('/').nth(2).unwrap_or("?");
-                let prov = if entry.label.is_empty() { host } else { entry.label.as_str() };
-                let label = format!("{}/{}", prov, entry.model);
-                if key.is_empty() {
-                    (Err(format!("no key for audio provider '{}'", prov)), label)
-                } else {
-                    match transcribe::transcribe_audio_blocking(
-                        &audio_data, sample_rate, &languages, &entry.url, &key, &entry.model,
-                    ) {
-                        Ok(text) => {
-                            fallback::on_success(fallback::Stack::Audio);
-                            (Ok(text), label)
-                        }
-                        Err(e) => {
-                            match fallback::classify(e.status, e.is_timeout) {
-                                fallback::FailKind::Switch => {
-                                    let new_idx = fallback::on_switch_fail(
-                                        fallback::Stack::Audio, entries.len(), fallback::threshold(&cfg),
-                                    );
-                                    debug_log::log(&format!(
-                                        "STT transient fail on '{}' ({}); active audio idx -> {}",
-                                        prov, e.message, new_idx
-                                    ));
-                                }
-                                fallback::FailKind::Hard => {
-                                    debug_log::log(&format!("STT hard fail on '{}': {} (no switch)", prov, e.message));
-                                }
-                            }
-                            (Err(e.message), label)
-                        }
-                    }
+                match fallback::run_with_failover(
+                    fallback::Stack::Audio, &entries, start, fallback::threshold(&cfg),
+                    |e, key| transcribe::transcribe_audio_blocking(
+                        &audio_data, sample_rate, &languages, &e.url, key, &e.model,
+                    ),
+                ) {
+                    Ok((text, used)) => (Ok(text), entry_label(&entries[used])),
+                    Err(msg) => (Err(msg), entry_label(&entries[start])),
                 }
             }
         };
@@ -708,7 +680,9 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 // vocab to the model (it handles both punctuation and vocab
                 // mapping with context). Otherwise — strict vocab::apply.
                 // On LLM error we fall back to strict vocab::apply so the user
-                // is never blocked beyond the 3s timeout.
+                // is never blocked beyond the 5s timeout (+retry). Like STT,
+                // the edit walks the text stack within this request; entries
+                // without a key are skipped.
                 let postprocess_enabled = cfg["postprocess_enabled"].as_bool().unwrap_or(false);
 
                 let mut llm_secs: Option<f32> = None;
@@ -717,56 +691,50 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 let mut llm_attempted = false;
 
                 let text_entries = fallback::read_stack(&cfg, fallback::Stack::Text);
+                let any_text_key = text_entries
+                    .iter()
+                    .any(|e| std::env::var(&e.key_env).map(|k| !k.is_empty()).unwrap_or(false));
                 let (text, edited): (String, bool) = if postprocess_enabled && !text_entries.is_empty() {
-                    let idx = fallback::active_index(fallback::Stack::Text, fallback::cooldown(&cfg))
-                        .min(text_entries.len() - 1);
-                    let entry = &text_entries[idx];
-                    let key = std::env::var(&entry.key_env).unwrap_or_default();
-                    let host = entry.url.split('/').nth(2).unwrap_or("?");
-                    let prov = if entry.label.is_empty() { host } else { entry.label.as_str() };
-                    if key.is_empty() {
-                        let msg = format!("no key for text provider '{}'", prov);
+                    if !any_text_key {
+                        let msg = "no key set for any text provider".to_string();
                         debug_log::log(&format!("postprocess: {} — falling back to strict vocab", msg));
                         set_last_llm_error(Some(msg));
                         (vocab::apply(&raw_text), false)
                     } else {
                         let vocab_data = vocab::read_vocab();
                         llm_attempted = true;
-                        // Host (not the label) so the history shows the real
-                        // endpoint that ran — the whole point of the indicator is
-                        // telling groq from routerai at a glance.
-                        llm_host = Some(host.to_string());
-                        llm_model = Some(entry.model.clone());
+                        let start = fallback::active_index(fallback::Stack::Text, fallback::cooldown(&cfg))
+                            .min(text_entries.len() - 1);
                         // Timed even on failure: a timed-out LLM burns its full
                         // 5s timeout (+retry) before we fall back to vocab, and
                         // that lost time must show up in the log.
                         let t_llm = std::time::Instant::now();
-                        let outcome = postprocess::edit_text(&raw_text, &vocab_data, &entry.url, &key, &entry.model);
+                        let outcome = fallback::run_with_failover(
+                            fallback::Stack::Text, &text_entries, start, fallback::threshold(&cfg),
+                            |e, key| postprocess::edit_text(&raw_text, &vocab_data, &e.url, key, &e.model),
+                        );
                         llm_secs = Some(t_llm.elapsed().as_secs_f32());
                         match outcome {
                             // Clearing on success means the Settings note only ever
                             // reflects the *current* state, not a stale failure.
-                            Ok(edited_text) => {
-                                fallback::on_success(fallback::Stack::Text);
+                            Ok((edited_text, used)) => {
+                                // Host (not the label) so the history shows the
+                                // real endpoint that ran the edit — including
+                                // which fallback rung it was.
+                                let e = &text_entries[used];
+                                llm_host = Some(entry_host(e).to_string());
+                                llm_model = Some(e.model.clone());
                                 set_last_llm_error(None);
                                 (edited_text, true)
                             }
-                            Err(e) => {
-                                match fallback::classify(e.status, e.is_timeout) {
-                                    fallback::FailKind::Switch => {
-                                        let new_idx = fallback::on_switch_fail(
-                                            fallback::Stack::Text, text_entries.len(), fallback::threshold(&cfg),
-                                        );
-                                        debug_log::log(&format!(
-                                            "postprocess transient fail on '{}' ({}); active text idx -> {}",
-                                            prov, e.message, new_idx
-                                        ));
-                                    }
-                                    fallback::FailKind::Hard => {
-                                        debug_log::log(&format!("postprocess hard fail on '{}': {} (no switch)", prov, e.message));
-                                    }
-                                }
-                                set_last_llm_error(Some(e.message));
+                            Err(msg) => {
+                                debug_log::log(&format!("postprocess failed ({}) — falling back to strict vocab", msg));
+                                set_last_llm_error(Some(msg));
+                                // The failed attempt still identifies itself in
+                                // the transcription log (edited=false).
+                                let e = &text_entries[start];
+                                llm_host = Some(entry_host(e).to_string());
+                                llm_model = Some(e.model.clone());
                                 (vocab::apply(&raw_text), false)
                             }
                         }
@@ -780,7 +748,6 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
-                    usage::record(duration_secs);
                     let _ = app_handle.emit("transcription", serde_json::json!({
                         "text": &text,
                         "duration": duration_secs,
@@ -845,32 +812,6 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
         *last_dictation().lock().unwrap() = Some(std::time::Instant::now());
         let _ = app_handle.emit("transcribing", false);
     });
-}
-
-/// On a dev machine where `~/membeme/system/secrets/routerai.key` exists,
-/// copy it into the Ribbit `.env` on first launch. Quiet no-op otherwise.
-fn bootstrap_routerai_key() {
-    let Some(home) = dirs::home_dir() else { return };
-    let src = home.join("membeme/system/secrets/routerai.key");
-    let Ok(key) = std::fs::read_to_string(&src) else { return };
-    let key = key.trim();
-    if key.is_empty() {
-        return;
-    }
-    let Some(env_path) = dirs::config_dir().map(|d| d.join("ribbit").join(".env")) else { return };
-    if std::fs::create_dir_all(env_path.parent().unwrap()).is_err() {
-        return;
-    }
-    let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
-    let mut lines: Vec<String> = existing.lines()
-        .filter(|l| !l.starts_with("ROUTERAI_API_KEY="))
-        .map(|l| l.to_string())
-        .collect();
-    lines.push(format!("ROUTERAI_API_KEY={}", key));
-    if std::fs::write(&env_path, lines.join("\n") + "\n").is_ok() {
-        unsafe { std::env::set_var("ROUTERAI_API_KEY", key); }
-        debug_log::log("bootstrapped ROUTERAI_API_KEY from ~/membeme/system/secrets/routerai.key");
-    }
 }
 
 fn load_env_file(path: &std::path::Path, overwrite: bool) {
@@ -1130,13 +1071,6 @@ pub fn run() {
     // Also try .env in current directory (development fallback)
     load_env_file(std::path::Path::new(".env"), false);
 
-    // Bootstrap personal RouterAI key from ~/membeme/system/secrets/routerai.key
-    // if the user has membeme but hasn't entered the key in Ribbit yet.
-    // Convenience for the project owner; for everyone else this is a no-op.
-    if std::env::var("ROUTERAI_API_KEY").is_err() {
-        bootstrap_routerai_key();
-    }
-
     // One-time migration: fold the old single-provider settings into the new
     // audio/text provider stacks. No-op once the stacks exist, so it's safe to
     // run on every launch. Runs after env load so key presence can seed it.
@@ -1150,8 +1084,11 @@ pub fn run() {
         }
     }
 
-    let has_key = std::env::var("OPENAI_API_KEY").is_ok();
-    debug_log::log(&format!("API key present: {}", has_key));
+    debug_log::log(&format!(
+        "audio keys present: groq={} openai={}",
+        std::env::var("GROQ_API_KEY").map(|k| !k.is_empty()).unwrap_or(false),
+        std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false),
+    ));
 
     // Warm up HTTP client (TLS handshake) in background so first transcription is fast
     std::thread::spawn(|| {
@@ -1181,7 +1118,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_usage_stats, get_shortcut, set_shortcut, test_sound, hide_to_tray, show_from_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown, get_fallback_state])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -1192,6 +1129,8 @@ pub fn run() {
 
             let show_for_menu = show.clone();
             let show_for_tray = show.clone();
+            // hide_to_tray (the X button) flips this label too.
+            app.manage(show.clone());
 
             let mut tray_builder = TrayIconBuilder::new()
                 .tooltip("Ribbit - Voice to Text")
@@ -1267,10 +1206,6 @@ pub fn run() {
                         },
                         Err(e) => debug_log::log(&format!("update: auto-check error: {}", e)),
                     }
-                    let mut cfg = read_config();
-                    cfg["last_update_check"] = serde_json::json!(chrono::Utc::now().timestamp());
-                    let _ = save_config(&cfg);
-
                     tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
                 }
             });

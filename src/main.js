@@ -84,10 +84,12 @@ function addLogEntry(text, ts, edited, llmHost, llmModel) {
   if (searchQuery.trim()) applySearchFilter();
 }
 
+// Escapes quotes too — several call sites interpolate into data-* attributes,
+// where the div.innerHTML trick (which leaves quotes alone) broke the markup
+// on values containing `"`.
 function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  return String(text).replace(/[&<>"']/g, (c) => map[c]);
 }
 
 // Show one panel at a time (log, settings, debug, vocab).
@@ -879,33 +881,40 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   } catch (e) {}
 
-  // Update check
+  // Update check / install — a single handler driven by `pendingVersion`:
+  // null = the button checks, a version string = the button installs it.
+  // (The previous scheme layered an onclick on top of this listener, so a
+  // click after "update available" fired an install AND a fresh check.)
   const updateBtn = $("#update-btn");
+  let pendingVersion = null;
+
+  function showUpdateAvailable(ver) {
+    pendingVersion = ver;
+    updateBtn.textContent = `update to v${ver}`;
+    updateBtn.classList.add("update-available");
+    updateBtn.disabled = false;
+  }
+
   updateBtn.addEventListener("click", async () => {
-    updateBtn.textContent = "checking...";
     updateBtn.disabled = true;
+
+    if (pendingVersion) {
+      updateBtn.textContent = "downloading...";
+      try {
+        await invoke("install_update"); // the app restarts on success
+      } catch (e) {
+        const ver = pendingVersion;
+        updateBtn.textContent = "update failed";
+        setTimeout(() => showUpdateAvailable(ver), 3000);
+      }
+      return;
+    }
+
+    updateBtn.textContent = "checking...";
     try {
       const result = await invoke("check_for_update");
       if (result.available) {
-        updateBtn.textContent = `update to v${result.version}`;
-        updateBtn.classList.add("update-available");
-        updateBtn.disabled = false;
-        // Re-bind: next click installs
-        updateBtn.onclick = async () => {
-          updateBtn.textContent = "downloading...";
-          updateBtn.disabled = true;
-          try {
-            await invoke("install_update");
-          } catch (e) {
-            updateBtn.textContent = "update failed";
-            setTimeout(() => {
-              updateBtn.textContent = "check update";
-              updateBtn.classList.remove("update-available");
-              updateBtn.disabled = false;
-              updateBtn.onclick = null; // restore original handler
-            }, 3000);
-          }
-        };
+        showUpdateAvailable(result.version);
       } else {
         updateBtn.textContent = "up to date";
         setTimeout(() => {
@@ -924,24 +933,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Update available indicator (from auto-check or manual check)
   await listen("update-available", (event) => {
-    const ver = event.payload;
-    updateBtn.textContent = `update to v${ver}`;
-    updateBtn.classList.add("update-available");
+    showUpdateAvailable(event.payload);
     $("#settings-btn").classList.add("update-available");
-    updateBtn.disabled = false;
-    updateBtn.onclick = async () => {
-      updateBtn.textContent = "downloading...";
-      updateBtn.disabled = true;
-      try {
-        await invoke("install_update");
-      } catch (e) {
-        updateBtn.textContent = "update failed";
-        setTimeout(() => {
-          updateBtn.textContent = `update to v${ver}`;
-          updateBtn.disabled = false;
-        }, 3000);
-      }
-    };
   });
 
   await listen("update-progress", (event) => {

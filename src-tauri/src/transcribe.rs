@@ -160,32 +160,47 @@ pub fn transcribe_audio_blocking(
     let wav_bytes = encode_wav(&samples, sample_rate);
     crate::debug_log::log(&format!("WAV: {} bytes", wav_bytes.len()));
 
-    let file_part = reqwest::blocking::multipart::Part::bytes(wav_bytes)
-        .file_name("audio.wav")
-        .mime_str("audio/wav")
-        .map_err(|e| CallError::rejected(format!("multipart build: {}", e)))?;
-
-    let mut form = reqwest::blocking::multipart::Form::new()
-        .part("file", file_part)
-        .text("model", model.to_string());
-
-    // Pass first language as `language` param (strongest signal for Whisper)
-    // For multiple languages, also add a prompt hint
-    if !languages.is_empty() {
-        form = form.text("language", languages[0].clone());
-        if languages.len() > 1 {
-            let names: Vec<&str> = languages.iter().map(|c| lang_name(c)).collect();
-            form = form.text("prompt", format!("Dictation in {}.", names.join(" and ")));
+    // Multipart forms are consumed by send(), so each attempt builds a fresh
+    // request. Language: first code as `language` (strongest Whisper signal),
+    // additional ones as a prompt hint.
+    let build_request = || -> Result<reqwest::blocking::RequestBuilder, CallError> {
+        let file_part = reqwest::blocking::multipart::Part::bytes(wav_bytes.clone())
+            .file_name("audio.wav")
+            .mime_str("audio/wav")
+            .map_err(|e| CallError::rejected(format!("multipart build: {}", e)))?;
+        let mut form = reqwest::blocking::multipart::Form::new()
+            .part("file", file_part)
+            .text("model", model.to_string());
+        if !languages.is_empty() {
+            form = form.text("language", languages[0].clone());
+            if languages.len() > 1 {
+                let names: Vec<&str> = languages.iter().map(|c| lang_name(c)).collect();
+                form = form.text("prompt", format!("Dictation in {}.", names.join(" and ")));
+            }
         }
-    }
+        Ok(client()
+            .post(url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .multipart(form))
+    };
 
     let t0 = std::time::Instant::now();
-    let response = client()
-        .post(url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .multipart(form)
-        .send()
-        .map_err(|e| CallError::transport(e.is_timeout(), format!("Network error: {}", e)))?;
+    // Single retry on a non-timeout transport error: pooled TLS connections go
+    // stale during the long idle gaps typical between dictations, and reqwest
+    // reports a generic send error. The POST is idempotent and a lost dictation
+    // is unrecoverable — same courtesy postprocess already extends. Timeouts
+    // are NOT retried (that would stack another full wait on top); the stack
+    // failover in lib.rs moves on to the next provider instead.
+    let response = match build_request()?.send() {
+        Ok(r) => r,
+        Err(first) if !first.is_timeout() => {
+            crate::debug_log::log(&format!("STT retry after transport error: {}", first));
+            build_request()?
+                .send()
+                .map_err(|e| CallError::transport(e.is_timeout(), format!("Network error after retry: {}", e)))?
+        }
+        Err(e) => return Err(CallError::transport(true, format!("Network error: {}", e))),
+    };
 
     let elapsed = t0.elapsed();
     crate::debug_log::log(&format!("API response in {:.1}s, status={}", elapsed.as_secs_f32(), response.status()));

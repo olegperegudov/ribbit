@@ -7,7 +7,8 @@
 //! «Роса» → «Алроса» when "Алроса" is in vocab).
 //!
 //! On any error/timeout the caller falls back to plain `vocab::apply` so the
-//! user is never blocked beyond the 3s timeout.
+//! user is never blocked beyond the 5s timeout (worst case ~10s with the
+//! single transport retry).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -115,7 +116,15 @@ pub fn system_prompt(vocab: &HashMap<String, Vec<String>>) -> String {
 }
 
 /// Build the JSON request body. Deterministic — covered by unit tests.
+///
+/// `max_tokens` scales with the input: an edit is roughly input-sized, and a
+/// fixed small cap silently truncated long dictations — the tail just vanished
+/// from the pasted text. Char count is a generous upper bound on the token
+/// count for Cyrillic/Latin speech; the floor keeps short inputs cheap to
+/// reason about, the ceiling bounds a runaway response. `parse_response`
+/// still rejects anything that hits the cap.
 pub fn build_payload(text: &str, vocab: &HashMap<String, Vec<String>>, model: &str) -> serde_json::Value {
+    let max_tokens = (text.chars().count() as u64 + 100).clamp(512, 4096);
     serde_json::json!({
         "model": model,
         "messages": [
@@ -123,16 +132,28 @@ pub fn build_payload(text: &str, vocab: &HashMap<String, Vec<String>>, model: &s
             {"role": "user", "content": text}
         ],
         "temperature": 0.0,
-        "max_tokens": 512,
+        "max_tokens": max_tokens,
     })
 }
 
 /// Extract message content from an OpenAI-style chat-completion response,
 /// stripping common LLM-isms (surrounding quotes).
 pub fn parse_response(json: &serde_json::Value) -> Result<String, String> {
-    let content = json
-        .get("choices")
-        .and_then(|c| c.get(0))
+    let choice = json.get("choices").and_then(|c| c.get(0));
+
+    // A completion cut off by the token cap means the tail of the dictation is
+    // gone — worse than no edit at all, and invisible to the runaway-length
+    // check (a truncated edit is *shorter* than the input). Reject it so the
+    // caller falls back to strict vocab and the user keeps their full words.
+    if choice
+        .and_then(|c| c.get("finish_reason"))
+        .and_then(|f| f.as_str())
+        == Some("length")
+    {
+        return Err("output truncated (finish_reason=length)".into());
+    }
+
+    let content = choice
         .and_then(|c| c.get("message"))
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_str())
@@ -394,6 +415,40 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
         assert_eq!(p["messages"][0]["role"], "system");
         assert_eq!(p["messages"][1]["role"], "user");
         assert_eq!(p["messages"][1]["content"], "привет");
+    }
+
+    #[test]
+    fn build_payload_scales_max_tokens_with_long_input() {
+        // A ~2000-char dictation must not be squeezed into the 512 floor —
+        // that's the silent-truncation bug.
+        let long = "а".repeat(2000);
+        let p = build_payload(&long, &empty_vocab(), "x");
+        assert_eq!(p["max_tokens"], 2100);
+        // And the ceiling holds for absurd inputs.
+        let huge = "а".repeat(100_000);
+        assert_eq!(build_payload(&huge, &empty_vocab(), "x")["max_tokens"], 4096);
+    }
+
+    #[test]
+    fn parse_response_rejects_truncated_completion() {
+        // finish_reason=length → the model hit max_tokens and the tail of the
+        // dictation is missing. Must be an error, not a "successful" edit.
+        let r = serde_json::json!({
+            "choices": [{
+                "finish_reason": "length",
+                "message": {"content": "Начало длинной диктовки, которая обор"}
+            }]
+        });
+        let err = parse_response(&r).unwrap_err();
+        assert!(err.contains("truncated"), "got: {}", err);
+    }
+
+    #[test]
+    fn parse_response_accepts_stop_finish_reason() {
+        let r = serde_json::json!({
+            "choices": [{"finish_reason": "stop", "message": {"content": "Привет, мир."}}]
+        });
+        assert_eq!(parse_response(&r).unwrap(), "Привет, мир.");
     }
 
     #[test]
