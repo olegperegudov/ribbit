@@ -47,11 +47,20 @@ pub fn apply_rounded_corners(_window: &tauri::WebviewWindow, _radius: f64) -> Re
     Ok(())
 }
 
-/// Make the window follow the user's current Space instead of being pinned to
-/// the Space it was first shown on. Without this, clicking the tray icon while
-/// on a different Space teleports the user back to the window's home Space.
+/// Make the window appear on whatever Space the user is on when it's shown —
+/// including full-screen Spaces. Two flags:
 ///
-/// NSWindowCollectionBehaviorMoveToActiveSpace = 1 << 1 = 2.
+/// - NSWindowCollectionBehaviorCanJoinAllSpaces (1 << 0): the window has no
+///   home Space; it simply shows on the active one.
+/// - NSWindowCollectionBehaviorFullScreenAuxiliary (1 << 8): the window may
+///   appear *over* a full-screen app. Without it macOS refuses to place a
+///   normal window on a full-screen Space and switches to the first free
+///   desktop instead — "clicking the tray icon while in a full-screen
+///   terminal throws me to an empty desktop".
+///
+/// The previous MoveToActiveSpace (1 << 1) handled regular desktops only: a
+/// normal window cannot *join* a full-screen Space, it can only be auxiliary
+/// to it (and MoveToActiveSpace is mutually exclusive with CanJoinAllSpaces).
 #[cfg(target_os = "macos")]
 pub fn apply_spaces_behavior(window: &tauri::WebviewWindow) -> Result<(), String> {
     use cocoa::base::id;
@@ -59,9 +68,9 @@ pub fn apply_spaces_behavior(window: &tauri::WebviewWindow) -> Result<(), String
 
     let ns_window = window.ns_window().map_err(|e| e.to_string())? as id;
     unsafe {
-        let behavior: u64 = 1 << 1;
+        let behavior: u64 = (1 << 0) | (1 << 8);
         let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
-        crate::debug_log::log("collectionBehavior=MoveToActiveSpace applied");
+        crate::debug_log::log("collectionBehavior=CanJoinAllSpaces|FullScreenAuxiliary applied");
     }
     Ok(())
 }

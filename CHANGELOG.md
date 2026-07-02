@@ -7,6 +7,19 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.59] - 2026-07-02
+
+### Fixed
+- **Opening Ribbit from the menu bar icon while in a full-screen app no longer
+  throws you to an empty desktop.** The window used to "move to the active
+  Space", but macOS doesn't let a normal window join a *full-screen* Space
+  (a full-screen terminal, browser, …), so instead it yanked you to the first
+  free desktop and showed the window there. The window is now a proper
+  menu-bar-utility window: it belongs to no desktop and is allowed to appear
+  on top of full-screen apps — click the frog icon and Ribbit shows up right
+  where you are. Side effect of the same mechanism: while visible, the window
+  follows you across desktops (hide it with X or the tray icon as before).
+
 ## [0.7.58] - 2026-07-02
 
 Stability audit release: two data-loss paths in dictation, four small bugs,
