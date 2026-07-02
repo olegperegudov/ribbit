@@ -7,6 +7,33 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.60] - 2026-07-02
+
+### Fixed
+- **Actually fixed: opening Ribbit from the menu bar icon no longer teleports
+  you to another desktop.** The 0.7.59 attempt (giving the window
+  `CanJoinAllSpaces | FullScreenAuxiliary`) was not enough — the teleport
+  wasn't the *window's* doing, it was the *app's*. Ribbit ran as a regular
+  Dock app, and macOS drags a regular app to its window's home Space whenever
+  that app is activated to show a window. Ribbit now runs as a **menu-bar
+  accessory** (no Dock icon), so showing the window no longer activates a
+  Space-switching app: the window appears on whatever desktop you're on,
+  full-screen or not. The window flags from 0.7.59 are kept — they're what
+  lets it show over a full-screen app.
+- **The minimize ("_") button no longer flashes-then-vanishes on macOS.** It
+  called native minimize, which sends the window to the Dock; unminimizing it
+  restored it on the window's home Space, then Ribbit's own show logic ran on
+  your current Space — hence the half-second flash before it disappeared. On
+  macOS both the minimize and close buttons now hide to the tray (native
+  minimize is meaningless for a tray app). On Windows/Linux the minimize
+  button still minimizes to the taskbar as before.
+
+### Changed
+- **No more Dock icon on macOS.** Ribbit is now a pure menu-bar utility — it
+  lives in the top-right menu bar and responds to the global shortcut. This is
+  the mechanism that stops the desktop-teleport above; it also means Ribbit no
+  longer appears in the Dock or Cmd-Tab switcher.
+
 ## [0.7.59] - 2026-07-02
 
 ### Fixed

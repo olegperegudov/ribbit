@@ -367,19 +367,37 @@ fn set_sound_pack(pack: String) -> Result<(), String> {
     Ok(())
 }
 
-/// The X button: hide to tray via the same hide() path as the tray toggle.
-/// Minimize is deliberately avoided — on macOS it sends the window to the
-/// Dock, and the later unminimize forces a Space switch back to the window's
-/// home Space (the "teleports me to another desktop" bug, see
-/// `toggle_main_window`).
-#[tauri::command]
-fn hide_to_tray(app: AppHandle) {
+/// Hide the main window to the tray and keep the tray menu label in step.
+/// Uses hide() (orderOut on macOS): no Dock entry, no Space-flip. Native
+/// minimize is never used on macOS — it sends the window to the Dock and the
+/// later restore snaps back to the window's home Space (see `minimize_window`).
+fn hide_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
-    // Keep the tray menu label in step with the window state.
     if let Some(item) = app.try_state::<tauri::menu::MenuItem<tauri::Wry>>() {
         let _ = item.set_text("Show Ribbit");
+    }
+}
+
+/// The X button: hide to tray.
+#[tauri::command]
+fn hide_to_tray(app: AppHandle) {
+    hide_main(&app);
+}
+
+/// The "_" (minimize) button. On Windows/Linux it genuinely minimizes to the
+/// taskbar. On macOS native minimize is broken for a tray app: it sends the
+/// window to the Dock and unminimize forces a Space switch back to the window's
+/// home Space (the "flashes then vanishes / teleports me to another desktop"
+/// bug), so there we hide to the tray instead — same as the close button.
+#[tauri::command]
+fn minimize_window(app: AppHandle) {
+    #[cfg(target_os = "macos")]
+    hide_main(&app);
+    #[cfg(not(target_os = "macos"))]
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.minimize();
     }
 }
 
@@ -860,12 +878,14 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
 /// - visible & focused → hide (orderOut on macOS, no Dock entry, no Space-flip)
 /// - otherwise → show + focus on the user's CURRENT Space
 ///
-/// We deliberately avoid minimize/unminimize on macOS: minimize sends the
-/// window to the Dock and unminimize forces a Space switch back to the
-/// window's home Space, which is exactly the bug the user reported
-/// ("clicking the tray icon teleports me to another desktop").
-/// `apply_spaces_behavior` on the NSWindow ensures show() lands on the
-/// active Space.
+/// Landing on the CURRENT Space (including a full-screen Space) rests on two
+/// macOS things set up at launch: the app runs as an *accessory* (no Dock
+/// icon), so showing a window no longer activates a "regular" app and drags
+/// the user to the window's home Space; and `apply_spaces_behavior` gives the
+/// NSWindow CanJoinAllSpaces|FullScreenAuxiliary so it may appear over a
+/// full-screen app. Native minimize is never used on macOS (see
+/// `minimize_window`); the unminimize() below is a harmless safety net for
+/// Windows/Linux where minimize is real.
 fn toggle_main_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
     label: &tauri::menu::MenuItem<R>,
@@ -1118,9 +1138,17 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, minimize_window, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
         .setup(move |app| {
             let handle = app.handle().clone();
+
+            // macOS: run as a menu-bar accessory (no Dock icon). This is what
+            // stops the window teleporting the user to its home Space when
+            // shown: a regular (Dock) app is dragged to its window's Space on
+            // activation, an accessory app is not — so show() lands on the
+            // current Space, including full-screen Spaces.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             // System tray
             let show = MenuItemBuilder::with_id("show", "Show Ribbit").build(app)?;
