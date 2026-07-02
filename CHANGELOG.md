@@ -7,6 +7,24 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.61] - 2026-07-02
+
+### Fixed
+- **The real teleport fix: clicking the tray icon now shows Ribbit on the
+  desktop you're actually on.** The previous three attempts added window flags
+  (`CanJoinAllSpaces`, `FullScreenAuxiliary`) and switched Ribbit to a menu-bar
+  accessory app — all necessary, but none touched the actual trigger. Showing
+  the window called `set_focus()`, and Tauri's `set_focus` on macOS runs
+  `activateIgnoringOtherApps`, which force-activates the whole app; that
+  activation is what dragged you to the window's home desktop (desktop 1). On
+  macOS the window is now shown with `show()` alone (orders it onto the current
+  Space without activating the app), so no more teleport — from any desktop,
+  full-screen or not. The three earlier ingredients stay because the show only
+  lands correctly with all of them in place.
+- One consequence on macOS: a window opened from the tray is placed on your
+  current Space but is not force-focused (that's the activation we removed), so
+  clicking into a Settings/vocab text field once before typing is expected.
+
 ## [0.7.60] - 2026-07-02
 
 ### Fixed

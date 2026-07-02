@@ -874,33 +874,48 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
 
 /// Single source of truth for showing/hiding the main window.
 ///
-/// Behavior:
-/// - visible & focused → hide (orderOut on macOS, no Dock entry, no Space-flip)
-/// - otherwise → show + focus on the user's CURRENT Space
+/// Landing on the user's CURRENT Space on macOS (including a full-screen Space)
+/// takes three things — miss any one and the "tray click teleports me to
+/// desktop 1" bug returns:
+///  1. `apply_spaces_behavior` — CanJoinAllSpaces|FullScreenAuxiliary, so the
+///     window is allowed onto the current Space and over a full-screen app.
+///  2. accessory activation policy (set at launch) — a menu-bar app, not a
+///     regular Dock app that macOS drags to its window's home Space.
+///  3. showing via `show()` (makeKeyAndOrderFront) and NOT `set_focus()`:
+///     Tauri's set_focus additionally calls `activateIgnoringOtherApps`, which
+///     force-activates the app and triggers the Space switch. This is the piece
+///     the earlier fixes missed — the flags above are necessary but useless
+///     while set_focus keeps activating the app.
 ///
-/// Landing on the CURRENT Space (including a full-screen Space) rests on two
-/// macOS things set up at launch: the app runs as an *accessory* (no Dock
-/// icon), so showing a window no longer activates a "regular" app and drags
-/// the user to the window's home Space; and `apply_spaces_behavior` gives the
-/// NSWindow CanJoinAllSpaces|FullScreenAuxiliary so it may appear over a
-/// full-screen app. Native minimize is never used on macOS (see
-/// `minimize_window`); the unminimize() below is a harmless safety net for
-/// Windows/Linux where minimize is real.
+/// Because the macOS window is never force-activated it's never the "focused"
+/// app window, so visibility alone drives the toggle there. Native minimize is
+/// never used on macOS (see `minimize_window`).
 fn toggle_main_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
     label: &tauri::menu::MenuItem<R>,
 ) {
     let Some(w) = app.get_webview_window("main") else { return };
     let visible = w.is_visible().unwrap_or(false);
-    let focused = w.is_focused().unwrap_or(false);
-    if visible && focused {
+
+    // macOS: the window sits on all Spaces (CanJoinAllSpaces), so "visible"
+    // already means "on the Space in front of you" — hide on any visible click.
+    // Elsewhere a visible-but-unfocused window should be raised, not hidden.
+    #[cfg(target_os = "macos")]
+    let should_hide = visible;
+    #[cfg(not(target_os = "macos"))]
+    let should_hide = visible && w.is_focused().unwrap_or(false);
+
+    if should_hide {
         let _ = w.hide();
         let _ = label.set_text("Show Ribbit");
     } else {
-        // unminimize is harmless if the window isn't minimized — safety net
-        // in case the user hit Cmd+M or used the yellow traffic light.
+        // unminimize is harmless if the window isn't minimized — safety net for
+        // Windows/Linux where the "_" button does a real minimize.
         let _ = w.unminimize();
         let _ = w.show();
+        // See item 3 above: set_focus would activate the app and teleport the
+        // user. Only non-macOS platforms need it to raise + focus the window.
+        #[cfg(not(target_os = "macos"))]
         let _ = w.set_focus();
         let _ = label.set_text("Hide Ribbit");
     }
