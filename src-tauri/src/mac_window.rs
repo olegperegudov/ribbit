@@ -47,72 +47,83 @@ pub fn apply_rounded_corners(_window: &tauri::WebviewWindow, _radius: f64) -> Re
     Ok(())
 }
 
-/// Make the window appear on whatever Space the user is on when it's shown —
-/// including full-screen Spaces. Two flags:
-///
-/// - NSWindowCollectionBehaviorCanJoinAllSpaces (1 << 0): the window has no
-///   home Space; it simply shows on the active one.
-/// - NSWindowCollectionBehaviorFullScreenAuxiliary (1 << 8): the window may
-///   appear *over* a full-screen app. Without it macOS refuses to place a
-///   normal window on a full-screen Space and switches to the first free
-///   desktop instead — "clicking the tray icon while in a full-screen
-///   terminal throws me to an empty desktop".
-///
-/// The previous MoveToActiveSpace (1 << 1) handled regular desktops only: a
-/// normal window cannot *join* a full-screen Space, it can only be auxiliary
-/// to it (and MoveToActiveSpace is mutually exclusive with CanJoinAllSpaces).
+// The "main" window is turned into a non-activating NSPanel. A plain NSWindow
+// cannot be shown over another app's full-screen Space — macOS silently refuses
+// (confirmed from the app's own debug log: the show call ran, the window never
+// appeared). Five earlier attempts poked window/app flags on a plain NSWindow
+// and all failed for this reason. An NSPanel with the NonactivatingPanel style
+// mask is the mechanism Spotlight/Raycast use: it surfaces on the current Space
+// over full-screen apps AND can take keyboard, all WITHOUT activating the app
+// (which is what teleported the user to desktop 1).
+// The tauri_panel! macro expansion calls `.app_handle()`, which needs Manager.
 #[cfg(target_os = "macos")]
-pub fn apply_spaces_behavior(window: &tauri::WebviewWindow) -> Result<(), String> {
-    use cocoa::base::id;
-    use objc::{msg_send, sel, sel_impl};
+use tauri::Manager as _;
 
-    let ns_window = window.ns_window().map_err(|e| e.to_string())? as id;
-    unsafe {
-        let behavior: u64 = (1 << 0) | (1 << 8);
-        let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
-        crate::debug_log::log("collectionBehavior=CanJoinAllSpaces|FullScreenAuxiliary applied");
-    }
+#[cfg(target_os = "macos")]
+tauri_nspanel::tauri_panel! {
+    panel!(RibbitPanel {
+        config: {
+            can_become_key_window: true,   // non-activating but still keyable → text fields work
+            can_become_main_window: false,
+            is_floating_panel: true
+        }
+    })
+}
+
+/// Convert the borderless "main" window into the panel and configure it. Called
+/// once at setup, after the accessory activation policy is set.
+#[cfg(target_os = "macos")]
+pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use tauri_nspanel::{CollectionBehavior, PanelLevel, StyleMask, WebviewWindowExt};
+
+    let panel = window.to_panel::<RibbitPanel>().map_err(|e| e.to_string())?;
+    // Float above ordinary windows so the dictation HUD is never buried.
+    panel.set_level(PanelLevel::Floating.value());
+    // NonactivatingPanel: showing/keying the panel never activates the app, so
+    // no Space switch. empty() keeps it borderless (decorations:false).
+    panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+    // Appear on the active Space and over a full-screen app.
+    panel.set_collection_behavior(
+        CollectionBehavior::new()
+            .full_screen_auxiliary()
+            .can_join_all_spaces()
+            .into(),
+    );
+    // A utility panel hides itself when the app deactivates by default; we want
+    // it to stay put until the user dismisses it.
+    panel.set_hides_on_deactivate(false);
+    crate::debug_log::log("panel: main window converted to non-activating NSPanel");
     Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn apply_spaces_behavior(_window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn setup_panel(_window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Bring the window to the front on the user's CURRENT Space WITHOUT activating
-/// the app. `orderFrontRegardless` is the AppKit primitive for exactly this: it
-/// orders the window to the front of its level even while the app is inactive,
-/// and — the whole point — without activating the app, so macOS does not switch
-/// to the window's home Space (the desktop-1 teleport).
-///
-/// Why neither Tauri call works here:
-/// - `show()` → makeKeyAndOrderFront, which surfaces nothing from a background
-///   (inactive) menu-bar app — the window silently never appears (the "tray
-///   click does nothing" bug).
-/// - `set_focus()` → additionally activateIgnoringOtherApps, which DOES surface
-///   it but force-activates the app and teleports the user to desktop 1.
-/// orderFrontRegardless threads the needle: it surfaces the window with no
-/// activation and no teleport.
-///
-/// Placement on the active Space (incl. full-screen) comes from the
-/// CanJoinAllSpaces|FullScreenAuxiliary behavior in `apply_spaces_behavior`.
-/// The window is NOT made key — a background app cannot hold the key window —
-/// so the first click into a Settings/vocab field is what starts text input.
+/// Whether the main panel is currently on screen.
 #[cfg(target_os = "macos")]
-pub fn show_on_active_space<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> Result<(), String> {
-    use cocoa::base::id;
-    use objc::{msg_send, sel, sel_impl};
-
-    let ns_window = window.ns_window().map_err(|e| e.to_string())? as id;
-    unsafe {
-        let _: () = msg_send![ns_window, orderFrontRegardless];
-    }
-    crate::debug_log::log("show_on_active_space: orderFrontRegardless");
-    Ok(())
+pub fn panel_visible(app: &tauri::AppHandle) -> bool {
+    use tauri_nspanel::ManagerExt;
+    app.get_webview_panel("main").map(|p| p.is_visible()).unwrap_or(false)
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn show_on_active_space<R: tauri::Runtime>(_window: &tauri::WebviewWindow<R>) -> Result<(), String> {
-    Ok(())
+/// Show the panel on the user's CURRENT Space (over full-screen apps included)
+/// and give it keyboard focus, without activating Ribbit.
+#[cfg(target_os = "macos")]
+pub fn show_panel(app: &tauri::AppHandle) {
+    use tauri_nspanel::ManagerExt;
+    match app.get_webview_panel("main") {
+        Ok(p) => p.show_and_make_key(),
+        Err(e) => crate::debug_log::log(&format!("show_panel: panel not found ({:?})", e)),
+    }
+}
+
+/// Hide the panel to the tray.
+#[cfg(target_os = "macos")]
+pub fn hide_panel(app: &tauri::AppHandle) {
+    use tauri_nspanel::ManagerExt;
+    if let Ok(p) = app.get_webview_panel("main") {
+        p.hide();
+    }
 }

@@ -7,6 +7,30 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.63] - 2026-07-03
+
+### Fixed
+- **Tray icon now shows Ribbit on the desktop you're on — including full-screen
+  desktops.** Root cause, finally pinned from the app's own debug log on the
+  machine: clicking the tray ran the show call every time with no error, but
+  the window never appeared. macOS simply **will not display an ordinary window
+  over another app's full-screen Space** — and the user runs full-screen
+  desktops. No amount of window/app flags on a normal window can change that
+  (the five prior attempts — MoveToActiveSpace, CanJoinAllSpaces +
+  FullScreenAuxiliary, accessory policy, dropping set_focus, orderFrontRegardless
+  — were all fighting an unwinnable fight).
+  The `main` window is now converted to a **non-activating NSPanel** (the exact
+  mechanism Spotlight/Raycast use): it surfaces on the current Space over
+  full-screen apps, takes keyboard for the settings/vocab fields, and does none
+  of it by activating the app — so no teleport to desktop 1, and the earlier
+  "extra click before typing" caveat is gone too.
+
+### Internal
+- Added `tauri-nspanel` (macOS only) and enabled the `macos-private-api` Tauri
+  feature. Removed the now-obsolete raw-NSWindow Space hacks
+  (`apply_spaces_behavior`, `orderFrontRegardless` show path) in favor of the
+  panel's own API — one mechanism, not a pile.
+
 ## [0.7.62] - 2026-07-02
 
 ### Fixed

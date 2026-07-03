@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
@@ -40,4 +40,10 @@ tokio = { version = "1", features = ["time"] }
 # through the corner gaps on macOS.
 cocoa = "0.26"
 objc = "0.2"
+# Turns the borderless "main" window into a non-activating NSPanel so it can
+# surface on the current Space *over another app's full-screen Space* without
+# activating Ribbit (which would teleport the user to the window's home
+# desktop). A plain NSWindow cannot do this — macOS refuses to show it over a
+# foreign full-screen app. This is the mechanism Spotlight/Raycast use.
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
 

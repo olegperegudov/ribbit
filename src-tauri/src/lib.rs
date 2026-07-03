@@ -372,6 +372,9 @@ fn set_sound_pack(pack: String) -> Result<(), String> {
 /// minimize is never used on macOS — it sends the window to the Dock and the
 /// later restore snaps back to the window's home Space (see `minimize_window`).
 fn hide_main(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    mac_window::hide_panel(app);
+    #[cfg(not(target_os = "macos"))]
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
@@ -872,61 +875,44 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Single source of truth for showing/hiding the main window.
+/// Single source of truth for showing/hiding the main window from the tray.
 ///
-/// Landing on the user's CURRENT Space on macOS (including a full-screen Space)
-/// takes three things — miss any one and the "tray click teleports me to
-/// desktop 1" bug returns:
-///  1. `apply_spaces_behavior` — CanJoinAllSpaces|FullScreenAuxiliary, so the
-///     window is allowed onto the current Space and over a full-screen app.
-///  2. accessory activation policy (set at launch) — a menu-bar app, not a
-///     regular Dock app that macOS drags to its window's home Space.
-///  3. showing via `orderFrontRegardless` (see `mac_window::show_on_active_space`),
-///     NOT Tauri's show()/set_focus. set_focus calls `activateIgnoringOtherApps`
-///     which surfaces the window but force-activates the app and teleports the
-///     user; plain show() (makeKeyAndOrderFront) doesn't activate but also
-///     doesn't surface anything from a background menu-bar app. This piece is
-///     what the earlier fixes missed — the flags above are necessary but not
-///     sufficient on their own.
+/// macOS: the window is a non-activating NSPanel (see `mac_window::setup_panel`).
+/// `show_panel` surfaces it on the user's CURRENT Space — over a full-screen app
+/// included — and gives it keyboard, all without activating Ribbit, so there is
+/// no Space teleport. A plain NSWindow could not do this at all; five earlier
+/// attempts to coax one (MoveToActiveSpace, CanJoinAllSpaces|FullScreenAuxiliary,
+/// accessory policy, dropping set_focus, orderFrontRegardless) each failed
+/// because macOS simply won't show a normal window over a foreign full-screen
+/// Space. The panel is the mechanism that can.
 ///
-/// Because the macOS window is never force-activated it's never the "focused"
-/// app window, so visibility alone drives the toggle there. Native minimize is
-/// never used on macOS (see `minimize_window`).
-fn toggle_main_window<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    label: &tauri::menu::MenuItem<R>,
-) {
-    let Some(w) = app.get_webview_window("main") else { return };
-    let visible = w.is_visible().unwrap_or(false);
-
-    // macOS: the window sits on all Spaces (CanJoinAllSpaces), so "visible"
-    // already means "on the Space in front of you" — hide on any visible click.
-    // Elsewhere a visible-but-unfocused window should be raised, not hidden.
+/// Other platforms keep the plain window show/hide (no Spaces to worry about).
+fn toggle_main_window(app: &AppHandle, label: &tauri::menu::MenuItem<tauri::Wry>) {
     #[cfg(target_os = "macos")]
-    let should_hide = visible;
-    #[cfg(not(target_os = "macos"))]
-    let should_hide = visible && w.is_focused().unwrap_or(false);
-
-    if should_hide {
-        let _ = w.hide();
-        let _ = label.set_text("Show Ribbit");
-    } else {
-        // macOS: surface on the CURRENT Space via orderFrontRegardless — no app
-        // activation, so no teleport, but the window actually appears (plain
-        // show() does not from a background menu-bar app). See item 3 above.
-        #[cfg(target_os = "macos")]
-        if let Err(e) = mac_window::show_on_active_space(&w) {
-            debug_log::log(&format!("show_on_active_space failed: {}", e));
+    {
+        if mac_window::panel_visible(app) {
+            mac_window::hide_panel(app);
+            let _ = label.set_text("Show Ribbit");
+        } else {
+            mac_window::show_panel(app);
+            let _ = label.set_text("Hide Ribbit");
         }
-        #[cfg(not(target_os = "macos"))]
-        {
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let Some(w) = app.get_webview_window("main") else { return };
+        let visible = w.is_visible().unwrap_or(false);
+        if visible && w.is_focused().unwrap_or(false) {
+            let _ = w.hide();
+            let _ = label.set_text("Show Ribbit");
+        } else {
             // unminimize is harmless if not minimized — safety net for the "_"
             // button's real minimize; show()+set_focus raise and focus it.
             let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();
+            let _ = label.set_text("Hide Ribbit");
         }
-        let _ = label.set_text("Hide Ribbit");
     }
 }
 
@@ -1158,19 +1144,23 @@ pub fn run() {
         current_shortcut: saved_shortcut,
     }));
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    // macOS-only: converts the main window into an NSPanel (see mac_window).
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
+    }
+    builder
         .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, minimize_window, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
         .setup(move |app| {
             let handle = app.handle().clone();
 
-            // macOS: run as a menu-bar accessory (no Dock icon). This is what
-            // stops the window teleporting the user to its home Space when
-            // shown: a regular (Dock) app is dragged to its window's Space on
-            // activation, an accessory app is not — so show() lands on the
-            // current Space, including full-screen Spaces.
+            // macOS: run as a menu-bar accessory (no Dock icon, no Cmd-Tab).
+            // Correct type for a tray utility, and it keeps app activation out
+            // of the picture — the panel (below) does the actual Space work.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -1211,14 +1201,14 @@ pub fn run() {
 
             let _tray = tray_builder.build(app)?;
 
-            // macOS-only window tweaks: rounded corners + follow active Space
-            // when the tray icon is clicked. No-op on other platforms.
+            // macOS-only window tweaks. Convert to the NSPanel first, then round
+            // its corners. No-op on other platforms.
             if let Some(main_window) = app.get_webview_window("main") {
+                if let Err(e) = mac_window::setup_panel(&main_window) {
+                    debug_log::log(&format!("panel setup: {}", e));
+                }
                 if let Err(e) = mac_window::apply_rounded_corners(&main_window, 10.0) {
                     debug_log::log(&format!("rounded corners: {}", e));
-                }
-                if let Err(e) = mac_window::apply_spaces_behavior(&main_window) {
-                    debug_log::log(&format!("spaces behavior: {}", e));
                 }
             }
 
