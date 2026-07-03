@@ -1193,10 +1193,14 @@ function initTooltips() {
     hide();
   });
 
-  // Keyboard navigation (Tab to icon → show; Esc → hide).
+  // Keyboard navigation (Tab to icon → show; Esc → hide). Gate on
+  // :focus-visible so we only react to real keyboard focus — when the window
+  // is shown from the tray, WKWebView programmatically restores focus to the
+  // first tabbable [data-hint] dot, which used to pop the tooltip open as if
+  // the user had clicked it. Programmatic focus isn't :focus-visible.
   document.addEventListener("focusin", (e) => {
     const el = e.target.closest("[data-hint]");
-    if (el) show(el);
+    if (el && el.matches(":focus-visible")) show(el);
   });
   document.addEventListener("focusout", (e) => {
     if (e.target.closest("[data-hint]")) hide();
