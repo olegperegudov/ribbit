@@ -7,6 +7,23 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.64] - 2026-07-03
+
+### Reverted
+- **Rolled the macOS tray/window behavior all the way back to 0.7.58.** The
+  0.7.59–0.7.63 attempts to make the window appear on the current (full-screen)
+  Space never worked — macOS won't show an ordinary window over another app's
+  full-screen Space, and the NSPanel route, while correct in principle, was not
+  landing either. Worse, the churn (accessory policy, `macos-private-api`,
+  NSPanel) risked the app's core, so it's all removed: no `tauri-nspanel`, no
+  private-api, no accessory policy. Ribbit is back to the known-good behavior —
+  clicking the tray shows the window (on its home desktop), dictation inserts
+  text. The Dock icon returns too.
+- Note: text insertion had also broken because a stray local test build reset
+  the app's macOS permissions (cdhash mismatch → `tccutil reset`). After
+  updating to this build, macOS will re-prompt for Microphone and Accessibility
+  the first time you dictate — allow both and insertion works again.
+
 ## [0.7.63] - 2026-07-03
 
 ### Fixed

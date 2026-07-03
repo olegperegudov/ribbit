@@ -2,6 +2,7 @@ import { applyVocab, findBestMatch } from "./vocab.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const { getCurrentWindow } = window.__TAURI__.window;
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -459,9 +460,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     setTimeout(() => { $("#status-detail").textContent = ""; hasError = false; }, 5000);
   });
 
-  // Window controls: _ = minimize (taskbar on Win/Linux; hide to tray on macOS,
-  // where native minimize teleports the window to another Space), X = hide to tray.
-  $("#win-min").addEventListener("click", () => invoke("minimize_window"));
+  // Window controls: _ = minimize to taskbar, X = hide to tray
+  $("#win-min").addEventListener("click", () => getCurrentWindow().minimize());
   $("#win-close").addEventListener("click", () => invoke("hide_to_tray"));
 
   // Settings panel (gear toggles it)
