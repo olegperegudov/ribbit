@@ -79,3 +79,40 @@ pub fn apply_spaces_behavior(window: &tauri::WebviewWindow) -> Result<(), String
 pub fn apply_spaces_behavior(_window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
+
+/// Bring the window to the front on the user's CURRENT Space WITHOUT activating
+/// the app. `orderFrontRegardless` is the AppKit primitive for exactly this: it
+/// orders the window to the front of its level even while the app is inactive,
+/// and — the whole point — without activating the app, so macOS does not switch
+/// to the window's home Space (the desktop-1 teleport).
+///
+/// Why neither Tauri call works here:
+/// - `show()` → makeKeyAndOrderFront, which surfaces nothing from a background
+///   (inactive) menu-bar app — the window silently never appears (the "tray
+///   click does nothing" bug).
+/// - `set_focus()` → additionally activateIgnoringOtherApps, which DOES surface
+///   it but force-activates the app and teleports the user to desktop 1.
+/// orderFrontRegardless threads the needle: it surfaces the window with no
+/// activation and no teleport.
+///
+/// Placement on the active Space (incl. full-screen) comes from the
+/// CanJoinAllSpaces|FullScreenAuxiliary behavior in `apply_spaces_behavior`.
+/// The window is NOT made key — a background app cannot hold the key window —
+/// so the first click into a Settings/vocab field is what starts text input.
+#[cfg(target_os = "macos")]
+pub fn show_on_active_space<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> Result<(), String> {
+    use cocoa::base::id;
+    use objc::{msg_send, sel, sel_impl};
+
+    let ns_window = window.ns_window().map_err(|e| e.to_string())? as id;
+    unsafe {
+        let _: () = msg_send![ns_window, orderFrontRegardless];
+    }
+    crate::debug_log::log("show_on_active_space: orderFrontRegardless");
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn show_on_active_space<R: tauri::Runtime>(_window: &tauri::WebviewWindow<R>) -> Result<(), String> {
+    Ok(())
+}

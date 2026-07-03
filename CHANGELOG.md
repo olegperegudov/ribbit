@@ -7,6 +7,23 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.62] - 2026-07-02
+
+### Fixed
+- **The tray icon shows the window again — on the desktop you're on, no
+  teleport.** 0.7.61 removed the `set_focus()` that caused the teleport, but
+  that call was doing double duty: it both *surfaced* the window and
+  *activated* the app. Without it the window stopped appearing at all (clicking
+  the tray icon did nothing). The window is now surfaced with AppKit's
+  `orderFrontRegardless`, the primitive built for exactly this: it brings the
+  window to the front of the current Space **without** activating the app —
+  so it appears where you are (full-screen or not) and never drags you to
+  desktop 1. `show()` couldn't do this (a background menu-bar app surfaces
+  nothing) and `set_focus()` overshot (it activated and teleported);
+  `orderFrontRegardless` is the middle path.
+- The tray toggle on macOS now keys off visibility alone (the window is never
+  the "focused" app window, since it's never force-activated).
+
 ## [0.7.61] - 2026-07-02
 
 ### Fixed

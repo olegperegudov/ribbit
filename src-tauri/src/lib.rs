@@ -881,11 +881,13 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
 ///     window is allowed onto the current Space and over a full-screen app.
 ///  2. accessory activation policy (set at launch) — a menu-bar app, not a
 ///     regular Dock app that macOS drags to its window's home Space.
-///  3. showing via `show()` (makeKeyAndOrderFront) and NOT `set_focus()`:
-///     Tauri's set_focus additionally calls `activateIgnoringOtherApps`, which
-///     force-activates the app and triggers the Space switch. This is the piece
-///     the earlier fixes missed — the flags above are necessary but useless
-///     while set_focus keeps activating the app.
+///  3. showing via `orderFrontRegardless` (see `mac_window::show_on_active_space`),
+///     NOT Tauri's show()/set_focus. set_focus calls `activateIgnoringOtherApps`
+///     which surfaces the window but force-activates the app and teleports the
+///     user; plain show() (makeKeyAndOrderFront) doesn't activate but also
+///     doesn't surface anything from a background menu-bar app. This piece is
+///     what the earlier fixes missed — the flags above are necessary but not
+///     sufficient on their own.
 ///
 /// Because the macOS window is never force-activated it's never the "focused"
 /// app window, so visibility alone drives the toggle there. Native minimize is
@@ -909,14 +911,21 @@ fn toggle_main_window<R: tauri::Runtime>(
         let _ = w.hide();
         let _ = label.set_text("Show Ribbit");
     } else {
-        // unminimize is harmless if the window isn't minimized — safety net for
-        // Windows/Linux where the "_" button does a real minimize.
-        let _ = w.unminimize();
-        let _ = w.show();
-        // See item 3 above: set_focus would activate the app and teleport the
-        // user. Only non-macOS platforms need it to raise + focus the window.
+        // macOS: surface on the CURRENT Space via orderFrontRegardless — no app
+        // activation, so no teleport, but the window actually appears (plain
+        // show() does not from a background menu-bar app). See item 3 above.
+        #[cfg(target_os = "macos")]
+        if let Err(e) = mac_window::show_on_active_space(&w) {
+            debug_log::log(&format!("show_on_active_space failed: {}", e));
+        }
         #[cfg(not(target_os = "macos"))]
-        let _ = w.set_focus();
+        {
+            // unminimize is harmless if not minimized — safety net for the "_"
+            // button's real minimize; show()+set_focus raise and focus it.
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
         let _ = label.set_text("Hide Ribbit");
     }
 }
