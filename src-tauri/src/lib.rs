@@ -367,19 +367,40 @@ fn set_sound_pack(pack: String) -> Result<(), String> {
     Ok(())
 }
 
-/// The X button: hide to tray via the same hide() path as the tray toggle.
-/// Minimize is deliberately avoided — on macOS it sends the window to the
-/// Dock, and the later unminimize forces a Space switch back to the window's
-/// home Space (the "teleports me to another desktop" bug, see
-/// `toggle_main_window`).
-#[tauri::command]
-fn hide_to_tray(app: AppHandle) {
+/// Hide the main window to the tray and keep the tray menu label in step.
+/// Uses hide() (orderOut on macOS): no Dock entry, no Space-flip. Native
+/// minimize is never used on macOS — it sends the window to the Dock and the
+/// later restore snaps back to the window's home Space (see `minimize_window`).
+fn hide_main(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    mac_window::hide_panel(app);
+    #[cfg(not(target_os = "macos"))]
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
-    // Keep the tray menu label in step with the window state.
     if let Some(item) = app.try_state::<tauri::menu::MenuItem<tauri::Wry>>() {
         let _ = item.set_text("Show Ribbit");
+    }
+}
+
+/// The X button: hide to tray.
+#[tauri::command]
+fn hide_to_tray(app: AppHandle) {
+    hide_main(&app);
+}
+
+/// The "_" (minimize) button. On Windows/Linux it genuinely minimizes to the
+/// taskbar. On macOS native minimize is broken for a tray app: it sends the
+/// window to the Dock and unminimize forces a Space switch back to the window's
+/// home Space (the "flashes then vanishes / teleports me to another desktop"
+/// bug), so there we hide to the tray instead — same as the close button.
+#[tauri::command]
+fn minimize_window(app: AppHandle) {
+    #[cfg(target_os = "macos")]
+    hide_main(&app);
+    #[cfg(not(target_os = "macos"))]
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.minimize();
     }
 }
 
@@ -854,35 +875,44 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Single source of truth for showing/hiding the main window.
+/// Single source of truth for showing/hiding the main window from the tray.
 ///
-/// Behavior:
-/// - visible & focused → hide (orderOut on macOS, no Dock entry, no Space-flip)
-/// - otherwise → show + focus on the user's CURRENT Space
+/// macOS: the window is a non-activating NSPanel (see `mac_window::setup_panel`).
+/// `show_panel` surfaces it on the user's CURRENT Space — over a full-screen app
+/// included — and gives it keyboard, all without activating Ribbit, so there is
+/// no Space teleport. A plain NSWindow could not do this at all; five earlier
+/// attempts to coax one (MoveToActiveSpace, CanJoinAllSpaces|FullScreenAuxiliary,
+/// accessory policy, dropping set_focus, orderFrontRegardless) each failed
+/// because macOS simply won't show a normal window over a foreign full-screen
+/// Space. The panel is the mechanism that can.
 ///
-/// We deliberately avoid minimize/unminimize on macOS: minimize sends the
-/// window to the Dock and unminimize forces a Space switch back to the
-/// window's home Space, which is exactly the bug the user reported
-/// ("clicking the tray icon teleports me to another desktop").
-/// `apply_spaces_behavior` on the NSWindow ensures show() lands on the
-/// active Space.
-fn toggle_main_window<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    label: &tauri::menu::MenuItem<R>,
-) {
-    let Some(w) = app.get_webview_window("main") else { return };
-    let visible = w.is_visible().unwrap_or(false);
-    let focused = w.is_focused().unwrap_or(false);
-    if visible && focused {
-        let _ = w.hide();
-        let _ = label.set_text("Show Ribbit");
-    } else {
-        // unminimize is harmless if the window isn't minimized — safety net
-        // in case the user hit Cmd+M or used the yellow traffic light.
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-        let _ = label.set_text("Hide Ribbit");
+/// Other platforms keep the plain window show/hide (no Spaces to worry about).
+fn toggle_main_window(app: &AppHandle, label: &tauri::menu::MenuItem<tauri::Wry>) {
+    #[cfg(target_os = "macos")]
+    {
+        if mac_window::panel_visible(app) {
+            mac_window::hide_panel(app);
+            let _ = label.set_text("Show Ribbit");
+        } else {
+            mac_window::show_panel(app);
+            let _ = label.set_text("Hide Ribbit");
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let Some(w) = app.get_webview_window("main") else { return };
+        let visible = w.is_visible().unwrap_or(false);
+        if visible && w.is_focused().unwrap_or(false) {
+            let _ = w.hide();
+            let _ = label.set_text("Show Ribbit");
+        } else {
+            // unminimize is harmless if not minimized — safety net for the "_"
+            // button's real minimize; show()+set_focus raise and focus it.
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+            let _ = label.set_text("Hide Ribbit");
+        }
     }
 }
 
@@ -1114,13 +1144,25 @@ pub fn run() {
         current_shortcut: saved_shortcut,
     }));
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    // macOS-only: converts the main window into an NSPanel (see mac_window).
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
+    }
+    builder
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, minimize_window, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
         .setup(move |app| {
             let handle = app.handle().clone();
+
+            // macOS: run as a menu-bar accessory (no Dock icon, no Cmd-Tab).
+            // Correct type for a tray utility, and it keeps app activation out
+            // of the picture — the panel (below) does the actual Space work.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             // System tray
             let show = MenuItemBuilder::with_id("show", "Show Ribbit").build(app)?;
@@ -1159,14 +1201,14 @@ pub fn run() {
 
             let _tray = tray_builder.build(app)?;
 
-            // macOS-only window tweaks: rounded corners + follow active Space
-            // when the tray icon is clicked. No-op on other platforms.
+            // macOS-only window tweaks. Convert to the NSPanel first, then round
+            // its corners. No-op on other platforms.
             if let Some(main_window) = app.get_webview_window("main") {
+                if let Err(e) = mac_window::setup_panel(&main_window) {
+                    debug_log::log(&format!("panel setup: {}", e));
+                }
                 if let Err(e) = mac_window::apply_rounded_corners(&main_window, 10.0) {
                     debug_log::log(&format!("rounded corners: {}", e));
-                }
-                if let Err(e) = mac_window::apply_spaces_behavior(&main_window) {
-                    debug_log::log(&format!("spaces behavior: {}", e));
                 }
             }
 

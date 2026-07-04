@@ -7,22 +7,25 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
-## [0.7.64] - 2026-07-03
+## [0.7.66] - 2026-07-03
 
-### Reverted
-- **Rolled the macOS tray/window behavior all the way back to 0.7.58.** The
-  0.7.59–0.7.63 attempts to make the window appear on the current (full-screen)
-  Space never worked — macOS won't show an ordinary window over another app's
-  full-screen Space, and the NSPanel route, while correct in principle, was not
-  landing either. Worse, the churn (accessory policy, `macos-private-api`,
-  NSPanel) risked the app's core, so it's all removed: no `tauri-nspanel`, no
-  private-api, no accessory policy. Ribbit is back to the known-good behavior —
-  clicking the tray shows the window (on its home desktop), dictation inserts
-  text. The Dock icon returns too.
-- Note: text insertion had also broken because a stray local test build reset
-  the app's macOS permissions (cdhash mismatch → `tccutil reset`). After
-  updating to this build, macOS will re-prompt for Microphone and Accessibility
-  the first time you dictate — allow both and insertion works again.
+### Fixed
+- **Restored the working tray behavior — undoes the 0.7.64 "roll back to
+  0.7.58" revert.** That revert stripped out the NSPanel window and the
+  accessory activation policy, which brought back the two regressions the user
+  saw: the Dock icon reappeared and clicking the tray teleported them to
+  desktop 1. The revert was made on the belief the NSPanel route "never landed"
+  — but that read was confounded by in-app-updater lag (the good 0.7.63 build
+  wasn't the one being tested). This release brings the 0.7.63 machinery back:
+  non-activating NSPanel (surfaces on the current Space, over full-screen apps,
+  without activating the app) + accessory policy (no Dock icon, pure menu-bar
+  utility).
+- **The log tooltip no longer pops open when the window is shown.** The
+  `[data-hint]` status dots are tabbable, so surfacing the window let the
+  webview restore focus to one and the `focusin` handler opened its tooltip —
+  the "rephrased" badge looked pre-selected. The focus-driven tooltip is now
+  gated on `:focus-visible`, so only real keyboard navigation triggers it, not
+  programmatic focus.
 
 ## [0.7.63] - 2026-07-03
 
