@@ -7,6 +7,24 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.69] - 2026-07-04
+
+### Fixed
+- **Microphone works again — the hardened runtime was missing the audio-input
+  entitlement.** Root cause of the post-0.7.67 "mic captures pure silence, no
+  prompt, no row in Privacy → Microphone" failure, confirmed on the machine:
+  signing with a real identity makes the Tauri bundler apply the **hardened
+  runtime** (`flags=0x10000(runtime)` — ad-hoc builds weren't hardened), and a
+  hardened process may only use the microphone if it carries
+  `com.apple.security.device.audio-input`. Without it macOS denies instantly
+  and silently — `requestAccessForMediaType:` returned `granted=false` in 3 ms
+  with no consent prompt, even right after a `tccutil reset Microphone`. Added
+  `entitlements.plist` with the audio-input entitlement and wired it via
+  `bundle.macOS.entitlements`, so every signed build carries it. On first
+  launch the 0.7.68 launch-time request now actually shows the system mic
+  prompt; grant it once and it sticks (same signing identity, so nothing else
+  resets).
+
 ## [0.7.68] - 2026-07-04
 
 ### Fixed
