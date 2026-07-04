@@ -9,6 +9,7 @@ mod postprocess;
 mod fallback;
 mod mac_window;
 mod tcc_reset;
+mod mic_permission;
 
 use std::sync::{Arc, Mutex};
 use tauri::{
@@ -1163,6 +1164,14 @@ pub fn run() {
             // of the picture — the panel (below) does the actual Space work.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // Ask macOS for the mic on launch so the app registers in Privacy →
+            // Microphone and can be granted. Without an explicit request, cpal
+            // just opens a silent stream when the grant is missing (e.g. right
+            // after the one-time reset on the ad-hoc → cert switch) and never
+            // prompts — and that pane has no manual "+". Self-heals future resets.
+            #[cfg(target_os = "macos")]
+            mic_permission::request_mic_access();
 
             // System tray
             let show = MenuItemBuilder::with_id("show", "Show Ribbit").build(app)?;

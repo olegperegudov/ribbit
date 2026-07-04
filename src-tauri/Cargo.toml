@@ -40,6 +40,8 @@ tokio = { version = "1", features = ["time"] }
 # through the corner gaps on macOS.
 cocoa = "0.26"
 objc = "0.2"
+# ObjC block for AVCaptureDevice's requestAccess completion handler (mic prompt).
+block = "0.1"
 # Turns the borderless "main" window into a non-activating NSPanel so it can
 # surface on the current Space *over another app's full-screen Space* without
 # activating Ribbit (which would teleport the user to the window's home

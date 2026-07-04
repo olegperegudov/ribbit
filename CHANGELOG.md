@@ -7,6 +7,21 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.68] - 2026-07-04
+
+### Fixed
+- **Microphone can be re-granted after the one-time reset — the app now asks for
+  it.** The ad-hoc → cert switch in 0.7.67 reset TCC once, which removed Ribbit
+  from Privacy → Microphone. That pane has no manual "+", and cpal never prompts
+  on its own — it just opens a silent stream (recording captured pure silence,
+  RMS 0). The app now calls `AVCaptureDevice requestAccessForMediaType:` on
+  launch, which forces the system prompt and registers Ribbit in the Microphone
+  list. Grant it once and recording works; also self-heals any future reset.
+- **The focus ring on the search icon / indicator dot when opening the window is
+  gone for real.** The 0.7.67 attempt gated it on `:focus-visible`, but WKWebView
+  treats the programmatic focus-on-show as focus-visible, so the ring stayed. The
+  ring is now cleared outright on the header buttons and the log indicator dots.
+
 ## [0.7.67] - 2026-07-04
 
 ### Fixed
