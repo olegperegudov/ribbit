@@ -65,7 +65,7 @@ tauri_nspanel::tauri_panel! {
         config: {
             can_become_key_window: true,   // non-activating but still keyable → text fields work
             can_become_main_window: false,
-            is_floating_panel: true
+            is_floating_panel: false       // window level is owned by the Always-on-Top toggle
         }
     })
 }
@@ -74,11 +74,14 @@ tauri_nspanel::tauri_panel! {
 /// once at setup, after the accessory activation policy is set.
 #[cfg(target_os = "macos")]
 pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
-    use tauri_nspanel::{CollectionBehavior, PanelLevel, StyleMask, WebviewWindowExt};
+    use tauri_nspanel::{CollectionBehavior, StyleMask, WebviewWindowExt};
 
     let panel = window.to_panel::<RibbitPanel>().map_err(|e| e.to_string())?;
-    // Float above ordinary windows so the dictation HUD is never buried.
-    panel.set_level(PanelLevel::Floating.value());
+    // Window level is deliberately left at normal: show_and_make_key() brings
+    // the panel to front when summoned from the tray, after which it behaves
+    // like an ordinary window (other windows can cover it). Forcing the
+    // floating level here made the panel always-on-top and overrode the
+    // user's Always-on-Top toggle (set_always_on_top command).
     // NonactivatingPanel: showing/keying the panel never activates the app, so
     // no Space switch. empty() keeps it borderless (decorations:false).
     panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());

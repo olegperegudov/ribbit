@@ -7,6 +7,18 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.70] - 2026-07-04
+
+### Fixed
+- **The window is no longer always-on-top.** `setup_panel` forced the NSPanel
+  to the floating window level (`set_level(Floating)` + `is_floating_panel`),
+  which kept Ribbit above every other window and silently overrode the
+  Always-on-Top toggle in settings. The panel now stays at the normal level:
+  it still comes to front when summoned from the tray (`show_and_make_key`),
+  still appears on the current Space and over full-screen apps (collection
+  behavior unchanged), but other windows can cover it afterwards. The
+  Always-on-Top toggle is now the single owner of the window level.
+
 ## [0.7.69] - 2026-07-04
 
 ### Fixed
