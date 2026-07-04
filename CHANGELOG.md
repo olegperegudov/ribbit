@@ -7,6 +7,32 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.67] - 2026-07-04
+
+### Fixed
+- **Text insertion no longer breaks on every update — stable self-signed
+  signing.** Ribbit was ad-hoc signed, so each release got a fresh cdhash. A TCC
+  grant's designated requirement pins that cdhash, so after every update the
+  Accessibility / synthetic-keystroke grant went stale: System Settings still
+  showed "allowed" while the events were filtered at kCGHIDEventTap, and dictated
+  text silently stopped inserting at the cursor. CI now signs both macOS arches
+  with a stable self-signed code-signing cert (secrets `APPLE_CERTIFICATE` /
+  `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY`); the requirement then
+  anchors to the **certificate**, not the cdhash, so the grant survives updates
+  cert-to-cert. Ported from Quill.
+- **`tcc_reset` now keys off the signing identity, not the cdhash.** Under stable
+  signing, resetting on every cdhash change would wipe a good grant on each build.
+  It now resets exactly once — on the ad-hoc → cert migration — after which
+  cert-signed builds share the "Ribbit Code Signing" identity and never reset
+  again. Updating to this release drops the Accessibility grant one last time;
+  re-grant it once and it stays.
+- **No selection ring on the LLM indicator when the window opens.** Showing the
+  window from the tray let the webview restore focus to the first tabbable
+  element (a log indicator dot), which painted a blue focus ring on it — it read
+  as though the indicator was pre-selected. Focus rings are now gated on
+  `:focus-visible`, so only keyboard navigation shows one; opening the UI leaves
+  nothing highlighted.
+
 ## [0.7.66] - 2026-07-03
 
 ### Fixed

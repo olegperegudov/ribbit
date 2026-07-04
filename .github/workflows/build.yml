@@ -183,9 +183,11 @@ jobs:
     # microphone permission never sticks, so cpal re-triggers the system prompt on
     # every stream open and recording stays broken no matter how many times the
     # user clicks "Allow". A native per-arch bundle matches the running Mac exactly
-    # and keeps the grant stable across launches (one expected re-prompt per
-    # release, handled by tcc_reset). v0.7.52 shipped universal and broke the mic —
-    # this reverts to the proven per-arch build.
+    # and keeps the grant stable across launches. Combined with the stable
+    # self-signed cert (see the keychain step below), the Accessibility/mic grants
+    # now survive updates cert-to-cert — tcc_reset fires just once, on the
+    # ad-hoc→cert migration. v0.7.52 shipped universal and broke the mic — this
+    # keeps the proven per-arch build.
     #
     # Runs AFTER build-windows (not in parallel) on purpose: tauri-action publishes
     # latest.json by read-modify-merging the same release asset, so two jobs
@@ -228,6 +230,51 @@ jobs:
         shell: bash
         run: "$HOME/.cargo/bin/cargo test --lib"
 
+      # A self-signed cert only counts as a *valid* codesigning identity once its
+      # root is trusted. Until then `security find-identity -v -p codesigning`
+      # omits it, codesign reports "no identity found", and Tauri's bundler dies
+      # with "failed to resolve signing identity". tauri-action's own
+      # APPLE_CERTIFICATE import does NOT add trust, so we build the keychain
+      # ourselves and trust the cert as a codeSign root (passwordless sudo on the
+      # runner → no GUI auth), then hand the bundler only APPLE_SIGNING_IDENTITY.
+      - name: Set up code-signing keychain (self-signed, trusted)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/ribbit-signing.keychain-db"
+          KEYCHAIN_PWD="$(openssl rand -base64 24)"
+          P12="$RUNNER_TEMP/ribbit.p12"
+          CERT="$RUNNER_TEMP/ribbit-cert.pem"
+
+          printf '%s' "$APPLE_CERTIFICATE" | openssl base64 -d -A > "$P12"
+
+          # Dedicated keychain holds the signing identity (cert + private key).
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          # Let codesign use the private key without an interactive prompt.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
+
+          # Our keychain first on the search list so the bundler finds the key.
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | tr -d '"')
+
+          # Trust the self-signed cert as a codeSign root in the System keychain.
+          security find-certificate -c "$APPLE_SIGNING_IDENTITY" -p "$KEYCHAIN" > "$CERT"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
+            -k /Library/Keychains/System.keychain "$CERT"
+
+          echo "Valid codesigning identities after trust:"
+          security find-identity -v -p codesigning
+          security find-identity -v -p codesigning | grep -q "$APPLE_SIGNING_IDENTITY" \
+            || { echo "::error::signing identity '$APPLE_SIGNING_IDENTITY' did not resolve"; exit 1; }
+
       # Two native per-arch builds, run sequentially (arm64, then Intel) inside
       # this single job. tauri-action builds AND uploads each in one step, merging
       # its platform key into the release's latest.json; running them in order —
@@ -243,6 +290,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Stable self-signed code signing: keychain prepared in the step above.
+          # Anchoring the signature to the cert (not the cdhash) keeps the macOS
+          # Accessibility grant alive across updates. Not notarized (no APPLE_ID)
+          # — first launch still needs right-click→Open.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           args: --target aarch64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
@@ -258,6 +310,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Stable self-signed code signing: keychain prepared in the step above.
+          # Anchoring the signature to the cert (not the cdhash) keeps the macOS
+          # Accessibility grant alive across updates. Not notarized (no APPLE_ID)
+          # — first launch still needs right-click→Open.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           args: --target aarch64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
@@ -274,6 +331,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Stable self-signed code signing: keychain prepared in the step above.
+          # Anchoring the signature to the cert (not the cdhash) keeps the macOS
+          # Accessibility grant alive across updates. Not notarized (no APPLE_ID)
+          # — first launch still needs right-click→Open.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           args: --target x86_64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
@@ -289,6 +351,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Stable self-signed code signing: keychain prepared in the step above.
+          # Anchoring the signature to the cert (not the cdhash) keeps the macOS
+          # Accessibility grant alive across updates. Not notarized (no APPLE_ID)
+          # — first launch still needs right-click→Open.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           args: --target x86_64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}

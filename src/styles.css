@@ -4,6 +4,16 @@
   box-sizing: border-box;
 }
 
+/* Focus rings only for real keyboard navigation — never on programmatic or
+   mouse focus. Showing the window from the tray makes the webview restore focus
+   to the first tabbable element (a log indicator dot), which painted a blue
+   selection ring on it the instant the UI opened. :focus-visible is false for
+   that programmatic focus, so this clears the ring while Tab-navigation keeps
+   its ring. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 html, body {
   background: transparent;
 }
