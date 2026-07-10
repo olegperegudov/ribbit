@@ -891,7 +891,15 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
 fn toggle_main_window(app: &AppHandle, label: &tauri::menu::MenuItem<tauri::Wry>) {
     #[cfg(target_os = "macos")]
     {
-        if mac_window::panel_visible(app) {
+        // Hide only when the panel is genuinely frontmost. isVisible stays true
+        // while the panel is buried behind the app you dictated into (normal
+        // window level since 0.7.70), so toggling on visibility alone would
+        // orderOut an already-hidden panel — the "tray does nothing" bug.
+        // Raise-if-not-key instead, the Spotlight/Raycast behaviour.
+        let visible = mac_window::panel_visible(app);
+        let key = visible && mac_window::panel_is_key(app);
+        crate::debug_log::log(&format!("tray toggle: visible={} key={}", visible, key));
+        if key {
             mac_window::hide_panel(app);
             let _ = label.set_text("Show Ribbit");
         } else {

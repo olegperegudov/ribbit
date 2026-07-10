@@ -111,6 +111,23 @@ pub fn panel_visible(app: &tauri::AppHandle) -> bool {
     app.get_webview_panel("main").map(|p| p.is_visible()).unwrap_or(false)
 }
 
+/// Whether the main panel is the key window — i.e. actually frontmost and
+/// taking input, not merely ordered-in. `panel_visible` (NSWindow `isVisible`)
+/// stays true even when the panel is fully covered by another app's window, so
+/// a tray toggle keyed on visibility alone would `orderOut` an already-buried
+/// panel and read as "the tray does nothing". Since 0.7.70 dropped the
+/// always-on-top floating level, the panel sits at the normal level and can be
+/// covered — so "raise unless frontmost" needs this second signal.
+#[cfg(target_os = "macos")]
+pub fn panel_is_key(app: &tauri::AppHandle) -> bool {
+    use cocoa::base::id;
+    use objc::{msg_send, sel, sel_impl};
+
+    let Some(window) = app.get_webview_window("main") else { return false };
+    let Ok(ns_window) = window.ns_window() else { return false };
+    unsafe { msg_send![ns_window as id, isKeyWindow] }
+}
+
 /// Show the panel on the user's CURRENT Space (over full-screen apps included)
 /// and give it keyboard focus, without activating Ribbit.
 #[cfg(target_os = "macos")]

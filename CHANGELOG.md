@@ -7,6 +7,22 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.71] - 2026-07-11
+
+### Fixed
+- **The tray icon summons the window again when it's buried behind another
+  app.** `toggle_main_window` decided show-vs-hide purely on the panel's
+  `isVisible`, which on macOS stays true even when the panel is fully covered
+  by the window you dictated into. Before 0.7.70 the panel was pinned to the
+  always-on-top floating level, so it was never covered and `isVisible` was a
+  fine proxy for "on top". 0.7.70 dropped that level (to give the Always-on-Top
+  toggle sole ownership), so with the toggle off the panel now sits at the
+  normal level and gets covered — and a tray click took the hide branch,
+  `orderOut`-ing an already-buried panel: visually a no-op, "the tray does
+  nothing until I quit and relaunch". The toggle now hides only when the panel
+  is the **key** window (genuinely frontmost) and otherwise raises it to front,
+  the Spotlight/Raycast behaviour (`panel_is_key`).
+
 ## [0.7.70] - 2026-07-04
 
 ### Fixed
