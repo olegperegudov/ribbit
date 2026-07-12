@@ -204,6 +204,51 @@ fn is_runaway_edit(input: &str, edited: &str) -> bool {
     out_len > in_len * 2 + 40
 }
 
+/// Words, lowercased and stripped of punctuation — the unit both guards compare.
+fn words(s: &str) -> Vec<String> {
+    s.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_lowercase())
+        .collect()
+}
+
+/// Share of the dictated words that survived into the edit. Morphology and
+/// spelling fixes rewrite word *endings* ("написал" → "написали", "росе" →
+/// "Алросе"), so a word counts as kept when some word in the edit starts with
+/// the same short prefix — strict equality would flag every legitimate fix.
+fn word_recall(input: &str, edited: &str) -> f32 {
+    let src = words(input);
+    if src.is_empty() {
+        return 1.0;
+    }
+    let out = words(edited);
+    let kept = src
+        .iter()
+        .filter(|w| {
+            let n = w.chars().count().min(4);
+            let stem: String = w.chars().take(n).collect();
+            out.iter().any(|o| o.starts_with(&stem))
+        })
+        .count();
+    kept as f32 / src.len() as f32
+}
+
+/// True when the "edit" dropped most of what was dictated — the model answered
+/// the dictation, summarised it, or obeyed it instead of formatting it.
+///
+/// `is_runaway_edit` only catches an answer that is *longer* than the input; the
+/// common failure is the opposite. Real case from the log: "Так, я тебя
+/// остановил. Напиши, пожалуйста, саммари проблемы, которые ты мне выше
+/// написал" came back as "Саммари проблемы, которые Вы мне выше написали." —
+/// shorter than the input, so the length guard waved it through and a mangled
+/// sentence landed in the user's document. An honest edit keeps the words: it
+/// only touches punctuation, case, spelling and vocab. 0.6 leaves room for a
+/// dictation where every other word gets a vocab/spelling fix, while an answer
+/// or a summary — which reuses few of the dictated words — falls far below it.
+fn drops_the_dictation(input: &str, edited: &str) -> bool {
+    word_recall(input, edited) < 0.6
+}
+
 /// Short label for the kind of reqwest error — useful in debug log when
 /// diagnosing why postprocess fell back. Native error text is verbose and
 /// often hides the actual class (timeout vs connect vs TLS, etc).
@@ -304,6 +349,15 @@ pub fn edit_text(
         )));
     }
 
+    // The other half of the same failure: the model replies to (or summarises)
+    // the dictation with something shorter, which slips past the length guard.
+    if drops_the_dictation(text, &edited) {
+        return Err(CallError::rejected(format!(
+            "edit dropped the dictation (word recall {:.2}): model answered instead of editing",
+            word_recall(text, &edited)
+        )));
+    }
+
     crate::debug_log::log(&format!(
         "postprocess[{}/{}]: {:?} → {:?} ({:.2}s)",
         url.split('/').nth(2).unwrap_or("?"),
@@ -372,6 +426,50 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
         // the absolute margin covers it.
         assert!(!is_runaway_edit("привет", "Привет!"));
         assert!(!is_runaway_edit("", ""));
+    }
+
+    #[test]
+    fn drops_dictation_catches_the_shorter_answer() {
+        // Straight from the debug log: the model obeyed the dictation ("напиши
+        // саммари") instead of punctuating it, and the reply is SHORTER than the
+        // input — invisible to the runaway guard.
+        let input = "Так, я тебя остановил. Напиши, пожалуйста, саммари проблемы, которые ты мне выше написал";
+        let answer = "Саммари проблемы, которые Вы мне выше написали.";
+        assert!(!is_runaway_edit(input, answer), "length guard cannot catch this one");
+        assert!(drops_the_dictation(input, answer));
+    }
+
+    #[test]
+    fn drops_dictation_catches_answered_question() {
+        // A dictated question answered in one short line.
+        assert!(drops_the_dictation("а какая столица франции", "Париж."));
+    }
+
+    #[test]
+    fn drops_dictation_allows_real_edits() {
+        // Punctuation + case + a vocab fix: the words survive.
+        assert!(!drops_the_dictation("ехал к росе утром", "Ехал к Алросе утром."));
+        // Morphology/spelling fixes rewrite endings, not whole words.
+        assert!(!drops_the_dictation(
+            "надо этот скилл улучшить дополнить например сейчас куилл",
+            "Надо этот скилл улучшить, дополнить. Например, сейчас Quill,"
+        ));
+        // A dictated question stays a question — that IS the correct edit.
+        assert!(!drops_the_dictation(
+            "а можешь мне коротко объяснить разницу",
+            "А можешь мне коротко объяснить разницу?"
+        ));
+        // Short inputs.
+        assert!(!drops_the_dictation("чини", "Чини."));
+        assert!(!drops_the_dictation("привет", "Привет!"));
+        assert!(!drops_the_dictation("", ""));
+    }
+
+    #[test]
+    fn word_recall_is_a_ratio() {
+        assert_eq!(word_recall("один два", "Один, два."), 1.0);
+        assert_eq!(word_recall("один два", "Один."), 0.5);
+        assert_eq!(word_recall("", "что угодно"), 1.0);
     }
 
     #[test]

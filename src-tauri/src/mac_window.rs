@@ -68,6 +68,37 @@ tauri_nspanel::tauri_panel! {
             is_floating_panel: false       // window level is owned by the Always-on-Top toggle
         }
     })
+
+    panel_event!(RibbitPanelEvents {
+        window_did_resign_key(notification: &NSNotification) -> ()
+    })
+}
+
+/// Mirrors the Always-on-Top setting for the resign-key handler, which runs on
+/// the AppKit thread and has no access to the Tauri config.
+#[cfg(target_os = "macos")]
+static ALWAYS_ON_TOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "macos")]
+pub fn set_always_on_top(value: bool) {
+    ALWAYS_ON_TOP.store(value, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_always_on_top(_value: bool) {}
+
+/// Send the panel behind every other window on its level — what AppKit does for
+/// an ordinary window when you click a different one.
+#[cfg(target_os = "macos")]
+fn order_back(app: &tauri::AppHandle) {
+    use cocoa::base::{id, nil};
+    use objc::{msg_send, sel, sel_impl};
+
+    let Some(window) = app.get_webview_window("main") else { return };
+    let Ok(ns_window) = window.ns_window() else { return };
+    unsafe {
+        let _: () = msg_send![ns_window as id, orderBack: nil];
+    }
 }
 
 /// Convert the borderless "main" window into the panel and configure it. Called
@@ -85,16 +116,39 @@ pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
     // NonactivatingPanel: showing/keying the panel never activates the app, so
     // no Space switch. empty() keeps it borderless (decorations:false).
     panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
-    // Appear on the active Space and over a full-screen app.
+    // MoveToActiveSpace: the panel follows the user to whatever Space it is
+    // summoned on. CanJoinAllSpaces (used until 0.7.72) instead pinned a copy
+    // of it to *every* Space like the menu bar, so it resurfaced on top of each
+    // desktop the user switched to and no click could push it back.
+    // FullScreenAuxiliary keeps it able to appear over a full-screen app.
     panel.set_collection_behavior(
         CollectionBehavior::new()
             .full_screen_auxiliary()
-            .can_join_all_spaces()
+            .move_to_active_space()
             .into(),
     );
     // A utility panel hides itself when the app deactivates by default; we want
     // it to stay put until the user dismisses it.
     panel.set_hides_on_deactivate(false);
+
+    // Yield like an ordinary window: the moment focus goes to another window,
+    // drop behind it. A non-activating panel never activates its app, so AppKit
+    // does not reorder it for us — without this the panel keeps floating over
+    // whatever the user clicked, and only the X button gets rid of it.
+    // Always-on-Top, when the user asks for it, is what suspends this.
+    let app = window.app_handle().clone();
+    let handler = RibbitPanelEvents::new();
+    handler.window_did_resign_key(move |_notification| {
+        if ALWAYS_ON_TOP.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        order_back(&app);
+    });
+    panel.set_event_handler(Some(handler.as_ref()));
+    // The delegate is weakly referenced by AppKit; this one lives for the whole
+    // process, so hand its ownership to the panel by leaking it deliberately.
+    std::mem::forget(handler);
+
     crate::debug_log::log("panel: main window converted to non-activating NSPanel");
     Ok(())
 }

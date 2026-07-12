@@ -11,6 +11,40 @@ numbers increase quickly — each entry below maps to a published
 
 ### Fixed
 
+- **The window stops floating over everything (macOS).** With Always-on-Top off,
+  Ribbit still covered every other window and could only be dismissed with X or
+  minimize. Two causes, both in `mac_window::setup_panel`:
+  - The panel carried `CanJoinAllSpaces`, which pins a window to *every* Space
+    like the menu bar. It resurfaced on top of each desktop the user switched to.
+    Replaced with `MoveToActiveSpace` — the panel follows the user to the Space it
+    is summoned on. `FullScreenAuxiliary` stays, so a tray summon over a
+    full-screen app still works.
+  - A non-activating `NSPanel` never activates its app, so AppKit does not reorder
+    it when another window takes focus — `orderFrontRegardless` left it on top for
+    good. It now yields on `windowDidResignKey`: `orderBack`, i.e. exactly what an
+    ordinary window does when you click a different one. Always-on-Top suspends
+    the yield.
+
+  Measured first, not guessed: the live window sat at level 0 (`CGWindowLayer`),
+  so the level was never the culprit, and a standalone AppKit probe reproduced
+  normal ordering for the same attribute set — which is what pointed at the
+  all-Spaces pinning and the missing yield.
+
+- **Always-on-Top is remembered.** The toggle wrote nothing to disk and the
+  checkbox never reflected the saved value — it silently reset on every restart.
+  Now persisted (`always_on_top` in config) and restored at startup.
+
+- **Post-processing no longer answers the dictation.** The LLM editor is supposed
+  to punctuate the transcript, but sometimes obeyed it instead. Only the
+  *longer-than-input* case was caught (`is_runaway_edit`); the common failure is
+  the opposite. From the log: "Так, я тебя остановил. Напиши, пожалуйста, саммари
+  проблемы, которые ты мне выше написал" came back as "Саммари проблемы, которые
+  Вы мне выше написали." — shorter than the input, so the guard waved it through.
+  Added a word-recall guard (`drops_the_dictation`): an honest edit keeps the
+  dictated words (prefix match, so spelling/morphology fixes still pass); below
+  60% recall the response is rejected and the caller falls back to strict
+  `vocab::apply`, keeping the user's own words.
+
 - **Window no longer rubber-bands.** A two-finger swipe elastically dragged the
   whole page inside the frame; because the window is borderless + transparent
   (rounded macOS corners), the exposed strip showed the desktop behind it. The

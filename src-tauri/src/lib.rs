@@ -148,6 +148,7 @@ fn get_config() -> Result<serde_json::Value, String> {
             "text": stack_state_json(&cfg, fallback::Stack::Text),
         }),
         "history_days": history_days(),
+        "always_on_top": cfg["always_on_top"].as_bool().unwrap_or(false),
     }))
 }
 
@@ -468,9 +469,20 @@ fn get_current_version() -> String {
 
 #[tauri::command]
 fn set_always_on_top(app: AppHandle, value: bool) -> Result<(), String> {
+    apply_always_on_top(&app, value)?;
+    let mut config = read_config();
+    config["always_on_top"] = serde_json::json!(value);
+    save_config(&config)
+}
+
+/// Raise/lower the window level and tell the macOS panel whether it may keep
+/// floating when it loses focus. Used by the command and at startup, so the
+/// setting survives a restart instead of silently resetting to off.
+fn apply_always_on_top(app: &AppHandle, value: bool) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("main") {
         w.set_always_on_top(value).map_err(|e| e.to_string())?;
     }
+    mac_window::set_always_on_top(value);
     Ok(())
 }
 
@@ -1227,6 +1239,13 @@ pub fn run() {
                 if let Err(e) = mac_window::apply_rounded_corners(&main_window, 10.0) {
                     debug_log::log(&format!("rounded corners: {}", e));
                 }
+            }
+
+            // Restore the saved Always-on-Top choice; the panel's yield-on-blur
+            // behaviour reads the same flag.
+            let on_top = read_config()["always_on_top"].as_bool().unwrap_or(false);
+            if let Err(e) = apply_always_on_top(&handle, on_top) {
+                debug_log::log(&format!("always-on-top restore: {}", e));
             }
 
             // Manage state for commands and shortcut handler

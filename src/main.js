@@ -483,7 +483,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (e.key === "Escape") { e.preventDefault(); closeSearch(); }
   });
 
-  // Always on top toggle
+  // Always on top toggle — off by default, and the window then behaves like any
+  // other: click another window and it goes above Ribbit.
+  $("#always-on-top").checked = config.always_on_top ?? false;
   $("#always-on-top").addEventListener("change", async (e) => {
     await invoke("set_always_on_top", { value: e.target.checked });
   });
