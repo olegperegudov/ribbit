@@ -101,6 +101,33 @@ fn order_back(app: &tauri::AppHandle) {
     }
 }
 
+/// Is the panel sitting on a full-screen Space?
+///
+/// A full-screen Space hides the menu bar, so the screen's `visibleFrame` (the
+/// area left for ordinary windows) becomes as tall as its `frame`. In a normal
+/// Space the menu bar carves ~25pt off the top.
+#[cfg(target_os = "macos")]
+fn on_fullscreen_space(app: &tauri::AppHandle) -> bool {
+    use cocoa::appkit::NSScreen;
+    use cocoa::base::{id, nil};
+    use objc::{msg_send, sel, sel_impl};
+
+    let Some(window) = app.get_webview_window("main") else { return false };
+    let Ok(ns_window) = window.ns_window() else { return false };
+    unsafe {
+        let screen: id = msg_send![ns_window as id, screen];
+        let screen = if screen == nil { NSScreen::mainScreen(nil) } else { screen };
+        if screen == nil {
+            return false;
+        }
+        let frame = NSScreen::frame(screen);
+        let visible = NSScreen::visibleFrame(screen);
+        // 5pt of slack: the two frames differ by the menu bar (~25pt) or by
+        // nothing at all — no in-between to be careful about.
+        frame.size.height - visible.size.height < 5.0
+    }
+}
+
 /// Convert the borderless "main" window into the panel and configure it. Called
 /// once at setup, after the accessory activation policy is set.
 #[cfg(target_os = "macos")]
@@ -136,13 +163,23 @@ pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
     // does not reorder it for us — without this the panel keeps floating over
     // whatever the user clicked, and only the X button gets rid of it.
     // Always-on-Top, when the user asks for it, is what suspends this.
+    //
+    // On a full-screen Space there is no "behind": the full-screen window IS the
+    // Space, and the panel is a FullScreenAuxiliary companion drawn over it, so
+    // orderBack changes nothing and the panel keeps covering the app. There it
+    // does the only thing that means "get out of the way" — go back to the tray,
+    // one tray click away from returning.
     let app = window.app_handle().clone();
     let handler = RibbitPanelEvents::new();
     handler.window_did_resign_key(move |_notification| {
         if ALWAYS_ON_TOP.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
-        order_back(&app);
+        if on_fullscreen_space(&app) {
+            hide_panel(&app);
+        } else {
+            order_back(&app);
+        }
     });
     panel.set_event_handler(Some(handler.as_ref()));
     // The delegate is weakly referenced by AppKit; this one lives for the whole

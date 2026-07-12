@@ -24,6 +24,12 @@ numbers increase quickly — each entry below maps to a published
     good. It now yields on `windowDidResignKey`: `orderBack`, i.e. exactly what an
     ordinary window does when you click a different one. Always-on-Top suspends
     the yield.
+  - On a **full-screen** Space `orderBack` is a no-op — the full-screen window *is*
+    the Space and the panel is a `FullScreenAuxiliary` companion drawn over it, so
+    it kept covering the app no matter where the user clicked (reported on 0.7.73).
+    There the panel hides to the tray instead, which is the only available meaning
+    of "get out of the way". Full-screen is detected by the screen's `visibleFrame`
+    matching its `frame` — no menu bar means a full-screen Space.
 
   Measured first, not guessed: the live window sat at level 0 (`CGWindowLayer`),
   so the level was never the culprit, and a standalone AppKit probe reproduced
