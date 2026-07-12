@@ -7,6 +7,19 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.72] - 2026-07-13
+
+### Fixed
+
+- **Window no longer rubber-bands.** A two-finger swipe elastically dragged the
+  whole page inside the frame; because the window is borderless + transparent
+  (rounded macOS corners), the exposed strip showed the desktop behind it. The
+  document is now pinned (`html, body`: `height: 100%`, `overflow: hidden`,
+  `overscroll-behavior: none`) and every scroll region (`#log-entries`,
+  `.settings-content`, `#debug-content`, `#vocab-list`) keeps its overscroll to
+  itself. Pinned by `src/window_chrome.test.js` — the bounce only reproduces on a
+  real macOS build, so the CSS is guarded by a test rather than by memory.
+
 ## [0.7.71] - 2026-07-11
 
 ### Fixed
