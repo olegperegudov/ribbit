@@ -7,6 +7,32 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [0.7.75] - 2026-07-13
+
+### Fixed
+
+- **The window closes again, and stops hovering (macOS).** 0.7.73/0.7.74 made it
+  worse, not better: the panel came back the instant it was dismissed, and over a
+  full-screen app it still covered everything. Both came from the yield-on-blur
+  logic:
+  - `orderBack:` does not merely lower a window, it *orders it in*. Called from
+    the resign-key handler on a panel the user had just closed with X, it put the
+    window straight back on screen — vanish-and-reappear, impossible to close.
+  - The full-screen check (`visibleFrame == frame`) did not fire on a real
+    full-screen Space, so the panel took the `orderBack` branch there too — where
+    lowering means nothing, since a `FullScreenAuxiliary` companion is always
+    drawn over the full-screen window.
+
+  Replaced both with one rule: when focus leaves the panel, it hides to the tray.
+  Works the same in a window and over a full-screen app, and there is nothing left
+  to resurrect it. Always-on-Top suspends it.
+
+- **The tray icon still closes an open window.** With auto-hide-on-blur, clicking
+  the tray icon *is* what takes focus away, so by the time the click is handled the
+  panel already looks hidden and a naive toggle would show it right back. The tray
+  now recognises a panel that auto-hid within the last 400 ms as "closed by this
+  very click" and leaves it closed.
+
 ## [0.7.72] - 2026-07-13
 
 ### Fixed

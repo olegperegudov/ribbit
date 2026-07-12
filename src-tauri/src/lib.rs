@@ -903,15 +903,19 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
 fn toggle_main_window(app: &AppHandle, label: &tauri::menu::MenuItem<tauri::Wry>) {
     #[cfg(target_os = "macos")]
     {
-        // Hide only when the panel is genuinely frontmost. isVisible stays true
-        // while the panel is buried behind the app you dictated into (normal
-        // window level since 0.7.70), so toggling on visibility alone would
-        // orderOut an already-hidden panel — the "tray does nothing" bug.
-        // Raise-if-not-key instead, the Spotlight/Raycast behaviour.
+        // The panel hides itself the moment focus leaves it (mac_window), and
+        // clicking this very icon is what took the focus away — so by the time we
+        // run, an open panel already reads as hidden. Showing it again here would
+        // make the icon unable to close the window (open → auto-hide → shown
+        // again, a flicker). `just_auto_hid` is that "the click you are handling
+        // is the one that closed it" signal.
         let visible = mac_window::panel_visible(app);
-        let key = visible && mac_window::panel_is_key(app);
-        crate::debug_log::log(&format!("tray toggle: visible={} key={}", visible, key));
-        if key {
+        let dismissed_by_this_click = !visible && mac_window::just_auto_hid();
+        crate::debug_log::log(&format!(
+            "tray toggle: visible={} dismissed_by_this_click={}",
+            visible, dismissed_by_this_click
+        ));
+        if visible || dismissed_by_this_click {
             mac_window::hide_panel(app);
             let _ = label.set_text("Show Ribbit");
         } else {

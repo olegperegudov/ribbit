@@ -79,6 +79,33 @@ tauri_nspanel::tauri_panel! {
 #[cfg(target_os = "macos")]
 static ALWAYS_ON_TOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// When the panel last hid itself because focus went elsewhere.
+///
+/// Clicking the tray icon is one such "elsewhere": the panel resigns key and
+/// auto-hides *before* the tray click handler runs, so the toggle would see a
+/// hidden panel and show it right back — the icon would stop closing the window.
+/// The tray consults this to tell "the user just closed it by clicking me" from
+/// "it was already closed".
+#[cfg(target_os = "macos")]
+static LAST_AUTO_HIDE: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// True when the panel auto-hid a moment ago — i.e. the click being handled is
+/// what dismissed it.
+#[cfg(target_os = "macos")]
+pub fn just_auto_hid() -> bool {
+    LAST_AUTO_HIDE
+        .lock()
+        .ok()
+        .and_then(|t| *t)
+        .map(|t| t.elapsed() < std::time::Duration::from_millis(400))
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn just_auto_hid() -> bool {
+    false
+}
+
 #[cfg(target_os = "macos")]
 pub fn set_always_on_top(value: bool) {
     ALWAYS_ON_TOP.store(value, std::sync::atomic::Ordering::Relaxed);
@@ -87,46 +114,6 @@ pub fn set_always_on_top(value: bool) {
 #[cfg(not(target_os = "macos"))]
 pub fn set_always_on_top(_value: bool) {}
 
-/// Send the panel behind every other window on its level — what AppKit does for
-/// an ordinary window when you click a different one.
-#[cfg(target_os = "macos")]
-fn order_back(app: &tauri::AppHandle) {
-    use cocoa::base::{id, nil};
-    use objc::{msg_send, sel, sel_impl};
-
-    let Some(window) = app.get_webview_window("main") else { return };
-    let Ok(ns_window) = window.ns_window() else { return };
-    unsafe {
-        let _: () = msg_send![ns_window as id, orderBack: nil];
-    }
-}
-
-/// Is the panel sitting on a full-screen Space?
-///
-/// A full-screen Space hides the menu bar, so the screen's `visibleFrame` (the
-/// area left for ordinary windows) becomes as tall as its `frame`. In a normal
-/// Space the menu bar carves ~25pt off the top.
-#[cfg(target_os = "macos")]
-fn on_fullscreen_space(app: &tauri::AppHandle) -> bool {
-    use cocoa::appkit::NSScreen;
-    use cocoa::base::{id, nil};
-    use objc::{msg_send, sel, sel_impl};
-
-    let Some(window) = app.get_webview_window("main") else { return false };
-    let Ok(ns_window) = window.ns_window() else { return false };
-    unsafe {
-        let screen: id = msg_send![ns_window as id, screen];
-        let screen = if screen == nil { NSScreen::mainScreen(nil) } else { screen };
-        if screen == nil {
-            return false;
-        }
-        let frame = NSScreen::frame(screen);
-        let visible = NSScreen::visibleFrame(screen);
-        // 5pt of slack: the two frames differ by the menu bar (~25pt) or by
-        // nothing at all — no in-between to be careful about.
-        frame.size.height - visible.size.height < 5.0
-    }
-}
 
 /// Convert the borderless "main" window into the panel and configure it. Called
 /// once at setup, after the accessory activation policy is set.
@@ -158,28 +145,30 @@ pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
     // it to stay put until the user dismisses it.
     panel.set_hides_on_deactivate(false);
 
-    // Yield like an ordinary window: the moment focus goes to another window,
-    // drop behind it. A non-activating panel never activates its app, so AppKit
-    // does not reorder it for us — without this the panel keeps floating over
-    // whatever the user clicked, and only the X button gets rid of it.
-    // Always-on-Top, when the user asks for it, is what suspends this.
+    // Get out of the way as soon as focus goes elsewhere: back to the tray, one
+    // click away from returning. A non-activating panel is never reordered by
+    // AppKit (its app never activates), so without this it keeps floating over
+    // whatever the user clicked and only the X button removes it.
     //
-    // On a full-screen Space there is no "behind": the full-screen window IS the
-    // Space, and the panel is a FullScreenAuxiliary companion drawn over it, so
-    // orderBack changes nothing and the panel keeps covering the app. There it
-    // does the only thing that means "get out of the way" — go back to the tray,
-    // one tray click away from returning.
+    // Hiding — not orderBack. Two reasons, both learned the hard way in 0.7.73/74:
+    // over a full-screen app there is no "behind" (the full-screen window IS the
+    // Space and the panel is drawn over it as a FullScreenAuxiliary companion),
+    // and `orderBack:` *orders a window in*, so calling it on the panel the user
+    // had just dismissed with X resurrected it — it vanished and came straight
+    // back, un-closable.
+    //
+    // Always-on-Top is what suspends this.
     let app = window.app_handle().clone();
     let handler = RibbitPanelEvents::new();
     handler.window_did_resign_key(move |_notification| {
         if ALWAYS_ON_TOP.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
-        if on_fullscreen_space(&app) {
-            hide_panel(&app);
-        } else {
-            order_back(&app);
+        if let Ok(mut t) = LAST_AUTO_HIDE.lock() {
+            *t = Some(std::time::Instant::now());
         }
+        hide_panel(&app);
+        crate::debug_log::log("panel: focus left → hidden to tray");
     });
     panel.set_event_handler(Some(handler.as_ref()));
     // The delegate is weakly referenced by AppKit; this one lives for the whole
@@ -202,22 +191,6 @@ pub fn panel_visible(app: &tauri::AppHandle) -> bool {
     app.get_webview_panel("main").map(|p| p.is_visible()).unwrap_or(false)
 }
 
-/// Whether the main panel is the key window — i.e. actually frontmost and
-/// taking input, not merely ordered-in. `panel_visible` (NSWindow `isVisible`)
-/// stays true even when the panel is fully covered by another app's window, so
-/// a tray toggle keyed on visibility alone would `orderOut` an already-buried
-/// panel and read as "the tray does nothing". Since 0.7.70 dropped the
-/// always-on-top floating level, the panel sits at the normal level and can be
-/// covered — so "raise unless frontmost" needs this second signal.
-#[cfg(target_os = "macos")]
-pub fn panel_is_key(app: &tauri::AppHandle) -> bool {
-    use cocoa::base::id;
-    use objc::{msg_send, sel, sel_impl};
-
-    let Some(window) = app.get_webview_window("main") else { return false };
-    let Ok(ns_window) = window.ns_window() else { return false };
-    unsafe { msg_send![ns_window as id, isKeyWindow] }
-}
 
 /// Show the panel on the user's CURRENT Space (over full-screen apps included)
 /// and give it keyboard focus, without activating Ribbit.
