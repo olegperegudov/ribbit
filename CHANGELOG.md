@@ -7,6 +7,26 @@ Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
+## [Unreleased]
+
+### Changed
+
+- **Updating moved to the frog in the menu bar.** A left click on the tray icon
+  now opens a menu — *Check for updates*, *Show Ribbit*, the version, *Quit* —
+  instead of silently toggling the window. Two reasons: a click that only flips a
+  hidden window gives no sign the app is even alive, and the update had to be
+  hunted for at the bottom of the settings panel, which is opened about once a
+  month.
+
+  When a release lands, the frog turns green (same emerald badge as CopyPaster's
+  parrot) and the first menu item becomes *Update to vX.Y.Z* — one item, two
+  jobs, so there is never a dead "check" sitting next to a live "update". The
+  background poll and the manual check now go through the same `announce_update`,
+  so a release found either way gives exactly the same signal.
+
+- **The settings panel lost its update button** — and the gear its green glow.
+  The row now just says where updating went. All three apps behave alike again.
+
 ## [0.7.75] - 2026-07-13
 
 ### Fixed

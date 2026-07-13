@@ -62,8 +62,8 @@ When you first launch Ribbit, you'll see a setup screen. Paste your key and clic
 - **Local and private** — no cloud sync, no data collection (only a free Groq account needed for the API)
 - **Transcription log** — history with timestamps, grouped by date
 - **Sound packs** — frog or ping audio feedback (switch in settings)
-- **System tray** — runs quietly in the background, X hides to tray
-- **Auto-update** — checks for updates daily, one-click install from settings
+- **System tray** — runs quietly in the background, X hides to tray; click the frog for the menu
+- **Auto-update** — checks on its own; the tray frog goes green and the menu installs it
 - **Customizable hotkey** — click the hotkey field in settings, press your combo, hit Enter
 - **Lightweight** — ~4 MB installer, minimal resource usage
 
@@ -86,7 +86,6 @@ Click the gear icon to access:
 | **Sound** | Choose between frog and ping |
 | **Debug log** | View internal logs for troubleshooting |
 | **Version** | Click to view changelog on GitHub |
-| **Check update** | Manually check for new versions |
 
 ## Tech stack
 

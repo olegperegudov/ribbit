@@ -55,8 +55,8 @@ native window chrome, hardware) live here.
 
 ## Auto-update
 
-- [ ] "check update" button reports current state correctly
-- [ ] When an update is available: button glows, click downloads + installs
+- [ ] Tray menu: "Check for updates" reports current state correctly
+- [ ] When an update is available: tray frog goes green, the item reads "Update to vX.Y.Z" and installs on click
 - [ ] After install: app restarts on new version, settings preserved
 
 ## LLM post-processing (optional feature)

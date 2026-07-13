@@ -883,66 +883,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   } catch (e) {}
 
-  // Update check / install — a single handler driven by `pendingVersion`:
-  // null = the button checks, a version string = the button installs it.
-  // (The previous scheme layered an onclick on top of this listener, so a
-  // click after "update available" fired an install AND a fresh check.)
-  const updateBtn = $("#update-btn");
-  let pendingVersion = null;
-
-  function showUpdateAvailable(ver) {
-    pendingVersion = ver;
-    updateBtn.textContent = `update to v${ver}`;
-    updateBtn.classList.add("update-available");
-    updateBtn.disabled = false;
-  }
-
-  updateBtn.addEventListener("click", async () => {
-    updateBtn.disabled = true;
-
-    if (pendingVersion) {
-      updateBtn.textContent = "downloading...";
-      try {
-        await invoke("install_update"); // the app restarts on success
-      } catch (e) {
-        const ver = pendingVersion;
-        updateBtn.textContent = "update failed";
-        setTimeout(() => showUpdateAvailable(ver), 3000);
-      }
-      return;
-    }
-
-    updateBtn.textContent = "checking...";
-    try {
-      const result = await invoke("check_for_update");
-      if (result.available) {
-        showUpdateAvailable(result.version);
-      } else {
-        updateBtn.textContent = "up to date";
-        setTimeout(() => {
-          updateBtn.textContent = "check update";
-          updateBtn.disabled = false;
-        }, 2000);
-      }
-    } catch (e) {
-      updateBtn.textContent = "check failed";
-      setTimeout(() => {
-        updateBtn.textContent = "check update";
-        updateBtn.disabled = false;
-      }, 3000);
-    }
-  });
-
-  // Update available indicator (from auto-check or manual check)
-  await listen("update-available", (event) => {
-    showUpdateAvailable(event.payload);
-    $("#settings-btn").classList.add("update-available");
-  });
-
-  await listen("update-progress", (event) => {
-    const pct = event.payload;
-    updateBtn.textContent = `downloading ${pct}%`;
-  });
+  // Updating lives in the menu-bar menu, not here: the tray icon is on screen
+  // all day, the settings panel is opened once a month.
 
   // Debug log (from settings)
   $("#debug-btn").addEventListener("click", async () => {

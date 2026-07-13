@@ -15,10 +15,19 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     AppHandle, Manager, Emitter,
     menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::TrayIconBuilder,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_updater::UpdaterExt;
+
+/// Menu-bar icon tinted green while an update is waiting — the same signal
+/// CopyPaster and Quill give, so the three apps behave alike.
+const TRAY_UPDATE_ICON: &[u8] = include_bytes!("../icons/tray-update.png");
+
+/// The tray's update item, kept reachable so `announce_update` can rewrite it.
+/// A newtype because Tauri keys managed state by type, and the "Show Ribbit"
+/// item already occupies plain `MenuItem<Wry>`.
+struct UpdateItem(tauri::menu::MenuItem<tauri::Wry>);
 
 struct RecordingState {
     is_recording: bool,
@@ -406,59 +415,71 @@ fn minimize_window(app: AppHandle) {
     }
 }
 
-#[tauri::command]
-async fn check_for_update(app: AppHandle) -> Result<serde_json::Value, String> {
+/// Looks for a release and, if one is there, lights the tray. Not a command any
+/// more: updating lives in the menu-bar menu, so the window never asks for it.
+async fn check_for_update(app: &AppHandle) -> Result<Option<String>, String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     match updater.check().await {
         Ok(Some(update)) => {
             let version = update.version.clone();
-            let body = update.body.clone().unwrap_or_default();
-            debug_log::log(&format!("Update available: v{}", version));
-            let _ = app.emit("update-available", &version);
-            Ok(serde_json::json!({
-                "available": true,
-                "version": version,
-                "body": body,
-            }))
+            debug_log::log(&format!("update: v{} available", version));
+            announce_update(app, &version);
+            Ok(Some(version))
         }
         Ok(None) => {
-            debug_log::log("No update available");
-            Ok(serde_json::json!({ "available": false }))
+            debug_log::log("update: up to date");
+            Ok(None)
         }
         Err(e) => {
-            debug_log::log(&format!("Update check failed: {}", e));
+            debug_log::log(&format!("update: check failed: {}", e));
             Err(e.to_string())
         }
     }
 }
 
-#[tauri::command]
-async fn install_update(app: AppHandle) -> Result<(), String> {
+async fn install_update(app: &AppHandle) -> Result<(), String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     match updater.check().await {
         Ok(Some(update)) => {
-            debug_log::log(&format!("Downloading update v{}...", update.version));
-
-            let mut downloaded: u64 = 0;
-            let app_for_event = app.clone();
-            update.download_and_install(
-                move |chunk, total| {
-                    downloaded += chunk as u64;
-                    let progress = total.map(|t| (downloaded as f64 / t as f64 * 100.0) as u32);
-                    let _ = app_for_event.emit("update-progress", progress.unwrap_or(0));
-                },
-                || {
-                    debug_log::log("Update downloaded, restarting...");
-                },
-            ).await.map_err(|e| {
-                debug_log::log(&format!("Update install failed: {}", e));
-                e.to_string()
-            })?;
-
+            debug_log::log(&format!("update: downloading v{}", update.version));
+            update
+                .download_and_install(|_, _| {}, || debug_log::log("update: downloaded, restarting"))
+                .await
+                .map_err(|e| {
+                    debug_log::log(&format!("update: install failed: {}", e));
+                    e.to_string()
+                })?;
             app.restart();
         }
         Ok(None) => Err("No update available".into()),
         Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Light the menu-bar icon green and turn the menu's update item into the
+/// install action. Called from both the manual check and the background poll —
+/// one place, so a release found either way gives the user the same signal.
+fn announce_update(app: &AppHandle, version: &str) {
+    if let Some(item) = app.try_state::<UpdateItem>() {
+        let _ = item.0.set_text(format!("Update to v{}", version));
+    }
+    if let Some(tray) = app.tray_by_id("main") {
+        if let Ok(icon) = tauri::image::Image::from_bytes(TRAY_UPDATE_ICON) {
+            let _ = tray.set_icon(Some(icon));
+        }
+    }
+}
+
+/// One menu item, two jobs: check while nothing is pending, install once a
+/// version has been found. Two items would leave a dead "Check" sitting next to
+/// a live "Update".
+async fn on_update_clicked(app: AppHandle) {
+    match check_for_update(&app).await {
+        Ok(Some(_)) => {
+            let _ = install_update(&app).await;
+        }
+        Ok(None) => debug_log::log("update: nothing to install"),
+        Err(e) => debug_log::log(&format!("update: check failed: {}", e)),
     }
 }
 
@@ -1038,6 +1059,24 @@ fn migrate_stacks_inner(config: &mut serde_json::Value, groq: bool, openai: bool
 }
 
 #[cfg(test)]
+mod tray_icon_tests {
+    use super::*;
+
+    /// The green badge is the only thing that tells the user an update is
+    /// waiting — a tray icon rebuilt from the plain frog would take the signal
+    /// away and nothing else would notice.
+    #[test]
+    fn the_update_icon_carries_the_green_badge() {
+        let icon = tauri::image::Image::from_bytes(TRAY_UPDATE_ICON).expect("tray-update.png decodes");
+        let badge = icon
+            .rgba()
+            .chunks(4)
+            .any(|px| (px[0], px[1], px[2], px[3]) == (46, 204, 113, 255));
+        assert!(badge, "no #2ecc71 pixels — is this the plain icon?");
+    }
+}
+
+#[cfg(test)]
 mod stack_tests {
     use super::*;
 
@@ -1179,7 +1218,7 @@ pub fn run() {
         builder = builder.plugin(tauri_nspanel::init());
     }
     builder
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, minimize_window, check_for_update, install_update, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, minimize_window, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -1197,34 +1236,46 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             mic_permission::request_mic_access();
 
-            // System tray
+            // Menu-bar menu. Same shape as CopyPaster and Quill: update first,
+            // then the window, then the version, then quit. A left click opens
+            // it rather than toggling the window — a click that only flips a
+            // hidden window gives no sign the app is even alive, and the update
+            // has to be reachable without opening settings.
+            let update = MenuItemBuilder::with_id("update", "Check for updates").build(app)?;
             let show = MenuItemBuilder::with_id("show", "Show Ribbit").build(app)?;
+            let version = MenuItemBuilder::with_id("version", format!("Ribbit v{}", env!("CARGO_PKG_VERSION")))
+                .enabled(false)
+                .build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit Ribbit").build(app)?;
-            let menu = MenuBuilder::new(app).item(&show).item(&quit).build()?;
+            let menu = MenuBuilder::new(app)
+                .item(&update)
+                .separator()
+                .item(&show)
+                .separator()
+                .item(&version)
+                .item(&quit)
+                .build()?;
 
             let show_for_menu = show.clone();
-            let show_for_tray = show.clone();
             // hide_to_tray (the X button) flips this label too.
             app.manage(show.clone());
+            // announce_update() rewrites this item's text when a release lands.
+            app.manage(UpdateItem(update.clone()));
 
-            let mut tray_builder = TrayIconBuilder::new()
+            let mut tray_builder = TrayIconBuilder::with_id("main")
                 .tooltip("Ribbit - Voice to Text")
                 .menu(&menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(move |app, event| {
-                    if event.id() == "show" {
-                        toggle_main_window(app, &show_for_menu);
-                    } else if event.id() == "quit" {
-                        app.exit(0);
+                .show_menu_on_left_click(true)
+                .on_menu_event(move |app, event| match event.id().as_ref() {
+                    "update" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            on_update_clicked(app).await;
+                        });
                     }
-                })
-                .on_tray_icon_event(move |tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up, ..
-                    } = event {
-                        toggle_main_window(tray.app_handle(), &show_for_tray);
-                    }
+                    "show" => toggle_main_window(app, &show_for_menu),
+                    "quit" => app.exit(0),
+                    _ => {}
                 });
 
             // Use app icon for tray
@@ -1266,8 +1317,8 @@ pub fn run() {
 
             // Auto-check for updates: shortly after launch, then on an
             // interval. Ribbit lives in the tray all day, so a release that
-            // ships while it's running must light the gear on its own —
-            // polling every 30 min spares the user the manual "check update".
+            // ships while it's running must go green on its own — polling every
+            // 30 min spares the user opening the menu to find out.
             let update_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 // Small delay so the app finishes loading first.
@@ -1275,18 +1326,10 @@ pub fn run() {
 
                 loop {
                     debug_log::log("update: running auto-check...");
-                    match update_handle.updater() {
-                        Ok(updater) => match updater.check().await {
-                            Ok(Some(update)) => {
-                                debug_log::log(&format!("update: v{} available", update.version));
-                                let _ = update_handle.emit("update-available", &update.version);
-                                // Gear is lit — nothing more to poll for.
-                                break;
-                            }
-                            Ok(None) => debug_log::log("update: up to date"),
-                            Err(e) => debug_log::log(&format!("update: auto-check failed: {}", e)),
-                        },
-                        Err(e) => debug_log::log(&format!("update: auto-check error: {}", e)),
+                    // Found one → the tray is green and the menu item now
+                    // installs it. Nothing left to poll for.
+                    if let Ok(Some(_)) = check_for_update(&update_handle).await {
+                        break;
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
                 }
