@@ -11,6 +11,26 @@ numbers increase quickly — each entry below maps to a published
 
 ### Changed
 
+- **The README is a shop window now, not a manual.** It opens with three fat
+  buttons that download the installer for a platform *directly* — the old ones
+  linked at `/releases/latest`, which is a page, so "download" meant landing in a
+  list of files and picking one. A direct link can only be made to a name that
+  survives the next version bump, so CI now also uploads version-less copies of
+  each installer (`Ribbit_macOS_AppleSilicon.dmg`, `Ribbit_macOS_Intel.dmg`,
+  `Ribbit_Windows_Setup.exe`) next to Tauri's own assets, which the updater keeps
+  reading.
+- **"Releases" points at `/releases`, not `/releases/latest`.** The old link
+  showed one release and its five files — read as "variants of the same thing".
+  The plain `/releases` page lists every version, so anyone can roll back if we
+  ship something broken.
+- **Screenshots.** The log (click a line to copy), replacing a misheard word in
+  place, the vocabulary, and the provider stack with its fallback. Taken with the
+  headless harness (`web_eye/_ribbit_shot.mjs`) — the app renders them with its
+  own code, so the README cannot show an interface that does not exist.
+- **The technical half of the README moved to `docs/DEVELOPMENT.md`** — stack,
+  local build, tests, release pipeline, signing, where the files live. The front
+  page tells a person how to install and use the app, nothing else.
+
 - **Updating moved to the frog in the menu bar.** A left click on the tray icon
   now opens a menu — *Check for updates*, *Show Ribbit*, the version, *Quit* —
   instead of silently toggling the window. Two reasons: a click that only flips a
