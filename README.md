@@ -36,6 +36,8 @@ Ribbit is built and used on macOS. The Windows build exists and installs, but it
 
 Every dictation lands in a log, grouped by day. Click a line — it's on your clipboard.
 
+Two languages in one sentence are fine: tick both in settings, and the English words inside a Russian phrase come back as English — `main`, `merge conflict`, `release` — not transliterated into Cyrillic.
+
 ![The transcript log](docs/screenshots/log.png)
 
 ## A word it keeps mishearing — fix it once
