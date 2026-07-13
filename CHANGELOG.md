@@ -11,6 +11,16 @@ numbers increase quickly — each entry below maps to a published
 
 ### Changed
 
+- **The README screenshots were re-shot.** All four had half a screen of empty
+  background under the content, which reads as a broken picture rather than as
+  air; the provider shot showed the whole settings page instead of the provider
+  stack it illustrates, and the log carried an entry whose lone yellow dot ("not
+  rephrased") looked like a defect to anyone who had not read the code. The
+  harness now fits the viewport to the content and crops the settings page to
+  the relevant band.
+- **`docs/DEVELOPMENT.md` explains why the transcript is typed, not pasted** —
+  a clipboard paste would clobber whatever the user had saved and litter every
+  clipboard manager, including our own CopyPaster.
 - **The README is a shop window now, not a manual.** It opens with three fat
   buttons that download the installer for a platform *directly* — the old ones
   linked at `/releases/latest`, which is a page, so "download" meant landing in a

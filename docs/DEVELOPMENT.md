@@ -43,6 +43,10 @@ macOS builds are signed with a stable self-signed certificate ("Ribbit Code Sign
 
 Not notarized (that needs a paid Apple account), so the first open still needs `xattr -cr`.
 
+## Typing the text out
+
+The transcript is typed at the cursor as Unicode keyboard events (`enigo.text`, `src-tauri/src/inserter.rs`), never pasted through the clipboard. A clipboard paste would overwrite whatever the user had saved there and leave a junk entry in every clipboard manager — including our own CopyPaster.
+
 ## Debugging
 
 DevTools are off in release builds — `console.log` is invisible. Use the `js_debug_log` command instead; it writes into the debug log the user can open under *Settings → Debug log*.

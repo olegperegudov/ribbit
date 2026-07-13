@@ -3904,7 +3904,7 @@ dependencies = [
 
 [[package]]
 name = "ribbit"
-version = "0.7.76"
+version = "0.7.77"
 dependencies = [
  "block",
  "chrono",
