@@ -1,0 +1,10 @@
+# The workflows pin every action to a commit SHA: a moving tag (@v4, @stable) is
+# whatever the action's owner points it at today, and these jobs hold the release
+# signing key and the Apple certificate. Pinning freezes that, and this file is
+# what keeps the pins from rotting — Dependabot opens a PR when an action moves.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

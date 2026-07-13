@@ -30,3 +30,9 @@ CLAUDE.md
 *.njsproj
 *.sln
 *.sw?
+
+# Never: the updater signing key, the Apple p12, any pasted token.
+*.key
+*.pem
+*.p12
+.env

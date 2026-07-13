@@ -69,8 +69,6 @@ native window chrome, hardware) live here.
       to vocab'd text without freezing
 - [ ] Toggle on + network disabled → paste happens within ≤3s of stop with
       vocab'd text; `debug.log` shows `postprocess fallback: network error: ...`
-- [ ] First Mac launch with `~/membeme/system/secrets/routerai.key` present →
-      key auto-loaded into config; toggle works immediately, no manual paste
 
 ---
 

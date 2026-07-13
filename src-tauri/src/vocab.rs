@@ -21,11 +21,11 @@ pub fn read_vocab() -> HashMap<String, Vec<String>> {
 /// Save the vocab map
 pub fn save_vocab(vocab: &HashMap<String, Vec<String>>) -> Result<(), String> {
     let path = vocab_path().ok_or("Cannot find config directory")?;
-    fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    crate::private::create_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
 
     // Sort keys for stable output
     let sorted: std::collections::BTreeMap<_, _> = vocab.iter().collect();
-    fs::write(&path, serde_json::to_string_pretty(&sorted).unwrap())
+    crate::private::write(&path, serde_json::to_string_pretty(&sorted).unwrap().as_bytes())
         .map_err(|e| e.to_string())
 }
 

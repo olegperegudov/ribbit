@@ -19,8 +19,7 @@ Disabled by default. ~150–300 ms latency overhead per transcription when on.
    - **key** — the provider's token. Stored locally (`~/.config/ribbit/.env` on
      macOS), one `.env` var per entry, never shown again.
 3. The first card is the primary; **+ add provider** appends fallbacks (see
-   [Auto-fallback](#auto-fallback)). On the maintainer's Mac a personal RouterAI
-   key is auto-loaded once from `~/membeme/system/secrets/routerai.key`.
+   [Auto-fallback](#auto-fallback)).
 
 Toggle off any time. The setting persists across restarts.
 

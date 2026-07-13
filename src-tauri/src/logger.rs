@@ -1,5 +1,5 @@
 use chrono::Local;
-use std::fs::{self, OpenOptions, create_dir_all};
+use std::fs;
 use std::io::Write;
 
 fn log_dir() -> Option<std::path::PathBuf> {
@@ -50,7 +50,8 @@ pub fn log_transcription(rec: &TranscriptionLog) {
         None => return,
     };
 
-    if create_dir_all(&log_dir).is_err() {
+    // The transcript log is a record of everything the user dictated.
+    if crate::private::create_dir(&log_dir).is_err() {
         return;
     }
 
@@ -58,11 +59,7 @@ pub fn log_transcription(rec: &TranscriptionLog) {
     let log_file = log_dir.join(format!("{}.jsonl", now.format("%Y-%m-%d")));
     let entry = build_entry(rec, &now.to_rfc3339());
 
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_file)
-    {
+    if let Ok(mut file) = crate::private::append(&log_file) {
         let _ = writeln!(file, "{}", entry);
     }
 }

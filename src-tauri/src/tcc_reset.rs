@@ -93,10 +93,10 @@ pub fn ensure_permissions(bundle_id: &str) {
     // launch.
     cfg["signing_id"] = serde_json::Value::String(signing_id);
     if let Some(parent) = cfg_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        let _ = crate::private::create_dir(parent);
     }
     if let Ok(s) = serde_json::to_string_pretty(&cfg) {
-        let _ = std::fs::write(&cfg_path, s);
+        let _ = crate::private::write(&cfg_path, s.as_bytes());
     }
 }
 

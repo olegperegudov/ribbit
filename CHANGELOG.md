@@ -9,6 +9,29 @@ numbers increase quickly — each entry below maps to a published
 
 ## [Unreleased]
 
+### Security
+
+- **Keys, transcripts and the vocabulary are written owner-only (0600).** `fs::write`
+  obeys the umask, which is 022 on a default macOS account: on a fresh install the
+  `.env` holding the API keys, the dictation log and the config all landed
+  world-readable, and any process on the machine could read them. Everything now
+  goes through `private.rs` (folders 0700, files 0600, the mode set on the open
+  handle so a file an older build left at 0644 is narrowed rather than kept).
+- **A provider endpoint must be `https://`.** It was possible to type an `http://`
+  URL, after which the API key travelled the network in the clear on every
+  request. Refused when typed, with a test.
+- **The release workflow pins every action to a commit SHA** (was `@v4`, `@v0`,
+  `@stable` — tags their owners can move) and hands the updater signing key only
+  to the step that signs, instead of exporting it into the environment of every
+  step in the job. These jobs hold the key that signs auto-updates: an upstream
+  compromise there ships a signed malicious update to every user. Dependabot now
+  watches the pins.
+- **Content-Security-Policy is set** (`default-src 'self'`, no remote script, image
+  or connection). The frontend never talks to the network itself — only Rust does —
+  so an injected script now has nowhere to send anything. Verified against all
+  three frontends under the real policy: zero violations.
+- The maintainer's personal key path is gone from the docs.
+
 ### Changed
 
 - **The README screenshots were re-shot.** All four had half a screen of empty

@@ -6,6 +6,7 @@ mod debug_log;
 mod sound;
 mod vocab;
 mod postprocess;
+mod private;
 mod fallback;
 mod mac_window;
 mod tcc_reset;
@@ -217,11 +218,25 @@ fn remove_provider(kind: String, id: String) -> Result<serde_json::Value, String
     Ok(stack_json(&config, stack))
 }
 
+/// An endpoint is where the API key goes on every request. Over plain http the
+/// key crosses the network in the clear, so a non-https endpoint is refused when
+/// it is typed — refusing it at request time is too late, it has already been sent.
+fn require_https(url: &str) -> Result<(), String> {
+    let u = url.trim();
+    if u.is_empty() || u.starts_with("https://") {
+        return Ok(());
+    }
+    Err("endpoint must start with https:// — your key travels with every request".into())
+}
+
 /// Edit one editable field (url / model / label) of a stack entry.
 #[tauri::command]
 fn set_provider_field(kind: String, id: String, field: String, value: String) -> Result<(), String> {
     if !matches!(field.as_str(), "url" | "model" | "label") {
         return Err(format!("field not editable: {}", field));
+    }
+    if field == "url" {
+        require_https(&value)?;
     }
     let stack = parse_stack(&kind)?;
     let mut config = read_config();
@@ -515,7 +530,7 @@ fn write_env_var(name: &str, value: &str) -> Result<(), String> {
         .ok_or("Cannot find config directory")?
         .join("ribbit")
         .join(".env");
-    std::fs::create_dir_all(env_path.parent().unwrap()).map_err(|e| e.to_string())?;
+    private::create_dir(env_path.parent().unwrap()).map_err(|e| e.to_string())?;
     let prefix = format!("{}=", name);
     let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
     let mut lines: Vec<String> = existing
@@ -524,7 +539,8 @@ fn write_env_var(name: &str, value: &str) -> Result<(), String> {
         .map(|l| l.to_string())
         .collect();
     lines.push(format!("{}={}", name, value));
-    std::fs::write(&env_path, lines.join("\n") + "\n").map_err(|e| e.to_string())?;
+    // The file holds API keys — private, not umask's business.
+    private::write(&env_path, (lines.join("\n") + "\n").as_bytes()).map_err(|e| e.to_string())?;
     unsafe { std::env::set_var(name, value); }
     Ok(())
 }
@@ -904,8 +920,8 @@ fn read_config() -> serde_json::Value {
 
 fn save_config(config: &serde_json::Value) -> Result<(), String> {
     let path = config_path().ok_or("Cannot find config directory")?;
-    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(&path, serde_json::to_string_pretty(config).unwrap())
+    private::create_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    private::write(&path, serde_json::to_string_pretty(config).unwrap().as_bytes())
         .map_err(|e| e.to_string())
 }
 
@@ -1340,4 +1356,23 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Ribbit");
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::require_https;
+
+    #[test]
+    fn a_plain_http_endpoint_is_refused() {
+        assert!(require_https("http://api.example.com/v1").is_err(), "http would send the key in the clear");
+        assert!(require_https("ftp://api.example.com").is_err());
+        assert!(require_https("api.example.com").is_err(), "no scheme is not a scheme we trust");
+    }
+
+    #[test]
+    fn https_and_an_empty_field_are_fine() {
+        assert!(require_https("https://api.groq.com/openai/v1").is_ok());
+        assert!(require_https("  https://api.openai.com/v1 ").is_ok());
+        assert!(require_https("").is_ok(), "clearing the field is not an attack");
+    }
 }
