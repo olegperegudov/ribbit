@@ -814,8 +814,11 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     (vocab::apply(&raw_text), false)
                 };
 
-                let preview: String = text.chars().take(80).collect();
-                debug_log::log(&format!("transcription OK (edited={}): {:?}", edited, preview));
+                debug_log::log(&format!(
+                    "transcription OK (edited={}, {} chars)",
+                    edited,
+                    text.chars().count()
+                ));
                 if text.is_empty() {
                     let _ = app_handle.emit("status-detail", "No speech detected.");
                 } else {
@@ -1165,8 +1168,15 @@ mod stack_tests {
     }
 }
 
+/// Windows that hide on close instead of being destroyed. Every window the tray
+/// or the hotkey can raise belongs here — a destroyed one cannot be raised again,
+/// and Ribbit with no windows left is a dead menu-bar icon. The window carries no
+/// explicit label in tauri.conf.json, so Tauri names it "main".
+const HIDE_ON_CLOSE: [&str; 1] = ["main"];
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    debug_log::init();
     debug_log::log("=== Ribbit starting ===");
     logger::cleanup_old_logs(history_days());
     tcc_reset::ensure_permissions("com.ribbit.app");
@@ -1234,6 +1244,18 @@ pub fn run() {
         builder = builder.plugin(tauri_nspanel::init());
     }
     builder
+        .on_window_event(|window, event| {
+            // Closing hides. Ribbit has one window and it *is* the app: destroy it
+            // (the cross, ⌘W — macOS installs its own Close item when the app sets
+            // no menu) and the hotkey opens nothing, the tray item opens nothing,
+            // and with no windows left Tauri exits the process — tray and all.
+            if HIDE_ON_CLOSE.contains(&window.label()) {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, minimize_window, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1374,5 +1396,28 @@ mod endpoint_tests {
         assert!(require_https("https://api.groq.com/openai/v1").is_ok());
         assert!(require_https("  https://api.openai.com/v1 ").is_ok());
         assert!(require_https("").is_ok(), "clearing the field is not an attack");
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::HIDE_ON_CLOSE;
+
+    /// Tauri's own default when a window carries no `label` in the config.
+    const TAURI_DEFAULT_LABEL: &str = "main";
+
+    #[test]
+    fn every_window_hides_on_close_instead_of_being_destroyed() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        for w in conf["app"]["windows"].as_array().expect("windows in the config") {
+            let label = w["label"].as_str().unwrap_or(TAURI_DEFAULT_LABEL);
+            assert!(
+                HIDE_ON_CLOSE.contains(&label),
+                "window '{}' is not in HIDE_ON_CLOSE: closing it destroys it, and with \
+                 no windows left the app exits — tray and all",
+                label
+            );
+        }
     }
 }

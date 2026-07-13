@@ -358,12 +358,13 @@ pub fn edit_text(
         )));
     }
 
+    // Sizes, not words: the log is a record of what ran, not of what was said.
     crate::debug_log::log(&format!(
-        "postprocess[{}/{}]: {:?} → {:?} ({:.2}s)",
+        "postprocess[{}/{}]: {} chars → {} chars ({:.2}s)",
         url.split('/').nth(2).unwrap_or("?"),
         model,
-        text.chars().take(60).collect::<String>(),
-        edited.chars().take(60).collect::<String>(),
+        text.chars().count(),
+        edited.chars().count(),
         elapsed.as_secs_f32()
     ));
     Ok(edited)

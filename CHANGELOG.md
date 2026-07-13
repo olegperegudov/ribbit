@@ -9,7 +9,26 @@ numbers increase quickly — each entry below maps to a published
 
 ## [Unreleased]
 
+### Fixed
+
+- **Closing the window no longer kills the app.** The window was destroyed on
+  close (the cross, or ⌘W — macOS installs its own Close item whenever an app
+  sets no menu of its own), and Ribbit has exactly one window: with it gone the
+  hotkey opened nothing, the tray item opened nothing, and Tauri, seeing no
+  windows left, exited the process — menu-bar icon and all. Closing now hides,
+  as it always should have. A test reads `tauri.conf.json` and fails if a window
+  is declared there without a hide-on-close guard, so the next window cannot
+  reintroduce this. Same bug, same fix, in Quill and CopyPaster.
+
 ### Security
+
+- **The debug log records events, not speech.** It carried a 60–80 character
+  preview of every transcription and every LLM edit, appended forever and swept
+  by nothing — the retention sweep only ever looked at `*.jsonl`, so "keep 7
+  days" was a promise the app did not keep for this file. Lines now say how many
+  characters came back, not which ones, and the file starts empty on every
+  launch (an append-only log on an app that runs for weeks is also a slow disk
+  leak). The transcript still lives in the history, where it expires.
 
 - **Keys, transcripts and the vocabulary are written owner-only (0600).** `fs::write`
   obeys the umask, which is 022 on a default macOS account: on a fresh install the
