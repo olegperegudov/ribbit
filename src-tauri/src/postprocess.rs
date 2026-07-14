@@ -6,9 +6,10 @@
 //! can fix both exact aliases and obvious misheard variants by context (e.g.
 //! «Роса» → «Алроса» when "Алроса" is in vocab).
 //!
-//! On any error/timeout the caller falls back to plain `vocab::apply` so the
-//! user is never blocked beyond the 5s timeout (worst case ~10s with the
-//! single transport retry).
+//! On any error/timeout the caller falls back to plain `vocab::apply`, and the
+//! whole walk across the text stack is capped by `STACK_BUDGET_SECS` — so a bad
+//! network costs the user seconds, not half a minute, and the transcript still
+//! lands.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -63,8 +64,21 @@ pub const PROVIDERS: &[ProviderConfig] = &[
 pub const DEFAULT_PROVIDER: &str = "groq";
 
 // 5s gives the model headroom for occasional 3-4s responses while still
-// keeping the paste latency bearable. Worst-case with one retry: ~10s.
+// keeping the paste latency bearable.
 const TIMEOUT_SECS: u64 = 5;
+
+// A hung TCP handshake used to sit inside the 5s budget and eat it whole. On a
+// flaky link the connect either lands fast or not at all, so cap it well short
+// of the response deadline and leave the rest of the budget for the model.
+const CONNECT_TIMEOUT_SECS: u64 = 3;
+
+/// Ceiling on the whole text-stack walk (see `fallback::run_with_failover`).
+/// Per-entry timeouts alone don't bound the wait: three providers × (timeout +
+/// retry) turned a network blip into a 26s edit, while the raw transcript was
+/// ready in half a second. The edit is a nice-to-have — `vocab::apply` is right
+/// there as a fallback — so it gets a fixed slice of the user's patience: two
+/// rungs' worth of timeout, then we paste what we have.
+pub const STACK_BUDGET_SECS: u64 = 8;
 
 pub fn find_provider(name: &str) -> Option<&'static ProviderConfig> {
     PROVIDERS.iter().find(|p| p.name == name)
@@ -267,6 +281,7 @@ fn client() -> &'static reqwest::blocking::Client {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
+            .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
             .build()
             .expect("failed to build postprocess HTTP client")
     })
@@ -294,9 +309,12 @@ pub fn edit_text(
     let t0 = std::time::Instant::now();
     let payload = build_payload(text, vocab, model);
 
-    // Single retry on any send() error: pooled TLS connections occasionally
-    // go stale between dictations and reqwest reports a generic transport
-    // error. Chat completion is idempotent, so a duplicate POST is safe.
+    // Single retry on a *non-timeout* transport error: pooled TLS connections
+    // occasionally go stale between dictations and reqwest reports a generic
+    // send error, which a fresh connection fixes instantly. A timeout is the
+    // opposite — the provider (or the link) is slow, and retrying only stacks
+    // another full wait on a user who is already waiting. Let the stack walk
+    // move to the next entry instead; that's what it's for.
     let send_once = || {
         client()
             .post(url)
@@ -307,7 +325,7 @@ pub fn edit_text(
     };
     let response = match send_once() {
         Ok(r) => r,
-        Err(first) => {
+        Err(first) if !first.is_timeout() => {
             crate::debug_log::log(&format!(
                 "postprocess retry after {} ({})",
                 error_kind(&first),
@@ -317,6 +335,7 @@ pub fn edit_text(
                 CallError::transport(e.is_timeout(), format!("{} after retry: {}", error_kind(&e), e))
             })?
         }
+        Err(e) => return Err(CallError::transport(true, format!("timeout: {}", e))),
     };
 
     let elapsed = t0.elapsed();

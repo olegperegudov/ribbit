@@ -733,7 +733,9 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 let start = fallback::active_index(fallback::Stack::Audio, fallback::cooldown(&cfg))
                     .min(entries.len() - 1);
                 match fallback::run_with_failover(
-                    fallback::Stack::Audio, &entries, start, fallback::threshold(&cfg),
+                    // No budget: a dropped dictation can't be recovered, so the
+                    // audio stack is allowed to wait the network out.
+                    fallback::Stack::Audio, &entries, start, fallback::threshold(&cfg), None,
                     |e, key| transcribe::transcribe_audio_blocking(
                         &audio_data, sample_rate, &languages, &e.url, key, &e.model,
                     ),
@@ -750,10 +752,11 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 // Pipeline: if LLM post-processing is enabled we send raw text +
                 // vocab to the model (it handles both punctuation and vocab
                 // mapping with context). Otherwise — strict vocab::apply.
-                // On LLM error we fall back to strict vocab::apply so the user
-                // is never blocked beyond the 5s timeout (+retry). Like STT,
+                // On LLM error we fall back to strict vocab::apply. Like STT,
                 // the edit walks the text stack within this request; entries
-                // without a key are skipped.
+                // without a key are skipped. Unlike STT the walk is capped by a
+                // time budget — the transcript is already safe, so a sick
+                // network must not hold the paste hostage.
                 let postprocess_enabled = cfg["postprocess_enabled"].as_bool().unwrap_or(false);
 
                 let mut llm_secs: Option<f32> = None;
@@ -777,11 +780,14 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         let start = fallback::active_index(fallback::Stack::Text, fallback::cooldown(&cfg))
                             .min(text_entries.len() - 1);
                         // Timed even on failure: a timed-out LLM burns its full
-                        // 5s timeout (+retry) before we fall back to vocab, and
-                        // that lost time must show up in the log.
+                        // timeout before we fall back to vocab, and that lost
+                        // time must show up in the log.
                         let t_llm = std::time::Instant::now();
                         let outcome = fallback::run_with_failover(
                             fallback::Stack::Text, &text_entries, start, fallback::threshold(&cfg),
+                            // The transcript is already in hand; the edit is worth
+                            // a bounded wait, never an open-ended one.
+                            Some(std::time::Duration::from_secs(postprocess::STACK_BUDGET_SECS)),
                             |e, key| postprocess::edit_text(&raw_text, &vocab_data, &e.url, key, &e.model),
                         );
                         llm_secs = Some(t_llm.elapsed().as_secs_f32());

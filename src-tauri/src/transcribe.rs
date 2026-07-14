@@ -13,6 +13,11 @@ fn client() -> &'static reqwest::blocking::Client {
             // for the slowness is upstream (16kHz downsample below + faster tier),
             // not a short deadline that drops audio on the floor.
             .timeout(std::time::Duration::from_secs(120))
+            // The generous overall timeout is about the *provider* being slow.
+            // A handshake that can't complete is a different animal: on a lossy
+            // link it hangs for tens of seconds and then dies anyway, so the
+            // retry below (a fresh connection) is worth reaching fast.
+            .connect_timeout(std::time::Duration::from_secs(4))
             .build()
             .expect("failed to build HTTP client")
     })

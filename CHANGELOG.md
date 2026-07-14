@@ -11,6 +11,29 @@ numbers increase quickly — each entry below maps to a published
 
 ### Fixed
 
+- **A network blip no longer costs half a minute.** On a lossy link a dictation
+  that normally takes ~1s took 25–33s (4 of 14 dictations on 2026-07-14, while
+  the Wi-Fi was dropping 30–90% of packets; median latency the whole week before
+  was 1.0s). Two amplifiers, both in Ribbit:
+  - *No connect timeout anywhere.* A handshake that can't complete on a lossy
+    link hangs for tens of seconds and dies anyway — one STT call sat 17s before
+    the transport error, then the retry succeeded in a second. Connect is now
+    capped (4s for STT, 3s for the edit) while the response timeouts stay as
+    they were: the provider being slow and the link being broken are different
+    animals.
+  - *The edit walked the whole text stack with no ceiling.* Three providers ×
+    (5s timeout + a retry that also re-paid the timeout) turned one blip into a
+    26.5s edit — on a transcript that had been ready in half a second. The walk
+    now has an 8s budget and stops when it's spent, timeouts are no longer
+    retried (a retry only stacks another wait on a user already waiting; the
+    next stack entry is the right move), and the raw transcript goes through
+    `vocab::apply` as before. The audio stack deliberately keeps no budget —
+    a dropped dictation is unrecoverable, so there it's right to wait.
+
+  Worst case for the LLM edit: ~10s instead of 26.5s, and the text still lands.
+  Tests: the stack walk stops once the budget is spent, and never skips its
+  first rung even with a zero budget (a request must always reach a provider).
+
 - **Closing the window no longer kills the app.** The window was destroyed on
   close (the cross, or ⌘W — macOS installs its own Close item whenever an app
   sets no menu of its own), and Ribbit has exactly one window: with it gone the
