@@ -218,11 +218,15 @@ pub fn run_with_failover<T>(
     budget: Option<Duration>,
     call: impl Fn(&ProviderEntry, &str) -> Result<T, CallError>,
 ) -> Result<(T, usize), String> {
-    run_with_failover_on(state(stack), stack, entries, start, threshold, budget, call)
+    let t0 = Instant::now();
+    run_with_failover_on(state(stack), stack, entries, start, threshold, budget, move || t0.elapsed(), call)
 }
 
-/// Core of `run_with_failover` with the state slot injected — unit tests pass
-/// their own `Mutex<StackState>` so they don't race on the process globals.
+/// Core of `run_with_failover` with the state slot and the clock injected — unit
+/// tests pass their own `Mutex<StackState>` so they don't race on the process
+/// globals, and their own `elapsed` so budget behaviour is asserted on exact
+/// values instead of on how fast the machine happened to run (the same reason
+/// `StackState` takes an explicit `now`).
 fn run_with_failover_on<T>(
     st: &Mutex<StackState>,
     stack: Stack,
@@ -230,9 +234,9 @@ fn run_with_failover_on<T>(
     start: usize,
     threshold: u32,
     budget: Option<Duration>,
+    elapsed: impl Fn() -> Duration,
     call: impl Fn(&ProviderEntry, &str) -> Result<T, CallError>,
 ) -> Result<(T, usize), String> {
-    let t0 = Instant::now();
     let mut last_err: Option<String> = None;
     for (i, entry) in entries.iter().enumerate().skip(start) {
         let name = if entry.label.is_empty() { entry.url.as_str() } else { entry.label.as_str() };
@@ -240,10 +244,10 @@ fn run_with_failover_on<T>(
         // *user* waits, so a rung is only worth starting while there's budget
         // left. The starting entry always gets its try — a zero-attempt walk
         // would fail the request without ever touching a provider.
-        if i > start && budget.is_some_and(|b| t0.elapsed() >= b) {
+        if i > start && budget.is_some_and(|b| elapsed() >= b) {
             crate::debug_log::log(&format!(
                 "{} stack: budget spent after {:.1}s, not trying '{}'",
-                stack.name(), t0.elapsed().as_secs_f32(), name
+                stack.name(), elapsed().as_secs_f32(), name
             ));
             break;
         }
@@ -430,12 +434,27 @@ mod tests {
         unsafe { std::env::set_var(env, "k") };
     }
 
+    /// Clock for the walks that run without a budget — never consulted.
+    fn no_time() -> Duration {
+        Duration::ZERO
+    }
+
+    /// Clock that advances by `step` on every call, so "how much of the budget
+    /// is left" is exact instead of depending on how fast the machine ran.
+    fn ticking(step: Duration) -> impl Fn() -> Duration {
+        let elapsed = std::cell::Cell::new(Duration::ZERO);
+        move || {
+            elapsed.set(elapsed.get() + step);
+            elapsed.get()
+        }
+    }
+
     #[test]
     fn failover_success_on_start_entry() {
         set_key("FO_T1_A");
         let st = Mutex::new(StackState::new());
         let entries = [entry("a", "FO_T1_A"), entry("b", "FO_T1_A")];
-        let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 2, None, |e, _| {
+        let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 2, None, no_time, |e, _| {
             Ok::<_, CallError>(e.id.clone())
         })
         .unwrap();
@@ -452,7 +471,7 @@ mod tests {
             // Take `start` in its own statement — the guard must drop before
             // run_with_failover_on locks the same mutex.
             let start = st.lock().unwrap().active;
-            run_with_failover_on(st, Stack::Audio, &entries, start, 2, None, |e, _| {
+            run_with_failover_on(st, Stack::Audio, &entries, start, 2, None, no_time, |e, _| {
                 if e.id == "a" {
                     Err(CallError::http(429, "rate limited".into()))
                 } else {
@@ -478,7 +497,7 @@ mod tests {
         let st = Mutex::new(StackState::new());
         let entries = [entry("a", "FO_T3_A"), entry("b", "FO_T3_A")];
         let calls = std::cell::Cell::new(0);
-        let out = run_with_failover_on(&st, Stack::Text, &entries, 0, 2, None, |_, _| {
+        let out = run_with_failover_on(&st, Stack::Text, &entries, 0, 2, None, no_time, |_, _| {
             calls.set(calls.get() + 1);
             Err::<String, _>(CallError::http(401, "bad key".into()))
         });
@@ -492,7 +511,7 @@ mod tests {
         set_key("FO_T4_B");
         let st = Mutex::new(StackState::new());
         let entries = [entry("a", "FO_T4_MISSING"), entry("b", "FO_T4_B")];
-        let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 2, None, |e, _| {
+        let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 2, None, no_time, |e, _| {
             Ok::<_, CallError>(e.id.clone())
         })
         .unwrap();
@@ -504,7 +523,7 @@ mod tests {
     fn failover_no_keys_at_all_is_actionable_error() {
         let st = Mutex::new(StackState::new());
         let entries = [entry("a", "FO_T5_MISSING")];
-        let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 2, None, |_, _| {
+        let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 2, None, no_time, |_, _| {
             Ok::<_, CallError>(String::new())
         });
         assert!(out.unwrap_err().contains("no API key"));
@@ -519,11 +538,13 @@ mod tests {
         let st = Mutex::new(StackState::new());
         let entries = [entry("a", "FO_T7_A"), entry("b", "FO_T7_A"), entry("c", "FO_T7_A")];
         let calls = std::cell::Cell::new(0);
+        // Each rung burns a 5s timeout against an 8s budget: the second still
+        // starts (5 < 8), the third does not (10 ≥ 8).
         let out = run_with_failover_on(
-            &st, Stack::Text, &entries, 0, 5, Some(Duration::from_millis(80)),
+            &st, Stack::Text, &entries, 0, 5, Some(Duration::from_secs(8)),
+            ticking(Duration::from_secs(5)),
             |_, _| {
                 calls.set(calls.get() + 1);
-                std::thread::sleep(Duration::from_millis(50));
                 Err::<String, _>(CallError::transport(true, "timeout".into()))
             },
         );
@@ -541,6 +562,7 @@ mod tests {
         let calls = std::cell::Cell::new(0);
         let out = run_with_failover_on(
             &st, Stack::Text, &entries, 0, 5, Some(Duration::ZERO),
+            ticking(Duration::from_secs(5)),
             |e, _| {
                 calls.set(calls.get() + 1);
                 Ok::<_, CallError>(e.id.clone())
@@ -555,7 +577,7 @@ mod tests {
         set_key("FO_T6_A");
         let st = Mutex::new(StackState::new());
         let entries = [entry("a", "FO_T6_A"), entry("b", "FO_T6_A")];
-        let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 5, None, |_, _| {
+        let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 5, None, no_time, |_, _| {
             Err::<String, _>(CallError::transport(true, "timeout".into()))
         });
         assert_eq!(out.unwrap_err(), "timeout");
