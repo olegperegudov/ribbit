@@ -802,7 +802,13 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                                 llm_host = Some(entry_host(e).to_string());
                                 llm_model = Some(e.model.clone());
                                 set_last_llm_error(None);
-                                (edited_text, true)
+                                // Deterministic vocab pass over the edited text.
+                                // The vocab table is MANDATORY replacements, but a
+                                // model can silently skip an alias it dislikes
+                                // (observed: "ТУТУ" left as-is instead of "TO-DO").
+                                // The strict pass only touches exact aliases, so it
+                                // guarantees the table without undoing the edit.
+                                (vocab::apply(&edited_text), true)
                             }
                             Err(msg) => {
                                 debug_log::log(&format!("postprocess failed ({}) — falling back to strict vocab", msg));

@@ -265,6 +265,16 @@ mod tests {
     }
 
     #[test]
+    fn mandatory_alias_enforced_over_edited_text() {
+        // The LLM editor may leave a mandatory alias untouched; the strict pass
+        // that runs over its output must still enforce the table. Case-insensitive:
+        // the alias is matched whatever case the model produced.
+        let v = vocab(&[("TO-DO", &["ТУТУ"])]);
+        assert_eq!(apply_with("Добавь это в ТУТУ.", &v), "Добавь это в TO-DO.");
+        assert_eq!(apply_with("добавь в туту список", &v), "добавь в TO-DO список");
+    }
+
+    #[test]
     fn alias_at_text_boundaries() {
         let v = vocab(&[("dev", &["def"])]);
         assert_eq!(apply_with("def", &v), "dev");
