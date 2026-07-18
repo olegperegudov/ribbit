@@ -9,6 +9,19 @@ numbers increase quickly — each entry below maps to a published
 
 ## [Unreleased]
 
+### Changed
+
+- **Dictionary terms are now enforced deterministically, not by the LLM.** The
+  editor model was handed the vocab table and asked to map terms itself — and it
+  either ignored mandatory replacements (dictated "ТУТУ" stayed "ТУТУ" instead of
+  "TO-DO") or invented "corrections" of its own (a dictated term came back as an
+  unrelated "Qwen"). The model no longer sees the dictionary at all: it only
+  punctuates, fixes ordinary spelling, and is explicitly forbidden from touching
+  or inventing terms, names, acronyms, and Latin words. Term mapping is done
+  afterwards by the exact `vocab::apply` pass, which runs over the edited text and
+  guarantees the table verbatim. Add an alias to the dictionary and it is now
+  applied every time, regardless of the model's mood.
+
 ### Fixed
 
 - **A network blip no longer costs half a minute.** On a lossy link a dictation

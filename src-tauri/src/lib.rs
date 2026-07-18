@@ -788,7 +788,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                             // The transcript is already in hand; the edit is worth
                             // a bounded wait, never an open-ended one.
                             Some(std::time::Duration::from_secs(postprocess::STACK_BUDGET_SECS)),
-                            |e, key| postprocess::edit_text(&raw_text, &vocab_data, &e.url, key, &e.model),
+                            |e, key| postprocess::edit_text(&raw_text, &e.url, key, &e.model),
                         );
                         llm_secs = Some(t_llm.elapsed().as_secs_f32());
                         match outcome {
@@ -802,13 +802,13 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                                 llm_host = Some(entry_host(e).to_string());
                                 llm_model = Some(e.model.clone());
                                 set_last_llm_error(None);
-                                // Deterministic vocab pass over the edited text.
-                                // The vocab table is MANDATORY replacements, but a
-                                // model can silently skip an alias it dislikes
-                                // (observed: "ТУТУ" left as-is instead of "TO-DO").
-                                // The strict pass only touches exact aliases, so it
-                                // guarantees the table without undoing the edit.
-                                (vocab::apply(&edited_text), true)
+                                // Terms are owned by this deterministic pass, not
+                                // the model: the editor only punctuates and fixes
+                                // ordinary spelling. The strict pass then maps every
+                                // exact alias to its canonical term — the mandatory
+                                // table a model can't be trusted to apply (it either
+                                // skipped aliases or invented its own "corrections").
+                                (vocab::apply_with(&edited_text, &vocab_data), true)
                             }
                             Err(msg) => {
                                 debug_log::log(&format!("postprocess failed ({}) — falling back to strict vocab", msg));
