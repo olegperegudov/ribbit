@@ -5,6 +5,7 @@ mod logger;
 mod debug_log;
 mod sound;
 mod vocab;
+mod hallucinations;
 mod postprocess;
 mod private;
 mod fallback;
@@ -749,6 +750,18 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
 
         match result {
             Ok(raw_text) => {
+                // Whisper hallucinates "Продолжение следует..." (and kin) on
+                // silence — cut it off the raw text before any downstream pass,
+                // which would otherwise preserve it verbatim.
+                let raw_text = {
+                    let stripped = hallucinations::strip(&raw_text);
+                    if stripped != raw_text {
+                        debug_log::log(&format!(
+                            "hallucination stripped: {:?} → {:?}", raw_text, stripped
+                        ));
+                    }
+                    stripped
+                };
                 // Pipeline: if LLM post-processing is enabled we send raw text +
                 // vocab to the model (it handles both punctuation and vocab
                 // mapping with context). Otherwise — strict vocab::apply.
@@ -768,7 +781,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 let any_text_key = text_entries
                     .iter()
                     .any(|e| std::env::var(&e.key_env).map(|k| !k.is_empty()).unwrap_or(false));
-                let (text, edited): (String, bool) = if postprocess_enabled && !text_entries.is_empty() {
+                let (text, edited): (String, bool) = if postprocess_enabled && !text_entries.is_empty() && !raw_text.trim().is_empty() {
                     if !any_text_key {
                         let msg = "no key set for any text provider".to_string();
                         debug_log::log(&format!("postprocess: {} — falling back to strict vocab", msg));
