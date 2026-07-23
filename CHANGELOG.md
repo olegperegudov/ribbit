@@ -24,6 +24,18 @@ numbers increase quickly — each entry below maps to a published
 
 ### Fixed
 
+- **The Mac can fall asleep again while Ribbit is running.** The sound player
+  opened an output stream on startup and kept it cached for the lifetime of the
+  app. A live stream keeps the speaker device running, and CoreAudio asserts
+  `PreventUserIdleSystemSleep` for as long as it does — so a Mac with Ribbit in
+  the tray never idled to sleep, and the display stayed lit past its timeout
+  (`pmset -g assertions` showed the assertion held for hours at −120 dB, i.e.
+  silence). The stream is now opened per sound and dropped right after playback,
+  so nothing claims the speakers between dictations. Windows still keeps the last
+  working stream cached — it refuses to open new audio sessions for unfocused
+  apps. Verified live: quitting Ribbit dropped the assertion, relaunching it
+  brought the assertion back within 10s.
+
 - **A network blip no longer costs half a minute.** On a lossy link a dictation
   that normally takes ~1s took 25–33s (4 of 14 dictations on 2026-07-14, while
   the Wi-Fi was dropping 30–90% of packets; median latency the whole week before

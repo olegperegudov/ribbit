@@ -58,22 +58,15 @@ impl SoundPlayer {
         std::thread::spawn(move || {
             crate::debug_log::log("sound: thread started");
 
-            // Keep a cached stream for when we can't open a fresh one (e.g. unfocused).
-            // Try fresh stream first each time — this handles device changes and stale streams.
-            // Fall back to cached stream if fresh open fails (Windows blocks new audio sessions
-            // for unfocused apps).
+            // Windows blocks new audio sessions for unfocused apps, so there the last
+            // working stream is kept as a fallback.
+            //
+            // macOS deliberately keeps nothing: a live OutputStream holds the speaker
+            // device running, and CoreAudio then asserts PreventUserIdleSystemSleep for
+            // as long as it does. Ribbit sits in the tray all day, so an idle cached
+            // stream meant the Mac never fell asleep on its own (found 2026-07-24).
+            #[cfg(windows)]
             let mut cached: Option<(rodio::OutputStream, rodio::OutputStreamHandle)> = None;
-
-            // Initialize cached stream
-            match rodio::OutputStream::try_default() {
-                Ok((stream, handle)) => {
-                    crate::debug_log::log("sound: initial stream opened");
-                    cached = Some((stream, handle));
-                }
-                Err(e) => {
-                    crate::debug_log::log(&format!("sound: initial open failed: {}", e));
-                }
-            };
 
             for kind in rx {
                 let label = match &kind {
@@ -95,32 +88,38 @@ impl SoundPlayer {
                     (QUACK_OGG, "frog")
                 };
 
-                // Strategy: try fresh stream first, fall back to cached.
-                // This ensures we always use the current default audio device,
-                // but still work when unfocused (Windows blocks new stream creation).
+                // A stream is opened for the sound and handed back right after it:
+                // that picks up device changes and leaves no idle claim on the speakers.
                 let mut played = false;
 
-                // Try opening a fresh stream (picks up device changes)
-                if let Ok((new_stream, new_handle)) = rodio::OutputStream::try_default() {
-                    if play_on(&new_handle, ogg_data, pack_name, label) {
-                        // Fresh stream worked — update cache
-                        cached = Some((new_stream, new_handle));
-                        played = true;
+                match rodio::OutputStream::try_default() {
+                    Ok((stream, handle)) => {
+                        played = play_on(&handle, ogg_data, pack_name, label);
+                        #[cfg(windows)]
+                        if played {
+                            cached = Some((stream, handle));
+                        }
+                        #[cfg(not(windows))]
+                        drop(stream);
+                    }
+                    Err(e) => {
+                        crate::debug_log::log(&format!("sound: open failed: {}", e));
                     }
                 }
 
-                // Fall back to cached stream
+                #[cfg(windows)]
                 if !played {
                     if let Some((_, ref handle)) = cached {
                         crate::debug_log::log("sound: fresh stream failed, using cached");
                         played = play_on(handle, ogg_data, pack_name, label);
                     }
+                    if !played {
+                        cached = None;
+                    }
                 }
 
-                // Both failed — try to re-init cache for next time
                 if !played {
-                    crate::debug_log::log("sound: all playback failed, will retry next time");
-                    cached = None;
+                    crate::debug_log::log("sound: playback failed, will retry next time");
                 }
             }
             crate::debug_log::log("sound: channel closed, thread exiting");
