@@ -35,6 +35,14 @@ pub struct TranscriptionLog<'a> {
     pub llm_host: Option<&'a str>,
     /// Wall time of typing the text into the focused app.
     pub insert_secs: f32,
+    /// Bundle id of the app that received the keystrokes. Answers "the text is
+    /// missing — where did it actually go?" days later, when the session log
+    /// that would have shown it is long gone.
+    pub insert_target: Option<&'a str>,
+    /// Why insertion failed, `None` when it went through. The daily log is the
+    /// only record that survives a restart, so a swallowed dictation has to
+    /// leave its reason here rather than only in the session log.
+    pub insert_error: Option<&'a str>,
     /// Whole post-release pipeline. `total - stt - llm - insert` is the fixed
     /// overhead (the 200ms focus-regain sleep + bookkeeping).
     pub total_secs: f32,
@@ -81,6 +89,8 @@ fn build_entry(rec: &TranscriptionLog, ts: &str) -> serde_json::Value {
         "llm_model": rec.llm_model,
         "llm_host": rec.llm_host,
         "insert_secs": rec.insert_secs,
+        "insert_target": rec.insert_target,
+        "insert_error": rec.insert_error,
         "total_secs": rec.total_secs,
         "idle_secs": rec.idle_secs,
     })
@@ -166,6 +176,8 @@ mod tests {
             llm_model: Some("google/gemma-4-26b-a4b-it"),
             llm_host: Some("routerai.ru"),
             insert_secs: 0.5,
+            insert_target: Some("com.apple.Safari"),
+            insert_error: None,
             total_secs: 3.75,
             idle_secs: Some(42.0),
         };
@@ -181,8 +193,35 @@ mod tests {
         assert_eq!(e["llm_model"], "google/gemma-4-26b-a4b-it");
         assert_eq!(e["llm_host"], "routerai.ru");
         assert_eq!(e["insert_secs"], 0.5);
+        assert_eq!(e["insert_target"], "com.apple.Safari");
+        assert!(e["insert_error"].is_null());
         assert_eq!(e["total_secs"], 3.75);
         assert_eq!(e["idle_secs"], 42.0);
+    }
+
+    /// The whole point of the field: a dictation nobody saw must say so in the
+    /// only log that outlives the session.
+    #[test]
+    fn build_entry_records_why_insertion_failed() {
+        let rec = TranscriptionLog {
+            text: "привет",
+            raw_text: None,
+            edited: false,
+            audio_secs: 1.0,
+            stt_secs: 0.5,
+            stt_model: "groq/whisper-large-v3-turbo",
+            llm_secs: None,
+            llm_model: None,
+            llm_host: None,
+            insert_secs: 0.0,
+            insert_target: Some("com.apple.Terminal"),
+            insert_error: Some("macOS secure input is on"),
+            total_secs: 0.6,
+            idle_secs: None,
+        };
+        let e = build_entry(&rec, "ts");
+        assert_eq!(e["insert_error"], "macOS secure input is on");
+        assert_eq!(e["insert_target"], "com.apple.Terminal");
     }
 
     #[test]
@@ -198,6 +237,8 @@ mod tests {
             llm_model: None,
             llm_host: None,
             insert_secs: 0.1,
+            insert_target: None,
+            insert_error: None,
             total_secs: 1.1,
             idle_secs: None,
         };

@@ -863,12 +863,19 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     // Direct keyboard input — does NOT touch the clipboard.
                     // If insert fails, the transcript is still in the log;
                     // the user can click it to copy manually.
+                    // Read the target before the timer so insert_secs stays pure
+                    // typing time.
+                    let insert_target = inserter::target_app();
                     let t_insert = std::time::Instant::now();
-                    if let Err(e) = inserter::insert_text(&text) {
-                        debug_log::log(&format!("insert error: {}", e));
-                        let _ = app_handle.emit("error",
-                            format!("Insert failed — text saved to log. {}", e));
-                    }
+                    let insert_error = match inserter::insert_text(&text) {
+                        Ok(()) => None,
+                        Err(e) => {
+                            debug_log::log(&format!("insert error: {}", e));
+                            let _ = app_handle.emit("error",
+                                format!("Insert failed — text saved to log. {}", e));
+                            Some(e)
+                        }
+                    };
                     let insert_secs = t_insert.elapsed().as_secs_f32();
 
                     let _ = app_handle.emit("status-detail", "Done!");
@@ -889,16 +896,19 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         llm_model: llm_model.as_deref(),
                         llm_host: llm_host.as_deref(),
                         insert_secs,
+                        insert_target: insert_target.as_deref(),
+                        insert_error: insert_error.as_deref(),
                         total_secs,
                         idle_secs,
                     });
                     debug_log::log(&format!(
-                        "timing: stt={:.1}s llm={} insert={:.1}s total={:.1}s ({} chars)",
+                        "timing: stt={:.1}s llm={} insert={:.1}s total={:.1}s ({} chars) into {}",
                         stt_secs,
                         llm_secs.map(|s| format!("{:.1}s", s)).unwrap_or_else(|| "off".into()),
                         insert_secs,
                         total_secs,
                         text.chars().count(),
+                        insert_target.as_deref().unwrap_or("unknown app"),
                     ));
                 }
             }
@@ -1398,6 +1408,13 @@ pub fn run() {
                 }
             });
 
+            // Stamped at launch as well as per dictation: a grant that was
+            // revoked while the app slept explains every insert that follows.
+            debug_log::log(&format!(
+                "insert gates: accessibility_trusted={} secure_input={}",
+                inserter::accessibility_trusted(),
+                inserter::secure_input_active()
+            ));
             debug_log::log("setup complete");
             Ok(())
         })

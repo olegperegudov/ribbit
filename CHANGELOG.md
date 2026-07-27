@@ -11,6 +11,19 @@ numbers increase quickly — each entry below maps to a published
 
 ### Changed
 
+- **A dictation that was never typed now says so.** macOS can swallow synthetic
+  keystrokes two ways — the Accessibility grant for posting events is gone, or
+  some password field holds secure input for the whole system — and in both
+  cases the event API still reports success. Ribbit believed it: the session log
+  said "inserted N chars", the daily log carried a normal `insert_secs`, and the
+  only sign anything went wrong was an empty text field. Both gates are now
+  checked before typing; when one is up, insertion fails with the reason on
+  screen instead of silently succeeding. Every dictation also records which app
+  received the keystrokes (`insert_target`) and why insertion failed
+  (`insert_error`) in the daily log, which — unlike the session log — survives a
+  restart. Launch stamps the gate state too, so a grant revoked overnight
+  explains every insert that follows it.
+
 - **Dictionary terms are now enforced deterministically, not by the LLM.** The
   editor model was handed the vocab table and asked to map terms itself — and it
   either ignored mandatory replacements (dictated "ТУТУ" stayed "ТУТУ" instead of
