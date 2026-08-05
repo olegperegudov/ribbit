@@ -63,7 +63,7 @@ function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
   // dot stands alone.
   const labelText = `${llmHost} | ${llmModel}`;
   const labelHtml = (edited === true && llmHost && llmModel)
-    ? `<span class="log-llm-label" data-hint="${escapeHtml(labelText)}" tabindex="0">${escapeHtml(labelText)}</span>`
+    ? `<span class="log-llm-label">${escapeHtml(labelText)}</span>`
     : "";
   entry.innerHTML = `<span class="log-time">${time}</span><div class="log-body"><span class="log-text">${escapeHtml(text)}</span><button class="log-more" type="button">show all</button><div class="log-meta"><span class="log-llm-dot ${dotClass}" data-hint="${escapeHtml(dotHint)}" tabindex="0"></span>${labelHtml}</div></div>`;
   // Copying a line is why the window opens, so the row is a real button: it
@@ -105,6 +105,7 @@ function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
   });
 
   markClamped(entry);
+  markLabelClipped(entry);
   // A transcript arriving while search is active must obey the active filter.
   if (searchQuery.trim()) applySearchFilter();
   else refreshLogEmpty();
@@ -129,8 +130,34 @@ function markClamped(entry) {
 }
 
 function markAllClamped() {
-  for (const entry of $("#log-entries").querySelectorAll(".log-entry:not(.expanded)")) {
-    markClamped(entry);
+  for (const entry of $("#log-entries").querySelectorAll(".log-entry")) {
+    if (!entry.classList.contains("expanded")) markClamped(entry);
+    markLabelClipped(entry);
+  }
+}
+
+// Both measurements go stale on their own, because the window is resizable: a
+// wider window un-clips the label, a narrower one folds another line into the
+// clamp. One pass per frame is enough for a drag.
+let remeasureFrame = 0;
+window.addEventListener("resize", () => {
+  cancelAnimationFrame(remeasureFrame);
+  remeasureFrame = requestAnimationFrame(markAllClamped);
+});
+
+// The provider label ellipsizes when the window is too narrow for the model id,
+// and the tooltip exists to give back what was cut off. On a row where the whole
+// label already fits, that tooltip repeats the words under the cursor and covers
+// the row below — so it is offered only when there is something to recover.
+function markLabelClipped(entry) {
+  const label = entry.querySelector(".log-llm-label");
+  if (!label) return;
+  if (label.scrollWidth > label.clientWidth + 1) {
+    label.dataset.hint = label.textContent;
+    label.tabIndex = 0;
+  } else {
+    delete label.dataset.hint;
+    label.removeAttribute("tabindex");
   }
 }
 

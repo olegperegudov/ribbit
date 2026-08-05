@@ -11,6 +11,16 @@ numbers increase quickly — each entry below maps to a published
 
 ### Fixed
 
+- **The provider label no longer repeats itself in a tooltip.** Hovering
+  `api.groq.com | llama-3.3-70b-versatile` popped a tooltip with exactly those
+  words, over the row below. The hint exists to recover the value when the
+  column is too narrow for it, so it is now attached only to a label that is
+  actually ellipsized, and dropped again when it fits. The row's own "click to
+  copy" hint is unaffected. Both measurements (this and the four-line clamp)
+  now also re-run on window resize — the window is resizable and they went
+  stale silently. Guard: `log_density.test.js` fails if a hint is baked into
+  the markup again; verified in the rendered page at both widths.
+
 - **A dictation that never reached the app now says so.** When macOS refuses the
   keystrokes, the words are transcribed and the insert fails — and that failure
   was announced in the app's own success colour, cut off mid-sentence by a

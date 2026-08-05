@@ -42,6 +42,21 @@ describe("an empty log", () => {
   });
 });
 
+describe("the provider label", () => {
+  it("carries no tooltip at render time", () => {
+    // A hint baked into the markup fires on every row, repeating the words the
+    // cursor is already on and covering the row below.
+    const markup = js.slice(js.indexOf("const labelHtml"), js.indexOf("entry.innerHTML"));
+    expect(markup).not.toMatch(/data-hint/);
+  });
+
+  it("offers one only when the text is actually cut off", () => {
+    const fn = js.slice(js.indexOf("function markLabelClipped"), js.indexOf("function markEntryFailed"));
+    expect(fn).toMatch(/scrollWidth > label\.clientWidth/);
+    expect(fn).toMatch(/delete label\.dataset\.hint/);
+  });
+});
+
 describe("the bundled type", () => {
   it("ships the face instead of hoping the system has it", () => {
     // Cyrillic fell back to a proportional face mid-sentence without this.
