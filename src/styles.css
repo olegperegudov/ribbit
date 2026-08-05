@@ -1126,6 +1126,8 @@ kbd.capturing {
 }
 .vocab-alias-x:hover { color: #ef4444; }
 
+/* Kept a gutter away from the alias chips: this × takes the word and every
+   alias under it, and the two used to sit a few pixels apart. */
 .vocab-row-x {
   background: none;
   border: none;
@@ -1133,11 +1135,25 @@ kbd.capturing {
   cursor: pointer;
   font-size: 0.8rem;
   padding: 0 4px;
+  margin-left: 0.9rem;
   font-family: inherit;
   flex-shrink: 0;
   transition: color 0.15s;
 }
 .vocab-row-x:hover { color: #ef4444; }
+
+/* Armed for a second click: the button says what it is about to do, in the
+   colour of the thing it is about to do, and forgets after three seconds. */
+.confirming {
+  color: #f87171;
+  font-size: 0.6rem;
+  letter-spacing: 0.02em;
+}
+.provider-mini-btn.confirming {
+  width: auto;
+  padding: 0 0.3rem;
+  border-color: rgba(248, 113, 113, 0.5);
+}
 
 .vocab-hint {
   color: #4b5563;

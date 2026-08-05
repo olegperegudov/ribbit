@@ -1,4 +1,5 @@
 import { applyVocab, findBestMatch } from "./vocab.js";
+import { armConfirm } from "./confirm.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -573,7 +574,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     b.textContent = label;
     b.title = title;
     b.disabled = !!disabled;
-    if (!disabled) b.addEventListener("click", onClick);
+    // The handler is handed its own button so it can arm a confirmation on it.
+    if (!disabled) b.addEventListener("click", () => onClick(b));
     return b;
   }
 
@@ -624,7 +626,10 @@ window.addEventListener("DOMContentLoaded", async () => {
       await invoke("move_provider", { kind, id: entry.id, up: false });
       renderStack(kind);
     }));
-    const del = miniBtn("✕", false, "Remove", async () => {
+    // Removing a provider takes its saved key with it, and the key came from a
+    // console the user has to log into again. Same two-step as the vocabulary.
+    const del = miniBtn("✕", false, "Remove", async (btn) => {
+      if (!armConfirm(btn, "remove?")) return;
       await invoke("remove_provider", { kind, id: entry.id });
       renderStack(kind);
     });
@@ -974,6 +979,9 @@ window.addEventListener("DOMContentLoaded", async () => {
         renderVocabList($("#vocab-search").value);
       } catch (err) { console.error(err); }
     } else if (rowBtn) {
+      // This one takes the word and every alias taught for it — months of
+      // corrections behind a 15px glyph that sits inches from the alias ×.
+      if (!armConfirm(rowBtn, "remove word?")) return;
       const target = rowBtn.dataset.target;
       try {
         vocabData = await invoke("remove_vocab_entry", { target });

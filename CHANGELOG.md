@@ -9,6 +9,31 @@ numbers increase quickly — each entry below maps to a published
 
 ## [Unreleased]
 
+### Fixed
+
+- **A dictation that never reached the app now says so.** When macOS refuses the
+  keystrokes, the words are transcribed and the insert fails — and that failure
+  was announced in the app's own success colour, cut off mid-sentence by a
+  single-line field, lowercased (mangling the `System Settings → Privacy &
+  Security → Accessibility` path it asks you to walk), for five seconds, in a
+  window that is closed while you dictate. It now appears as a red note above
+  the panels that wraps to full length and stays until dismissed, the row that
+  was not delivered keeps a red dot in the log (including when the
+  post-processing dots are off), and the menu-bar frog wears a red badge until
+  the next dictation lands or the note is dismissed. Six status messages the
+  backend had been emitting all along — "no speech detected", "mic heard
+  nothing", "too short" — had no listener in the window at all; they are now
+  shown, so a dictation that produced nothing no longer looks like one that
+  worked.
+
+- **Deleting a vocabulary word asks first.** The × that removes a word and every
+  alias taught for it sat a few pixels from the × that removes one alias, in the
+  same faint grey, and committed on the first click with no undo — one mis-aimed
+  click could take months of corrections. It now turns into `remove word?` and
+  waits for a second click (reverting after three seconds), and it keeps a
+  gutter away from the alias chips. Removing a provider, which takes its saved
+  key with it, asks the same way. Removing a single alias stays one click.
+
 ### Changed
 
 - **The window now hangs off the menu-bar icon instead of floating on its own.**
