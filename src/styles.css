@@ -267,7 +267,7 @@ body {
   outline-offset: -1px;
 }
 .log-entry.copied {
-  background: rgba(34, 197, 94, 0.1);
+  background: rgba(74, 222, 128, 0.1);
 }
 .log-entry.copied .log-text {
   color: #4ade80;
@@ -392,7 +392,7 @@ body {
 }
 #setup input:focus {
   outline: none;
-  border-color: rgba(34, 197, 94, 0.4);
+  border-color: rgba(74, 222, 128, 0.4);
 }
 
 #setup button {
@@ -496,9 +496,9 @@ body {
 .key-edit-link:hover { color: #d1d5db; }
 .key-status.flash { animation: keyFlash 1.2s ease; }
 @keyframes keyFlash {
-  0%   { background: rgba(34, 197, 94, 0); }
-  15%  { background: rgba(34, 197, 94, 0.28); }
-  100% { background: rgba(34, 197, 94, 0); }
+  0%   { background: rgba(74, 222, 128, 0); }
+  15%  { background: rgba(74, 222, 128, 0.28); }
+  100% { background: rgba(74, 222, 128, 0); }
 }
 
 /* Compact inputs inside provider cards — fill the row next to their label. */
@@ -754,7 +754,6 @@ body {
 .log-llm-label {
   font-size: 0.7rem;
   color: #858e9c;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -800,7 +799,7 @@ kbd.capturing {
 }
 .setting-btn:hover {
   color: #4ade80;
-  border-color: rgba(34, 197, 94, 0.3);
+  border-color: rgba(74, 222, 128, 0.3);
 }
 
 /* Version link */
@@ -828,7 +827,7 @@ kbd.capturing {
 }
 #sound-select:hover, #llm-provider-select:hover {
   color: #4ade80;
-  border-color: rgba(34, 197, 94, 0.3);
+  border-color: rgba(74, 222, 128, 0.3);
 }
 #sound-select:focus, #llm-provider-select:focus {
   outline: none;
@@ -876,7 +875,7 @@ kbd.capturing {
 }
 
 .toggle input:checked + .toggle-slider {
-  background: rgba(34, 197, 94, 0.3);
+  background: rgba(74, 222, 128, 0.3);
 }
 
 .toggle input:checked + .toggle-slider::before {
@@ -997,7 +996,7 @@ kbd.capturing {
 
 #lang-select:hover {
   color: #4ade80;
-  border-color: rgba(34, 197, 94, 0.3);
+  border-color: rgba(74, 222, 128, 0.3);
 }
 
 #lang-select:focus {
@@ -1093,14 +1092,14 @@ kbd.capturing {
 #vocab-popup-suggestion {
   font-size: 0.7rem;
   color: #4ade80;
-  background: rgba(34, 197, 94, 0.08);
+  background: rgba(74, 222, 128, 0.08);
   border-radius: 4px;
   padding: 0.25rem 0.4rem;
   cursor: pointer;
   transition: background 0.15s;
 }
 #vocab-popup-suggestion:hover {
-  background: rgba(34, 197, 94, 0.18);
+  background: rgba(74, 222, 128, 0.18);
 }
 
 /* Vocab panel */
@@ -1303,13 +1302,13 @@ kbd.capturing {
   transition: color 0.15s;
 }
 .merge-yes { color: #4ade80; }
-.merge-yes:hover { color: #22c55e; background: rgba(34, 197, 94, 0.1); }
+.merge-yes:hover { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
 .merge-no { color: #858e9c; }
 .merge-no:hover { color: #ef4444; }
 
 /* Vocab selection highlight (fuchsia while popup is open) */
 .vocab-selection-highlight {
-  background: rgba(217, 70, 239, 0.3);
+  background: rgba(232, 121, 249, 0.3);
   color: #e879f9;
   border-radius: 2px;
   padding: 0 1px;

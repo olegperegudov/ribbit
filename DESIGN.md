@@ -24,6 +24,7 @@ colors:
   text-primary: "#d1d5db"
   text-secondary: "#9ca3af"
   text-dim: "#858e9c"
+  text-on-hit: "#ffffff"
 typography:
   title:
     fontFamily: "JetBrains Mono, Cascadia Code, Fira Code, SF Mono, Consolas, monospace"
@@ -47,8 +48,10 @@ typography:
     fontWeight: 600
     letterSpacing: "0.06em"
 rounded:
+  hair: "2px"
   chip: "3px"
   control: "4px"
+  field: "5px"
   card: "6px"
   popover: "8px"
   window: "10px"
@@ -130,7 +133,7 @@ Green is not decoration. It marks the live and the done: the audio meter while y
 A near-black pond with one green light in it: five neutral steps of near-black and grey text, a single accent, and three status hues that are allowed to shout because nothing else does.
 
 ### Primary
-- **Cursor Green** (`#4ade80`): the live/done signal. Audio meter fill, the flash on a copied line, saved-key check, enabled toggle knob, vocabulary target words, focus borders, links in the setup screen, and the "primary" tag on the first provider in a stack.
+- **Cursor Green** (`#4ade80`): the live/done signal, and the only green in the app — its washes and borders are alphas of this one hex. A second, deeper green (`#22c55e`) used to carry the same meaning in half the washes. Audio meter fill, the flash on a copied line, saved-key check, enabled toggle knob, vocabulary target words, focus borders, links in the setup screen, and the "primary" tag on the first provider in a stack.
 - **Deep Green** (`#166534`, hover `#15803d`): the filled surface of the two committing buttons (save key, add vocabulary entry). The only saturated fills in the product.
 
 ### Secondary
@@ -152,7 +155,7 @@ A near-black pond with one green light in it: five neutral steps of near-black a
 - **Text ramp**: bright `#f3f4f6` (the wordmark and screen titles) → primary `#d1d5db` (typed text, tooltips) → secondary `#9ca3af` (log lines, setting labels) → dim `#858e9c` (timestamps, units, hints, inactive icons, remove ×). Four steps, all of them legible: the ramp used to have two fainter steps (`#6b7280` at 3.86:1 and `#4b5563` at 2.47:1) that failed WCAG AA while carrying timestamps, the `?` hints and provider labels.
 
 ### Named Rules
-**The One Light Rule.** Green means live or done — nothing else. If a green pixel is on screen and nothing happened, the green is wrong.
+**The One Light Rule.** Green means live or done — nothing else. If a green pixel is on screen and nothing happened, the green is wrong. One hex, `#4ade80`: every wash, border and hover is an alpha of it, never a second green.
 
 **The Legible Ramp Rule.** Every grey in the ramp clears 4.5:1 on every surface it lands on (`#0a0e12` through `#1a1f28`). A new "just a bit fainter" grey is not a design choice, it is a bug — `src/contrast.test.js` recomputes the ratios from the stylesheet.
 
@@ -206,7 +209,7 @@ Drop shadows are reserved for layers that genuinely float above the interface an
 
 ## Shapes
 
-Corners scale with the size of the thing: 3px on chips and tiny toggles, 4px on controls and inputs, 6px on cards and grouping blocks, 8px on floating popups, 10px on the window itself. Circles are reserved for two roles — the step numbers in setup and the hint mark — plus the 6px status dot under a log line.
+Corners scale with the size of the thing: 2px on the audio meter's 6px trough, 3px on chips and tiny toggles, 4px on controls, 5px on the popup text fields, 6px on cards and grouping blocks, 8px on floating popups, 10px on the window itself. Circles are reserved for two roles — the step numbers in setup and the hint mark — plus the 6px status dot under a log line.
 
 Recessed groups use an asymmetric radius (`0 6px 6px 0`) with a 2px green left edge: the block is cut off flush at its left so the edge reads as a bracket tying those rows to the toggle above them, not as a decorative stripe. Borders are 1px `#2a3040` and appear only on things you can type into or press; everything else is separated by a 1px `#1a1f28` hairline or by tone alone. The scrollbar is a 3px thumb on a transparent track.
 
