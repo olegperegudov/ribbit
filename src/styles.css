@@ -387,6 +387,18 @@ body {
   min-height: 0;
 }
 
+/* Group head. Borrows the day separator's voice from the log — the same small,
+   letter-spaced, faded label — so the panel reads with the same grammar as the
+   screen next door instead of inventing a second one. */
+.settings-group-head {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #9ca3af;
+  padding: 0.9rem 0 0.25rem;
+}
+.settings-group-head:first-child { padding-top: 0.2rem; }
+
 .setting-row {
   display: flex;
   justify-content: space-between;
@@ -522,7 +534,7 @@ body {
   flex-direction: column;
   gap: 0.3rem;
 }
-.provider-head { display: flex; justify-content: space-between; align-items: center; }
+.provider-head { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
 .provider-name {
   font-size: 0.72rem;
   color: #cbd5e1;
@@ -530,7 +542,32 @@ body {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
 }
+
+/* Collapsed by default: url, model and key are set once and never touched
+   again, while the settings above them are the reason the panel gets opened. */
+.provider-chevron {
+  color: #9ca3af;
+  font-size: 0.8rem;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+.provider-card.open .provider-chevron { transform: rotate(90deg); }
+.provider-summary {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 0.65rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.provider-card.open .provider-summary { display: none; }
+.provider-body { display: none; flex-direction: column; gap: 0.3rem; }
+.provider-card.open .provider-body { display: flex; }
 .provider-primary-tag {
   font-size: 0.55rem;
   text-transform: uppercase;

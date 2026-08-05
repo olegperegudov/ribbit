@@ -54,6 +54,9 @@
 
       <div id="settings-panel" style="display:none">
         <div class="settings-content">
+          <!-- Three groups instead of eleven undifferentiated rows: how you talk
+               to Ribbit, what it does to the text, and what it keeps. -->
+          <div class="settings-group-head">speaking</div>
           <div class="setting-row">
             <span class="setting-label">hotkey <span class="hint-icon" data-hint="Click the shortcut, press your new combo, then Enter to save or Esc to cancel." tabindex="0" role="button" aria-label="Help: hotkey">?</span></span>
             <kbd id="shortcut-display">ctrl+alt+space</kbd>
@@ -64,13 +67,6 @@
               <option value="frog">frog</option>
               <option value="ping">ping</option>
             </select>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">history <span class="hint-icon" data-hint="How many days of transcripts to keep on this computer, counting today. Older days are deleted automatically. Quick search looks across everything kept here. Set to 1 to keep only today." tabindex="0" role="button" aria-label="Help: history">?</span></span>
-            <div class="history-days">
-              <input type="number" id="history-days-input" min="1" max="365" />
-              <span class="history-days-unit">days</span>
-            </div>
           </div>
           <div class="setting-row setting-row-lang">
             <span class="setting-label">languages <span class="hint-icon" data-hint="Optional. Groq auto-detects the language, but selecting yours reduces errors — especially for short phrases." tabindex="0" role="button" aria-label="Help: languages">?</span></span>
@@ -106,6 +102,7 @@
               back after <input type="number" id="fb-cooldown" min="1" max="1440" /> min
             </span>
           </div>
+          <div class="settings-group-head">text</div>
           <div class="setting-row">
             <span class="setting-label">vocabulary <span class="hint-icon" data-hint="Custom word replacements. Fix recurring transcription mistakes — e.g. 'def' → 'dev'. Select a word in the log to add it quickly." tabindex="0" role="button" aria-label="Help: vocabulary">?</span></span>
             <button id="vocab-btn" class="setting-btn">abc</button>
@@ -123,6 +120,14 @@
             <div id="text-stack" class="provider-stack"></div>
             <div class="setting-row" id="llm-error-row" style="display:none">
               <span class="llm-error-text" id="llm-error-text"></span>
+            </div>
+          </div>
+          <div class="settings-group-head">this computer</div>
+          <div class="setting-row">
+            <span class="setting-label">history <span class="hint-icon" data-hint="How many days of transcripts to keep on this computer, counting today. Older days are deleted automatically. Quick search looks across everything kept here. Set to 1 to keep only today." tabindex="0" role="button" aria-label="Help: history">?</span></span>
+            <div class="history-days">
+              <input type="number" id="history-days-input" min="1" max="365" />
+              <span class="history-days-unit">days</span>
             </div>
           </div>
           <div class="setting-row">

@@ -597,24 +597,43 @@ window.addEventListener("DOMContentLoaded", async () => {
     return row;
   }
 
-  // One provider entry as a compact card: header (name + reorder/remove) over
-  // url, model and key fields. `entry` = {id,label,url,model,key_env,has_key}.
+  // Host only — the summary line answers "which service is this", not "what is
+  // the exact path". A custom entry with a half-typed url shows what it has.
+  function providerHost(url) {
+    if (!url) return "no address yet";
+    try { return new URL(url).host; } catch (_) { return url; }
+  }
+
+  // One provider entry as a compact card. Collapsed to a summary line by
+  // default: url, model and key are set once and then never touched again, and
+  // five expanded cards buried the settings people actually come back for.
+  // A card with no key yet opens itself — that one does need attention.
+  // `entry` = {id,label,url,model,key_env,has_key}.
   function providerCard(kind, entry, index, total) {
     const card = document.createElement("div");
-    card.className = "provider-card";
+    card.className = entry.has_key ? "provider-card" : "provider-card open";
 
     const head = document.createElement("div");
     head.className = "provider-head";
     const name = document.createElement("span");
     name.className = "provider-name";
-    name.textContent = entry.label || "custom";
+    const chevron = document.createElement("span");
+    chevron.className = "provider-chevron";
+    chevron.textContent = "›";
+    name.append(chevron, document.createTextNode(entry.label || "custom"));
     if (index === 0) {
       const tag = document.createElement("span");
       tag.className = "provider-primary-tag";
       tag.textContent = "primary";
       name.appendChild(tag);
     }
+    const summary = document.createElement("span");
+    summary.className = "provider-summary";
+    summary.textContent = providerHost(entry.url);
+    name.appendChild(summary);
     head.appendChild(name);
+    // The name is the handle; the reorder/remove buttons next to it are not.
+    name.addEventListener("click", () => card.classList.toggle("open"));
 
     const ctrls = document.createElement("div");
     ctrls.className = "provider-ctrls";
@@ -638,10 +657,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     head.appendChild(ctrls);
     card.appendChild(head);
 
-    card.appendChild(fieldRow("url", entry.url, "https://.../v1/...", (v) =>
+    const body = document.createElement("div");
+    body.className = "provider-body";
+    body.appendChild(fieldRow("url", entry.url, "https://.../v1/...", (v) =>
       invoke("set_provider_field", { kind, id: entry.id, field: "url", value: v })
     ));
-    card.appendChild(fieldRow("model", entry.model, "model id", (v) =>
+    body.appendChild(fieldRow("model", entry.model, "model id", (v) =>
       invoke("set_provider_field", { kind, id: entry.id, field: "model", value: v })
     ));
 
@@ -668,7 +689,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       try { await invoke("set_provider_key", { kind, id: entry.id, key: k }); cell.showSaved(true); }
       catch (e) { console.error("set_provider_key failed:", e); }
     });
-    card.appendChild(keyRow);
+    body.appendChild(keyRow);
+    card.appendChild(body);
 
     return card;
   }
