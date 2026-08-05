@@ -28,6 +28,26 @@ html, body {
   overscroll-behavior: none;
 }
 
+/* Shipped, not borrowed from the system. Ribbit's own screenshots showed Latin
+   runs in monospace and Cyrillic runs in whatever proportional face the OS fell
+   back to — inside the same sentence, because the user dictates in both. The
+   bundled file covers both alphabets, so a mixed line keeps one rhythm.
+   JetBrains Mono, SIL Open Font License 1.1 — see fonts/OFL.txt. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
 body {
   font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", "SF Mono", Consolas, monospace;
   color: #d1d5db;
@@ -185,6 +205,13 @@ body {
   padding-top: 0.5rem;
 }
 
+#log-empty {
+  color: #858e9c;
+  font-size: 0.7rem;
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
 /* Day separator: faded rule with the weekday + date centered in it. */
 .date-sep {
   display: flex;
@@ -273,6 +300,31 @@ body {
   color: #9ca3af;
   line-height: 1.4;
 }
+
+/* Four lines, then it folds — see markClamped(). The window is a glance, and a
+   one-minute dictation is eighteen lines of it. */
+.log-entry.clamped:not(.expanded) .log-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.log-more {
+  display: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 0.1rem;
+  font-family: inherit;
+  font-size: 0.7rem;
+  color: #858e9c;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.log-more:hover { color: #4ade80; }
+.log-entry.clamped .log-more,
+.log-entry.expanded .log-more { display: block; }
 
 /* Setup */
 #setup { padding: 0.8rem 0; }

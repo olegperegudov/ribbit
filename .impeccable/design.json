@@ -1,0 +1,365 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-06T00:00:00Z",
+  "title": "Design System: Ribbit",
+  "extensions": {
+    "colorMeta": {
+      "cursor-green": {
+        "role": "primary",
+        "displayName": "Cursor Green",
+        "canonical": "#4ade80",
+        "tonalRamp": [
+          "oklch(20% 0.06 149)",
+          "oklch(31% 0.09 149)",
+          "oklch(42% 0.12 149)",
+          "oklch(53% 0.15 149)",
+          "oklch(64% 0.17 149)",
+          "oklch(75% 0.18 149)",
+          "oklch(86% 0.12 149)",
+          "oklch(95% 0.05 149)"
+        ]
+      },
+      "deep-green": {
+        "role": "primary",
+        "displayName": "Deep Green",
+        "canonical": "#166534",
+        "tonalRamp": [
+          "oklch(18% 0.05 149)",
+          "oklch(27% 0.07 149)",
+          "oklch(36% 0.09 149)",
+          "oklch(45% 0.11 149)",
+          "oklch(56% 0.13 149)",
+          "oklch(68% 0.14 149)",
+          "oklch(82% 0.10 149)",
+          "oklch(94% 0.04 149)"
+        ]
+      },
+      "signal-amber": {
+        "role": "secondary",
+        "displayName": "Signal Amber",
+        "canonical": "#fbbf24",
+        "tonalRamp": [
+          "oklch(22% 0.05 80)",
+          "oklch(33% 0.08 80)",
+          "oklch(44% 0.11 80)",
+          "oklch(55% 0.14 80)",
+          "oklch(66% 0.16 80)",
+          "oklch(78% 0.17 80)",
+          "oklch(88% 0.11 80)",
+          "oklch(96% 0.04 80)"
+        ]
+      },
+      "alarm-red": {
+        "role": "tertiary",
+        "displayName": "Alarm Red",
+        "canonical": "#f87171",
+        "tonalRamp": [
+          "oklch(20% 0.06 22)",
+          "oklch(31% 0.09 22)",
+          "oklch(42% 0.13 22)",
+          "oklch(53% 0.16 22)",
+          "oklch(64% 0.18 22)",
+          "oklch(75% 0.15 22)",
+          "oklch(86% 0.09 22)",
+          "oklch(95% 0.03 22)"
+        ]
+      },
+      "search-magenta": {
+        "role": "tertiary",
+        "displayName": "Search Magenta",
+        "canonical": "#c25cce",
+        "tonalRamp": [
+          "oklch(20% 0.07 320)",
+          "oklch(30% 0.11 320)",
+          "oklch(40% 0.15 320)",
+          "oklch(50% 0.19 320)",
+          "oklch(61% 0.20 320)",
+          "oklch(73% 0.16 320)",
+          "oklch(85% 0.10 320)",
+          "oklch(95% 0.04 320)"
+        ]
+      },
+      "slate-panel": {
+        "role": "neutral",
+        "displayName": "Slate Panel",
+        "canonical": "#0f1318",
+        "tonalRamp": [
+          "oklch(15% 0.01 250)",
+          "oklch(20% 0.012 250)",
+          "oklch(26% 0.014 250)",
+          "oklch(34% 0.015 250)",
+          "oklch(45% 0.015 250)",
+          "oklch(60% 0.013 250)",
+          "oklch(78% 0.010 250)",
+          "oklch(94% 0.005 250)"
+        ]
+      },
+      "raised-row": {
+        "role": "neutral",
+        "displayName": "Raised Row",
+        "canonical": "#1a1f28",
+        "tonalRamp": [
+          "oklch(17% 0.012 255)",
+          "oklch(23% 0.014 255)",
+          "oklch(30% 0.016 255)",
+          "oklch(38% 0.017 255)",
+          "oklch(49% 0.016 255)",
+          "oklch(63% 0.014 255)",
+          "oklch(80% 0.010 255)",
+          "oklch(95% 0.005 255)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#2a3040",
+        "tonalRamp": [
+          "oklch(19% 0.015 265)",
+          "oklch(26% 0.020 265)",
+          "oklch(33% 0.025 265)",
+          "oklch(41% 0.028 265)",
+          "oklch(52% 0.026 265)",
+          "oklch(66% 0.022 265)",
+          "oklch(81% 0.015 265)",
+          "oklch(95% 0.007 265)"
+        ]
+      },
+      "text-dim": {
+        "role": "neutral",
+        "displayName": "Dim Grey",
+        "canonical": "#858e9c",
+        "tonalRamp": [
+          "oklch(20% 0.008 260)",
+          "oklch(30% 0.010 260)",
+          "oklch(40% 0.012 260)",
+          "oklch(50% 0.014 260)",
+          "oklch(62% 0.015 260)",
+          "oklch(73% 0.014 260)",
+          "oklch(85% 0.010 260)",
+          "oklch(95% 0.005 260)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "The lowercase ribbit wordmark. The largest type in the app."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Log lines and setup prose — the reading size."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Setting labels, tooltips, provider fields, status detail."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Day separators, PRIMARY tag, kbd, unit suffixes. Letter-spaced for air."
+      }
+    },
+    "shadows": [
+      {
+        "name": "recessed-group",
+        "value": "inset 0 1px 3px rgba(0, 0, 0, 0.35)",
+        "purpose": "Sinks a grouping block into the panel. The only structural shadow."
+      },
+      {
+        "name": "floating-popup",
+        "value": "0 4px 16px rgba(0, 0, 0, 0.4)",
+        "purpose": "Search and vocabulary popups positioned over the card."
+      },
+      {
+        "name": "tooltip",
+        "value": "0 4px 12px rgba(0, 0, 0, 0.5)",
+        "purpose": "The custom tooltip, topmost layer in the app."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "0.15s",
+        "purpose": "Hover fills and colour shifts on rows, chips, and icon buttons."
+      },
+      {
+        "name": "state-slow",
+        "value": "0.2s",
+        "purpose": "Toggle knob travel and border-colour shifts on outline controls."
+      },
+      {
+        "name": "entry-fade",
+        "value": "0.3s ease",
+        "purpose": "A new log entry fading in as it lands."
+      },
+      {
+        "name": "meter-follow",
+        "value": "0.06s linear",
+        "purpose": "The audio meter tracking live input level — the height is the datum."
+      },
+      {
+        "name": "pulse-recording",
+        "value": "1s ease-in-out infinite",
+        "purpose": "Frog opacity pulse while recording; 0.5s while transcribing."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Commit Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The two actions that write something durable: save key, add vocabulary entry.",
+      "html": "<button class=\"ds-btn-commit\">add</button>",
+      "css": ".ds-btn-commit { background: #166534; color: #4ade80; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 0.8rem; cursor: pointer; } .ds-btn-commit:hover { background: #15803d; } .ds-btn-commit:focus-visible { outline: 1px solid rgba(74, 222, 128, 0.6); outline-offset: 1px; }"
+    },
+    {
+      "name": "Header Icon Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Gear and magnifier in the header. No resting fill; the glyph brightens on hover.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"Search transcripts\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"6.8\" cy=\"6.8\" r=\"4.8\"></circle><line x1=\"10.4\" y1=\"10.4\" x2=\"14.5\" y2=\"14.5\"></line></svg></button>",
+      "css": ".ds-btn-icon { background: none; border: none; color: #6b7280; cursor: pointer; padding: 2px 8px; border-radius: 3px; transition: background 0.15s, color 0.15s; } .ds-btn-icon svg { display: block; } .ds-btn-icon:hover { background: #2a3040; color: #d1d5db; } .ds-btn-icon:focus { outline: none; }"
+    },
+    {
+      "name": "Settings Row Control",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "The shared shape of kbd, selects, and small buttons in a settings row.",
+      "html": "<kbd class=\"ds-control-outline\">ctrl+alt+space</kbd>",
+      "css": ".ds-control-outline { background: #1a1f28; border: 1px solid #2a3040; border-radius: 4px; color: #6b7280; font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 0.6rem; padding: 3px 7px; cursor: pointer; transition: color 0.2s, border-color 0.2s; } .ds-control-outline:hover { color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Every field the user types into: darker than its surface, green border on focus.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"replace with...\" />",
+      "css": ".ds-input { background: #0f1318; border: 1px solid #2a3040; border-radius: 4px; color: #d1d5db; font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 0.7rem; padding: 0.3rem 0.4rem; outline: none; } .ds-input::placeholder { color: #4b5563; } .ds-input:focus { border-color: rgba(74, 222, 128, 0.4); }"
+    },
+    {
+      "name": "Toggle",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "The on/off control in settings. Knob turns green only when on.",
+      "html": "<label class=\"ds-toggle\"><input type=\"checkbox\" checked /><span class=\"ds-toggle-slider\"></span></label>",
+      "css": ".ds-toggle { position: relative; display: inline-block; width: 36px; height: 20px; } .ds-toggle input { opacity: 0; width: 0; height: 0; } .ds-toggle-slider { position: absolute; inset: 0; background: #2a3040; border-radius: 10px; cursor: pointer; transition: background 0.2s; } .ds-toggle-slider::before { content: ''; position: absolute; height: 16px; width: 16px; left: 2px; bottom: 2px; background: #6b7280; border-radius: 50%; transition: transform 0.2s, background 0.2s; } .ds-toggle input:checked + .ds-toggle-slider { background: rgba(34, 197, 94, 0.3); } .ds-toggle input:checked + .ds-toggle-slider::before { transform: translateX(16px); background: #4ade80; }"
+    },
+    {
+      "name": "Alias Chip",
+      "kind": "chip",
+      "refersTo": "chip-alias",
+      "description": "A vocabulary alias or a selected language, with a remove × that reddens on hover.",
+      "html": "<span class=\"ds-chip\">litellm<button class=\"ds-chip-x\" aria-label=\"Remove\">×</button></span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 0.15rem; background: #1a1f28; border: 1px solid #2a3040; border-radius: 3px; padding: 1px 3px 1px 5px; color: #9ca3af; font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 0.65rem; } .ds-chip-x { background: none; border: none; color: #4b5563; cursor: pointer; font-size: 0.65rem; font-family: inherit; padding: 0 2px; transition: color 0.15s; } .ds-chip-x:hover { color: #ef4444; }"
+    },
+    {
+      "name": "Provider Card",
+      "kind": "card",
+      "refersTo": "card-provider",
+      "description": "One entry in a provider stack; the top one carries the PRIMARY tag.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-head\"><span class=\"ds-card-name\">groq<span class=\"ds-tag\">primary</span></span><span class=\"ds-card-ctrls\"><button class=\"ds-mini\">↑</button><button class=\"ds-mini\">↓</button></span></div><div class=\"ds-card-field\"><span class=\"ds-card-label\">model</span><input class=\"ds-input-sm\" value=\"whisper-large-v3\" /></div></div>",
+      "css": ".ds-card { background: #0f141b; border: 1px solid #1a2230; border-radius: 6px; padding: 0.4rem 0.5rem; display: flex; flex-direction: column; gap: 0.3rem; font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; } .ds-card-head { display: flex; justify-content: space-between; align-items: center; } .ds-card-name { font-size: 0.72rem; color: #cbd5e1; font-weight: 600; display: flex; align-items: center; gap: 0.4rem; } .ds-tag { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.04em; color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.4); border-radius: 3px; padding: 0 0.25rem; font-weight: 700; } .ds-card-ctrls { display: flex; gap: 0.2rem; } .ds-mini { background: transparent; border: 1px solid #2a3040; color: #9ca3af; border-radius: 4px; width: 20px; height: 20px; font-size: 0.7rem; line-height: 1; cursor: pointer; padding: 0; font-family: inherit; } .ds-mini:hover { border-color: #4b5563; color: #d1d5db; } .ds-card-field { display: flex; align-items: center; gap: 0.4rem; } .ds-card-label { font-size: 0.62rem; color: #6b7280; width: 34px; text-align: right; flex: none; } .ds-input-sm { background: #0f1318; border: 1px solid #2a3040; color: #d1d5db; font-family: inherit; font-size: 0.7rem; padding: 0.25rem 0.4rem; border-radius: 4px; flex: 1; min-width: 0; outline: none; } .ds-input-sm:focus { border-color: rgba(74, 222, 128, 0.4); }"
+    },
+    {
+      "name": "Log Entry",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "The signature row: time, text, and the dot naming the model that edited it. Clicking copies.",
+      "html": "<div class=\"ds-log\"><span class=\"ds-log-time\">14:22</span><span class=\"ds-log-body\"><span class=\"ds-log-text\">закинь это в ветку и пушни в дев</span><span class=\"ds-log-meta\"><span class=\"ds-log-dot\"></span><span class=\"ds-log-label\">routerai.ru | llama-3.3-70b</span></span></span></div>",
+      "css": ".ds-log { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.35rem 0; border-bottom: 1px solid #1a1f28; border-radius: 3px; cursor: pointer; font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; transition: background 0.15s; } .ds-log:hover { background: #1a1f28; } .ds-log-time { color: #4b5563; font-size: 0.75rem; flex-shrink: 0; } .ds-log-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; } .ds-log-text { font-size: 0.8rem; color: #9ca3af; line-height: 1.4; } .ds-log-meta { display: flex; align-items: center; gap: 0.4rem; } .ds-log-dot { width: 16px; height: 16px; margin-left: -5px; display: flex; align-items: center; justify-content: center; } .ds-log-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #4ade80; } .ds-log-label { font-size: 0.7rem; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+    },
+    {
+      "name": "Fallback Banner",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Amber note shown while a fallback provider is carrying the work.",
+      "html": "<div class=\"ds-banner\">groq is cooling down — openai is handling speech for 12 more minutes</div>",
+      "css": ".ds-banner { font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 0.66rem; line-height: 1.3; color: #fbbf24; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 4px; padding: 0.25rem 0.4rem; }"
+    },
+    {
+      "name": "Tooltip",
+      "kind": "custom",
+      "refersTo": "popover-surface",
+      "description": "Custom tooltip replacing native title=, which is silent on WKWebView and slow on WebView2.",
+      "html": "<div class=\"ds-tooltip\">How many days of transcripts to keep on this computer, counting today.</div>",
+      "css": ".ds-tooltip { max-width: 240px; padding: 6px 9px; background: #1a1f2e; color: #d1d5db; border: 1px solid #2a3040; border-radius: 6px; font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 0.7rem; line-height: 1.35; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Terminal Notebook",
+    "overview": "Ribbit looks like the window a developer keeps a log in: near-black, monospace end to end, and lit by exactly one colour — the green of a live cursor. It is not a dashboard and not a document; it is a notebook that the machine writes into while you speak, and that you glance at for a second before it goes away again. Everything in the visual system serves that glance. Type is small and dense because a day of dictations should fit without scrolling. Chrome is nearly absent because there is nothing here to operate — the log is the content, and the content is the interface.\n\nThe card itself is a single flat plane in near-black (#0f1318) with a 10px radius, hanging off the menu-bar icon. Depth is drawn with tone, not shadow: a settings block that belongs to a toggle sinks to a darker fill (#0b0e13); a row you are hovering rises to #1a1f28. Nothing lifts off the plane except things that genuinely float above the interface — tooltips, the search popup, the vocabulary popup — and those carry a real drop shadow because they must read as detached.\n\nGreen is not decoration. It marks the live and the done: the audio meter while you speak, a line the moment it lands on your clipboard, a saved key, a term that the vocabulary will now enforce. Because it appears only there, a green pixel anywhere in this window means something happened. Amber says a fallback provider is carrying the load right now; red says an edit failed or this click destroys something. Magenta and fuchsia belong to selection and search hits — the two places where the user, not the app, is pointing at text.",
+    "keyCharacteristics": [
+      "One accent (#4ade80) reserved for live and successful states; every other colour is a status or a neutral.",
+      "One bundled monospace, 13px root, a five-step scale from 0.7rem to 1rem — dense, but never below the 11px floor.",
+      "Flat by default; tonal layering for grouping, shadow only for genuinely floating layers.",
+      "Hairline dividers (#1a1f28) instead of boxes; borders appear only on things you can type into or press.",
+      "Dark only. There is no light theme and none is planned."
+    ],
+    "rules": [
+      {
+        "name": "The One Light Rule",
+        "body": "Green means live or done — nothing else. If a green pixel is on screen and nothing happened, the green is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Red-On-Hover Rule",
+        "body": "Destructive controls rest in faint grey and turn red only under the cursor. Nothing in the resting interface is red except an actual failure message.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lowercase Rule",
+        "body": "The product's own voice is lowercase — the wordmark, setting labels, status lines. Capitals appear only in content the user or a provider supplied, and in the one 0.55rem uppercase tag.",
+        "section": "typography"
+      },
+      {
+        "name": "The 13px Ceiling Rule",
+        "body": "Nothing in the interface is larger than the wordmark. If a new element needs to be bigger to be noticed, the layout is wrong, not the type.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Region Rule",
+        "body": "The card shows exactly one body region at a time. Panels replace each other; they never stack, and nothing collapses the log to a sliver to make room.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "A surface earns a drop shadow only by floating above the interface. Grouping, hover, and selection are expressed in tone, never in lift.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Legible Ramp Rule",
+        "body": "Every grey in the ramp clears 4.5:1 on every surface it lands on. A new 'just a bit fainter' grey is a bug, not a design choice.",
+        "section": "colors"
+      },
+      {
+        "name": "The 11px Floor Rule",
+        "body": "Nothing functional is set below 0.7rem (11.2px). The scale is five steps: 0.7 / 0.72 / 0.75 / 0.8 / 1rem.",
+        "section": "typography"
+      },
+      {
+        "name": "The Shipped Type Rule",
+        "body": "The face is bundled, never borrowed from the OS — the fallback resolves per glyph and this user dictates in two alphabets.",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "Do keep green for live and done states only (#4ade80), and let its rarity do the work.",
+      "Do express grouping with a darker fill and a 2px green left edge, and drop the per-row dividers inside that group.",
+      "Do put every scrollable region's overscroll on contain, and never let html, body scroll — the window is transparent and borderless, and a bounce bares the desktop.",
+      "Do size new type inside the existing 0.55–1rem scale, in the monospace stack, lowercase.",
+      "Do give small hit targets an invisible 16px box around the visible mark.",
+      "Do state failures in words in the interface (#f87171 prose), not only in the debug log.",
+      "Do give a destructive control a second click when what it destroys took the user time to build.",
+      "Do fold what is configured once behind one click, and leave what is read often open."
+    ],
+    "donts": [
+      "Don't introduce a second accent hue. Amber, yellow, red, and magenta are already spoken for as status and selection; a new decorative colour has nowhere to live.",
+      "Don't add a light theme or a theme switch.",
+      "Don't lift resting surfaces with drop shadows — only genuinely floating layers (tooltip, popups) cast one.",
+      "Don't animate layout properties for effect; opacity and transform carry state changes. The audio meter's height is the sole exception, and it is data.",
+      "Don't grow an element past the 1rem wordmark to make it noticeable.",
+      "Don't rely on the platform focus ring on click-only controls in the header — WKWebView paints it on programmatic focus when the window opens."
+    ]
+  }
+}

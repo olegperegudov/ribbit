@@ -65,7 +65,7 @@ function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
   const labelHtml = (edited === true && llmHost && llmModel)
     ? `<span class="log-llm-label" data-hint="${escapeHtml(labelText)}" tabindex="0">${escapeHtml(labelText)}</span>`
     : "";
-  entry.innerHTML = `<span class="log-time">${time}</span><div class="log-body"><span class="log-text">${escapeHtml(text)}</span><div class="log-meta"><span class="log-llm-dot ${dotClass}" data-hint="${escapeHtml(dotHint)}" tabindex="0"></span>${labelHtml}</div></div>`;
+  entry.innerHTML = `<span class="log-time">${time}</span><div class="log-body"><span class="log-text">${escapeHtml(text)}</span><button class="log-more" type="button">show all</button><div class="log-meta"><span class="log-llm-dot ${dotClass}" data-hint="${escapeHtml(dotHint)}" tabindex="0"></span>${labelHtml}</div></div>`;
   // Copying a line is why the window opens, so the row is a real button: it
   // takes focus, answers Enter and Space, and announces itself. Its "click to
   // copy" hint moved off native title=, which WKWebView never draws.
@@ -97,9 +97,41 @@ function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
     log.appendChild(entry);
   }
 
+  const more = entry.querySelector(".log-more");
+  more.addEventListener("click", (e) => {
+    e.stopPropagation();          // the row itself copies; this one unfolds
+    const open = entry.classList.toggle("expanded");
+    more.textContent = open ? "show less" : "show all";
+  });
+
+  markClamped(entry);
   // A transcript arriving while search is active must obey the active filter.
   if (searchQuery.trim()) applySearchFilter();
+  else refreshLogEmpty();
   return entry;
+}
+
+// A one-minute dictation is ~18 lines in this column and buries the four lines
+// the window was opened for. Long entries are clamped to four and offer to
+// unfold; copying is unaffected, it reads the text node, not what is visible.
+// Nothing can be measured while the log is hidden, so the pass runs again every
+// time the log comes back on screen.
+/// Same four as `-webkit-line-clamp` in .log-entry.clamped .log-text.
+const LOG_CLAMP_LINES = 4;
+
+function markClamped(entry) {
+  const textEl = entry.querySelector(".log-text");
+  if (!textEl.clientHeight) return;
+  // Measured against the line height, not against overflow: an unclamped
+  // element never overflows, so asking "is it cut off?" always answered no.
+  const lineHeight = parseFloat(getComputedStyle(textEl).lineHeight) || 16;
+  entry.classList.toggle("clamped", textEl.scrollHeight > lineHeight * LOG_CLAMP_LINES + 2);
+}
+
+function markAllClamped() {
+  for (const entry of $("#log-entries").querySelectorAll(".log-entry:not(.expanded)")) {
+    markClamped(entry);
+  }
 }
 
 // The row is created the moment the text exists; the insert is attempted after,
@@ -150,6 +182,7 @@ function showPanel(name) {
   // Leaving the log hides the search popup and drops the filter — the filtered
   // view is meaningless when the log isn't on screen.
   if (name !== "log") closeSearch();
+  else markAllClamped();
 }
 
 // --- Quick search ---
@@ -204,6 +237,24 @@ function applySearchFilter() {
     }
     sep.style.display = visible ? "" : "none";
   }
+  refreshLogEmpty();
+}
+
+// The log's two blank states used to be the same blankness: nothing dictated
+// yet, and a search that matched nothing. The vocabulary panel next door has
+// said "no matches" all along.
+function refreshLogEmpty() {
+  const log = $("#log-entries");
+  const empty = $("#log-empty");
+  if (!empty) return;
+  const any = log.querySelector(".log-entry");
+  const anyVisible = [...log.querySelectorAll(".log-entry")].some((e) => e.style.display !== "none");
+  if (!any) {
+    empty.textContent = "nothing yet — hold the hotkey and say something";
+  } else if (!anyVisible) {
+    empty.textContent = "no matches";
+  }
+  empty.style.display = anyVisible ? "none" : "block";
 }
 
 function openSearch() {
@@ -314,7 +365,7 @@ function showMergePopup(anchorEl, oldKey, existingKey) {
 
   const popup = document.createElement("div");
   popup.className = "vocab-merge-popup";
-  popup.innerHTML = `similar key found, merge keys? : <button class="merge-yes">yes</button> | <button class="merge-no">no</button>`;
+  popup.innerHTML = `similar key found, merge keys? <button class="merge-yes">yes</button> | <button class="merge-no">no</button>`;
 
   // Position above the input
   const rect = anchorEl.getBoundingClientRect();
@@ -355,12 +406,9 @@ function renderVocabList(filter = "") {
   list.innerHTML = "";
   const fl = filter.toLowerCase();
 
-  // Sort: latin first, then cyrillic, alphabetical within each
-  const keys = Object.keys(vocabData).sort((a, b) => {
-    const aLat = /^[a-z]/i.test(a), bLat = /^[a-z]/i.test(b);
-    if (aLat !== bLat) return aLat ? -1 : 1;
-    return a.localeCompare(b);
-  });
+  // One alphabet order for both scripts: sorting Latin ahead of Cyrillic put
+  // every Russian term the user taught below the fold of a 50-row list.
+  const keys = Object.keys(vocabData).sort((a, b) => a.localeCompare(b));
 
   for (const target of keys) {
     const aliases = vocabData[target];
@@ -428,6 +476,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     for (const entry of history.reverse()) {
       addLogEntry(entry.text, entry.ts, entry.edited, entry.llm_host, entry.llm_model, entry.insert_error);
     }
+    refreshLogEmpty();
   } catch (e) {
     console.error("Failed to load history:", e);
   }

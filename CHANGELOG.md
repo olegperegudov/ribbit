@@ -26,6 +26,37 @@ numbers increase quickly — each entry below maps to a published
   shown, so a dictation that produced nothing no longer looks like one that
   worked.
 
+- **The settings panel is three groups, not eleven rows.** With five speech
+  providers the provider stack alone ran longer than the whole scroll region,
+  pushing the hotkey, the vocabulary and history off screen behind url / model /
+  key fields that are set once and never touched. A provider is now a summary
+  line — name, PRIMARY, host — that expands on click and opens itself only when
+  it has no key yet. The rows sit under three heads: *speaking*, *text*, *this
+  computer*; history moved down to where the things kept on this computer live.
+
+- **The log answers the keyboard, and its faint text is readable.** Copying a
+  line is why the window opens, and the row was a plain div with a click
+  handler: no focus, no Enter, and a "click to copy" hint that macOS webviews
+  never draw. It is a button now, Escape leaves any panel, and ⌘F opens search.
+  Two steps of the grey ramp failed the WCAG AA contrast minimum (2.5:1 and
+  3.9:1) while carrying timestamps, the `?` hints, provider labels and the
+  hotkey display — they merge into one step at 5.6:1, and functional text below
+  11px comes up to the floor. Fifteen inputs and six symbol-only buttons had no
+  name for a screen reader; they do now.
+
+- **A long dictation no longer eats the window.** A one-minute transcript
+  rendered about eighteen lines and buried everything you came back for. Entries
+  fold at four lines with a *show all* that unfolds in place; copying still
+  takes the whole text. The empty log and a search that matched nothing now say
+  so instead of both rendering as the same blank region.
+
+- **The font ships with the app.** Ribbit relied on JetBrains Mono being
+  installed, and the fallback resolves per glyph — so a sentence mixing Russian
+  and English rendered half monospace, half whatever the system had. The face is
+  bundled now (SIL Open Font License), and a mixed line keeps one rhythm. The
+  vocabulary list also stops sorting Latin ahead of Cyrillic, which had pushed
+  every Russian term below the fold.
+
 - **Deleting a vocabulary word asks first.** The × that removes a word and every
   alias taught for it sat a few pixels from the × that removes one alias, in the
   same faint grey, and committed on the first click with no undo — one mis-aimed
