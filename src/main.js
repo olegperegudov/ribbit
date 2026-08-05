@@ -459,11 +459,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     setTimeout(() => { $("#status-detail").textContent = ""; hasError = false; }, 5000);
   });
 
-  // Window controls: _ = minimize (taskbar on Win/Linux; hide to tray on macOS,
-  // where native minimize teleports the window to another Space), X = hide to tray.
-  $("#win-min").addEventListener("click", () => invoke("minimize_window"));
-  $("#win-close").addEventListener("click", () => invoke("hide_to_tray"));
-
   // Settings panel (gear toggles it)
   $("#settings-btn").addEventListener("click", () => {
     const visible = $("#settings-panel").style.display !== "none";
@@ -481,13 +476,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   $("#search-input").addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.preventDefault(); closeSearch(); }
-  });
-
-  // Always on top toggle — off by default, and the window then behaves like any
-  // other: click another window and it goes above Ribbit.
-  $("#always-on-top").checked = config.always_on_top ?? false;
-  $("#always-on-top").addEventListener("change", async (e) => {
-    await invoke("set_always_on_top", { value: e.target.checked });
   });
 
   // Generic "API key" cell: input ↔ "✓ saved · change" chip swap.

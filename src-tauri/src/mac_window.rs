@@ -65,7 +65,7 @@ tauri_nspanel::tauri_panel! {
         config: {
             can_become_key_window: true,   // non-activating but still keyable → text fields work
             can_become_main_window: false,
-            is_floating_panel: false       // window level is owned by the Always-on-Top toggle
+            is_floating_panel: false       // ordinary window level; show_and_make_key brings it up
         }
     })
 
@@ -73,20 +73,6 @@ tauri_nspanel::tauri_panel! {
         window_did_resign_key(notification: &NSNotification) -> ()
     })
 }
-
-/// Mirrors the Always-on-Top setting for the resign-key handler, which runs on
-/// the AppKit thread and has no access to the Tauri config.
-#[cfg(target_os = "macos")]
-static ALWAYS_ON_TOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-#[cfg(target_os = "macos")]
-pub fn set_always_on_top(value: bool) {
-    ALWAYS_ON_TOP.store(value, std::sync::atomic::Ordering::Relaxed);
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn set_always_on_top(_value: bool) {}
-
 
 /// Convert the borderless "main" window into the panel and configure it. Called
 /// once at setup, after the accessory activation policy is set.
@@ -119,24 +105,21 @@ pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
     panel.set_hides_on_deactivate(false);
 
     // Get out of the way as soon as focus goes elsewhere: back to the tray, one
-    // click away from returning. A non-activating panel is never reordered by
-    // AppKit (its app never activates), so without this it keeps floating over
-    // whatever the user clicked and only the X button removes it.
+    // click away from returning. This is the only way the panel closes — it hangs
+    // off the tray icon like a menu, and menus close when you look away. A
+    // non-activating panel is never reordered by AppKit (its app never activates),
+    // so without this it would keep floating over whatever the user clicked.
     //
     // Hiding — not orderBack. Two reasons, both learned the hard way in 0.7.73/74:
     // over a full-screen app there is no "behind" (the full-screen window IS the
     // Space and the panel is drawn over it as a FullScreenAuxiliary companion),
     // and `orderBack:` *orders a window in*, so calling it on the panel the user
-    // had just dismissed with X resurrected it — it vanished and came straight
-    // back, un-closable.
-    //
-    // Always-on-Top is what suspends this.
+    // had just dismissed resurrected it — it vanished and came straight back,
+    // un-closable.
     let app = window.app_handle().clone();
     let handler = RibbitPanelEvents::new();
     handler.window_did_resign_key(move |_notification| {
-        if ALWAYS_ON_TOP.load(std::sync::atomic::Ordering::Relaxed) {
-            return;
-        }
+        crate::note_auto_hide();
         hide_panel(&app);
         crate::debug_log::log("panel: focus left → hidden to tray");
     });
@@ -152,6 +135,13 @@ pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
 #[cfg(not(target_os = "macos"))]
 pub fn setup_panel(_window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
+}
+
+/// Whether the main panel is currently on screen.
+#[cfg(target_os = "macos")]
+pub fn panel_visible(app: &tauri::AppHandle) -> bool {
+    use tauri_nspanel::ManagerExt;
+    app.get_webview_panel("main").map(|p| p.is_visible()).unwrap_or(false)
 }
 
 /// Show the panel on the user's CURRENT Space (over full-screen apps included)

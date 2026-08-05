@@ -143,10 +143,6 @@ body {
   color: #d1d5db;
 }
 .win-btn svg { display: block; }
-.win-close:hover {
-  background: #dc2626;
-  color: #fff;
-}
 
 /* Log entries */
 #log-entries {

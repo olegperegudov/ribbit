@@ -11,6 +11,20 @@ numbers increase quickly — each entry below maps to a published
 
 ### Changed
 
+- **The window now hangs off the menu-bar icon instead of floating on its own.**
+  A left click on the icon drops it out right below the icon; clicking anywhere
+  else puts it away, the way a menu closes. A right click opens the small
+  housekeeping menu — check for updates, version, quit — which no longer carries
+  a "Show Ribbit" item, because the left click *is* that item. On Windows and
+  Linux the same click works off the taskbar corner: the window sits above the
+  icon there, and it too closes as soon as focus leaves it.
+
+  Three controls went with the change, all of them now saying what the window's
+  place already says: the minimize and close buttons in the title bar (the
+  window is dismissed by looking away, and only the gear and the magnifier are
+  left up there) and the "always on top" setting (a window pinned to the tray
+  icon that stays up over everything else is not a tray window any more).
+
 - **A dictation that was never typed now says so.** macOS can swallow synthetic
   keystrokes two ways — the Accessibility grant for posting events is gone, or
   some password field holds secure input for the whole system — and in both

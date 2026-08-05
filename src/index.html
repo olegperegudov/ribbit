@@ -9,16 +9,16 @@
   </head>
   <body>
     <main class="container">
-      <div class="header" data-tauri-drag-region>
-        <div id="status-icon" class="idle" data-tauri-drag-region>
-          <img src="frog.png" width="32" height="32" alt="Ribbit" data-tauri-drag-region />
+      <div class="header">
+        <div id="status-icon" class="idle">
+          <img src="frog.png" width="32" height="32" alt="Ribbit" />
         </div>
-        <div id="audio-meter" data-tauri-drag-region>
+        <div id="audio-meter">
           <div id="audio-meter-bar"></div>
         </div>
-        <div class="header-text" data-tauri-drag-region>
-          <div class="app-title" data-tauri-drag-region>ribbit</div>
-          <div id="status-detail" data-tauri-drag-region></div>
+        <div class="header-text">
+          <div class="app-title">ribbit</div>
+          <div id="status-detail"></div>
         </div>
         <div class="header-right">
           <button id="search-btn" class="win-btn" title="Search transcripts">
@@ -28,8 +28,6 @@
             </svg>
           </button>
           <button id="settings-btn" class="win-btn" title="Settings">&#x2699;</button>
-          <button id="win-min" class="win-btn" title="Minimize">&#x2212;</button>
-          <button id="win-close" class="win-btn win-close" title="Close">&#x2715;</button>
         </div>
       </div>
 
@@ -51,13 +49,6 @@
           <div class="setting-row">
             <span class="setting-label">hotkey <span class="hint-icon" data-hint="Click the shortcut, press your new combo, then Enter to save or Esc to cancel." tabindex="0" role="button" aria-label="Help: hotkey">?</span></span>
             <kbd id="shortcut-display">ctrl+alt+space</kbd>
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">always on top <span class="hint-icon" data-hint="Keep the Ribbit window above all other windows." tabindex="0" role="button" aria-label="Help: always on top">?</span></span>
-            <label class="toggle">
-              <input type="checkbox" id="always-on-top" />
-              <span class="toggle-slider"></span>
-            </label>
           </div>
           <div class="setting-row">
             <span class="setting-label">sound <span class="hint-icon" data-hint="Audio feedback when recording starts. Frog = quack, Ping = subtle knock." tabindex="0" role="button" aria-label="Help: sound">?</span></span>

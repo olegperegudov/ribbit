@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     AppHandle, Manager, Emitter,
     menu::{MenuBuilder, MenuItemBuilder},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_updater::UpdaterExt;
@@ -27,8 +27,6 @@ use tauri_plugin_updater::UpdaterExt;
 const TRAY_UPDATE_ICON: &[u8] = include_bytes!("../icons/tray-update.png");
 
 /// The tray's update item, kept reachable so `announce_update` can rewrite it.
-/// A newtype because Tauri keys managed state by type, and the "Show Ribbit"
-/// item already occupies plain `MenuItem<Wry>`.
 struct UpdateItem(tauri::menu::MenuItem<tauri::Wry>);
 
 struct RecordingState {
@@ -159,7 +157,6 @@ fn get_config() -> Result<serde_json::Value, String> {
             "text": stack_state_json(&cfg, fallback::Stack::Text),
         }),
         "history_days": history_days(),
-        "always_on_top": cfg["always_on_top"].as_bool().unwrap_or(false),
     }))
 }
 
@@ -394,10 +391,10 @@ fn set_sound_pack(pack: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Hide the main window to the tray and keep the tray menu label in step.
-/// Uses hide() (orderOut on macOS): no Dock entry, no Space-flip. Native
-/// minimize is never used on macOS — it sends the window to the Dock and the
-/// later restore snaps back to the window's home Space (see `minimize_window`).
+/// Hide the main window back into the tray. Uses hide() (orderOut on macOS): no
+/// Dock entry, no Space-flip. Native minimize is never used on macOS — it sends
+/// the window to the Dock and the later restore snaps back to the window's home
+/// Space (the "flashes then vanishes / teleports me to another desktop" bug).
 fn hide_main(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     mac_window::hide_panel(app);
@@ -405,30 +402,31 @@ fn hide_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
-    if let Some(item) = app.try_state::<tauri::menu::MenuItem<tauri::Wry>>() {
-        let _ = item.set_text(tray_window_label(false));
+}
+
+/// When the window last hid itself because focus went elsewhere.
+///
+/// Clicking the tray icon is one such "elsewhere": the window loses focus and
+/// auto-hides *before* the tray click handler runs, so the handler would see a
+/// hidden window and show it right back — the icon could never close it.
+static LAST_AUTO_HIDE: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// Called from the focus-lost handlers right before they hide the window.
+fn note_auto_hide() {
+    if let Ok(mut t) = LAST_AUTO_HIDE.lock() {
+        *t = Some(std::time::Instant::now());
     }
 }
 
-/// The X button: hide to tray.
-#[tauri::command]
-fn hide_to_tray(app: AppHandle) {
-    hide_main(&app);
-}
-
-/// The "_" (minimize) button. On Windows/Linux it genuinely minimizes to the
-/// taskbar. On macOS native minimize is broken for a tray app: it sends the
-/// window to the Dock and unminimize forces a Space switch back to the window's
-/// home Space (the "flashes then vanishes / teleports me to another desktop"
-/// bug), so there we hide to the tray instead — same as the close button.
-#[tauri::command]
-fn minimize_window(app: AppHandle) {
-    #[cfg(target_os = "macos")]
-    hide_main(&app);
-    #[cfg(not(target_os = "macos"))]
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.minimize();
-    }
+/// True when the window auto-hid a moment ago — i.e. the click being handled is
+/// what dismissed it.
+fn just_auto_hid() -> bool {
+    LAST_AUTO_HIDE
+        .lock()
+        .ok()
+        .and_then(|t| *t)
+        .map(|t| t.elapsed() < std::time::Duration::from_millis(400))
+        .unwrap_or(false)
 }
 
 /// Looks for a release and, if one is there, lights the tray. Not a command any
@@ -502,25 +500,6 @@ async fn on_update_clicked(app: AppHandle) {
 #[tauri::command]
 fn get_current_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
-}
-
-#[tauri::command]
-fn set_always_on_top(app: AppHandle, value: bool) -> Result<(), String> {
-    apply_always_on_top(&app, value)?;
-    let mut config = read_config();
-    config["always_on_top"] = serde_json::json!(value);
-    save_config(&config)
-}
-
-/// Raise/lower the window level and tell the macOS panel whether it may keep
-/// floating when it loses focus. Used by the command and at startup, so the
-/// setting survives a restart instead of silently resetting to off.
-fn apply_always_on_top(app: &AppHandle, value: bool) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("main") {
-        w.set_always_on_top(value).map_err(|e| e.to_string())?;
-    }
-    mac_window::set_always_on_top(value);
-    Ok(())
 }
 
 /// Write (or replace) one `KEY=value` line in the app's `.env` and update the
@@ -963,21 +942,64 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Text the tray's window item carries when the window is (or is not) on screen.
-///
-/// macOS never says "Hide": the menu itself opens on a left click, that click
-/// takes key away from the panel, and the panel hides on lost key — so the
-/// window is already gone by the time the item is read. A "Hide Ribbit" there
-/// was a label that could never be true, on an item that then showed the window.
-fn tray_window_label(visible: bool) -> &'static str {
-    if cfg!(target_os = "macos") || !visible {
-        "Show Ribbit"
-    } else {
-        "Hide Ribbit"
-    }
+/// A rectangle in physical pixels with a top-left origin — the space both tray
+/// icon rects and window positions are reported in.
+#[derive(Clone, Copy)]
+struct PixelRect {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
 }
 
-/// The tray's window item.
+/// Breathing room between the tray icon and the window, in logical pixels.
+const TRAY_GAP: f64 = 6.0;
+
+/// Where a `win_w × win_h` window goes so it hangs off the tray `icon` like that
+/// icon's own menu: centred under it, or above it when the icon sits at the
+/// bottom of the screen (a Windows taskbar), and never past the screen edge —
+/// an icon in the corner would otherwise push half the window off it.
+///
+/// `screen` is the display the icon is on; None (no monitor reported) simply
+/// skips the fitting. Pure geometry, so the placement is tested without a screen.
+fn popover_position(icon: PixelRect, win_w: f64, win_h: f64, screen: Option<PixelRect>, gap: f64) -> (f64, f64) {
+    let mut x = icon.x + icon.w / 2.0 - win_w / 2.0;
+    let mut y = icon.y + icon.h + gap;
+    if let Some(s) = screen {
+        if y + win_h > s.y + s.h {
+            y = (icon.y - gap - win_h).max(s.y + gap);
+        }
+        let leftmost = s.x + gap;
+        let rightmost = (s.x + s.w - win_w - gap).max(leftmost);
+        x = x.clamp(leftmost, rightmost);
+    }
+    (x, y)
+}
+
+/// Park the window under the tray icon that was just clicked.
+fn anchor_to_tray(w: &tauri::WebviewWindow, rect: tauri::Rect) {
+    let scale = w.scale_factor().unwrap_or(1.0);
+    let pos = rect.position.to_physical::<f64>(scale);
+    let size = rect.size.to_physical::<f64>(scale);
+    let icon = PixelRect { x: pos.x, y: pos.y, w: size.width, h: size.height };
+    let Ok(win) = w.outer_size() else { return };
+    let screen = w
+        .monitor_from_point(icon.x, icon.y)
+        .ok()
+        .flatten()
+        .or_else(|| w.current_monitor().ok().flatten())
+        .map(|m| PixelRect {
+            x: m.position().x as f64,
+            y: m.position().y as f64,
+            w: m.size().width as f64,
+            h: m.size().height as f64,
+        });
+    let (x, y) = popover_position(icon, win.width as f64, win.height as f64, screen, TRAY_GAP * scale);
+    let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+/// Left click on the tray icon: the window drops out of the icon, or goes away
+/// again if it was up. Right click is the small menu, which Tauri opens itself.
 ///
 /// macOS: the window is a non-activating NSPanel (see `mac_window::setup_panel`).
 /// `show_panel` surfaces it on the user's CURRENT Space — over a full-screen app
@@ -986,33 +1008,31 @@ fn tray_window_label(visible: bool) -> &'static str {
 /// attempts to coax one (MoveToActiveSpace, CanJoinAllSpaces|FullScreenAuxiliary,
 /// accessory policy, dropping set_focus, orderFrontRegardless) each failed
 /// because macOS simply won't show a normal window over a foreign full-screen
-/// Space. The panel is the mechanism that can. The item only ever shows —
-/// dismissing is a click anywhere else, which the panel already handles itself.
-///
-/// Other platforms keep the show/hide toggle: an ordinary window stays put when
-/// focus leaves it, so both halves of the label are real.
-fn toggle_main_window(app: &AppHandle, label: &tauri::menu::MenuItem<tauri::Wry>) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = label;
-        crate::debug_log::log("tray: show Ribbit");
-        mac_window::show_panel(app);
+/// Space. The panel is the mechanism that can.
+fn tray_icon_clicked(app: &AppHandle, rect: tauri::Rect) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    // The window hides itself the moment focus leaves it, and this very click is
+    // what took the focus away — so an open window already reads as hidden by the
+    // time we run here. `just_auto_hid` is the "the click you are handling is the
+    // one that closed it" signal; without it the icon could never close the
+    // window (it would hide and be shown right back, a flicker).
+    let visible = if cfg!(target_os = "macos") {
+        mac_window::panel_visible(app)
+    } else {
+        w.is_visible().unwrap_or(false)
+    };
+    if visible || just_auto_hid() {
+        hide_main(app);
+        return;
     }
+    anchor_to_tray(&w, rect);
+    #[cfg(target_os = "macos")]
+    mac_window::show_panel(app);
     #[cfg(not(target_os = "macos"))]
     {
-        let Some(w) = app.get_webview_window("main") else { return };
-        let visible = w.is_visible().unwrap_or(false);
-        if visible && w.is_focused().unwrap_or(false) {
-            let _ = w.hide();
-            let _ = label.set_text(tray_window_label(false));
-        } else {
-            // unminimize is harmless if not minimized — safety net for the "_"
-            // button's real minimize; show()+set_focus raise and focus it.
-            let _ = w.unminimize();
-            let _ = w.show();
-            let _ = w.set_focus();
-            let _ = label.set_text(tray_window_label(true));
-        }
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
     }
 }
 
@@ -1281,17 +1301,28 @@ pub fn run() {
     builder
         .on_window_event(|window, event| {
             // Closing hides. Ribbit has one window and it *is* the app: destroy it
-            // (the cross, ⌘W — macOS installs its own Close item when the app sets
-            // no menu) and the hotkey opens nothing, the tray item opens nothing,
-            // and with no windows left Tauri exits the process — tray and all.
+            // (⌘W — macOS installs its own Close item when the app sets no menu)
+            // and the hotkey opens nothing, the tray icon opens nothing, and with
+            // no windows left Tauri exits the process — tray and all.
             if HIDE_ON_CLOSE.contains(&window.label()) {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                // The window hangs off the tray icon and closes the way a menu
+                // does — by looking away. macOS gets this from the panel's own
+                // resign-key handler (mac_window), which fires for Spaces and
+                // full-screen apps too; everywhere else the focus event is it.
+                // Without this there is no way to dismiss the window at all: it
+                // carries no close button.
+                #[cfg(not(target_os = "macos"))]
+                if let tauri::WindowEvent::Focused(false) = event {
+                    note_auto_hide();
+                    let _ = window.hide();
+                }
             }
         })
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, set_always_on_top, get_shortcut, set_shortcut, test_sound, hide_to_tray, minimize_window, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, get_shortcut, set_shortcut, test_sound, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -1309,13 +1340,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             mic_permission::request_mic_access();
 
-            // Menu-bar menu. Same shape as CopyPaster and Quill: update first,
-            // then the window, then the version, then quit. A left click opens
-            // it rather than toggling the window — a click that only flips a
-            // hidden window gives no sign the app is even alive, and the update
-            // has to be reachable without opening settings.
+            // The icon is the app: a left click drops the window out of it, a
+            // right click opens the housekeeping menu — update, version, quit.
+            // No "Show Ribbit" item, because the left click is that item.
             let update = MenuItemBuilder::with_id("update", "Check for updates").build(app)?;
-            let show = MenuItemBuilder::with_id("show", "Show Ribbit").build(app)?;
             let version = MenuItemBuilder::with_id("version", format!("Ribbit v{}", env!("CARGO_PKG_VERSION")))
                 .enabled(false)
                 .build(app)?;
@@ -1323,22 +1351,28 @@ pub fn run() {
             let menu = MenuBuilder::new(app)
                 .item(&update)
                 .separator()
-                .item(&show)
-                .separator()
                 .item(&version)
                 .item(&quit)
                 .build()?;
 
-            let show_for_menu = show.clone();
-            // hide_to_tray (the X button) flips this label too.
-            app.manage(show.clone());
             // announce_update() rewrites this item's text when a release lands.
             app.manage(UpdateItem(update.clone()));
 
             let mut tray_builder = TrayIconBuilder::with_id("main")
                 .tooltip("Ribbit - Voice to Text")
                 .menu(&menu)
-                .show_menu_on_left_click(true)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        rect,
+                        ..
+                    } = event
+                    {
+                        tray_icon_clicked(tray.app_handle(), rect);
+                    }
+                })
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "update" => {
                         let app = app.clone();
@@ -1346,7 +1380,6 @@ pub fn run() {
                             on_update_clicked(app).await;
                         });
                     }
-                    "show" => toggle_main_window(app, &show_for_menu),
                     "quit" => app.exit(0),
                     _ => {}
                 });
@@ -1367,13 +1400,6 @@ pub fn run() {
                 if let Err(e) = mac_window::apply_rounded_corners(&main_window, 10.0) {
                     debug_log::log(&format!("rounded corners: {}", e));
                 }
-            }
-
-            // Restore the saved Always-on-Top choice; the panel's yield-on-blur
-            // behaviour reads the same flag.
-            let on_top = read_config()["always_on_top"].as_bool().unwrap_or(false);
-            if let Err(e) = apply_always_on_top(&handle, on_top) {
-                debug_log::log(&format!("always-on-top restore: {}", e));
             }
 
             // Manage state for commands and shortcut handler
@@ -1442,27 +1468,57 @@ mod endpoint_tests {
 }
 
 #[cfg(test)]
-mod tray_label_tests {
-    use super::tray_window_label;
+mod popover_tests {
+    use super::{popover_position, PixelRect};
+
+    /// A 1440p screen with a 24px-tall menu bar icon at x=1200, the ordinary case.
+    const SCREEN: PixelRect = PixelRect { x: 0.0, y: 0.0, w: 2560.0, h: 1440.0 };
+    const WIN: (f64, f64) = (400.0, 440.0);
+    const GAP: f64 = 6.0;
 
     #[test]
-    fn the_item_says_show_whenever_the_window_is_gone() {
-        assert_eq!(tray_window_label(false), "Show Ribbit");
+    fn the_window_hangs_centred_under_the_icon() {
+        let icon = PixelRect { x: 1200.0, y: 0.0, w: 24.0, h: 24.0 };
+        let (x, y) = popover_position(icon, WIN.0, WIN.1, Some(SCREEN), GAP);
+        assert_eq!(x, 1212.0 - 200.0, "icon centre, minus half the window");
+        assert_eq!(y, 30.0, "just below the icon");
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn macos_never_offers_to_hide() {
-        // The menu's own click auto-hides the panel, so "Hide Ribbit" was read
-        // by the user only ever on an already-hidden window — and clicking it
-        // showed the window instead of hiding it.
-        assert_eq!(tray_window_label(true), "Show Ribbit");
+    fn an_icon_at_the_bottom_of_the_screen_gets_the_window_above_it() {
+        // A Windows taskbar: hanging "below" would put the window off-screen.
+        let icon = PixelRect { x: 1200.0, y: 1400.0, w: 24.0, h: 24.0 };
+        let (_, y) = popover_position(icon, WIN.0, WIN.1, Some(SCREEN), GAP);
+        assert_eq!(y, 1400.0 - GAP - WIN.1);
     }
 
     #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn elsewhere_a_window_that_stays_put_can_be_hidden() {
-        assert_eq!(tray_window_label(true), "Hide Ribbit");
+    fn a_corner_icon_does_not_push_the_window_off_the_screen() {
+        let right = PixelRect { x: 2548.0, y: 0.0, w: 12.0, h: 24.0 };
+        let (x, _) = popover_position(right, WIN.0, WIN.1, Some(SCREEN), GAP);
+        assert_eq!(x, SCREEN.w - WIN.0 - GAP);
+
+        let left = PixelRect { x: 0.0, y: 0.0, w: 12.0, h: 24.0 };
+        let (x, _) = popover_position(left, WIN.0, WIN.1, Some(SCREEN), GAP);
+        assert_eq!(x, GAP);
+    }
+
+    #[test]
+    fn a_second_monitor_is_measured_from_its_own_origin() {
+        // Monitors to the right of the primary start at a non-zero x, and one
+        // above it at a negative y — placement must not assume a 0,0 origin.
+        let screen = PixelRect { x: 2560.0, y: -1440.0, w: 1920.0, h: 1080.0 };
+        let icon = PixelRect { x: 4470.0, y: -1440.0, w: 12.0, h: 24.0 };
+        let (x, y) = popover_position(icon, WIN.0, WIN.1, Some(screen), GAP);
+        assert_eq!(x, screen.x + screen.w - WIN.0 - GAP);
+        assert_eq!(y, -1440.0 + 24.0 + GAP);
+    }
+
+    #[test]
+    fn without_a_monitor_the_window_still_lands_under_the_icon() {
+        let icon = PixelRect { x: 1200.0, y: 0.0, w: 24.0, h: 24.0 };
+        let (x, y) = popover_position(icon, WIN.0, WIN.1, None, GAP);
+        assert_eq!((x, y), (1012.0, 30.0));
     }
 }
 
