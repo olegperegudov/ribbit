@@ -26,6 +26,11 @@ use tauri_plugin_updater::UpdaterExt;
 /// CopyPaster and Quill give, so the three apps behave alike.
 const TRAY_UPDATE_ICON: &[u8] = include_bytes!("../icons/tray-update.png");
 
+/// Same frog, red badge: a dictation was transcribed but never reached the app.
+/// The window is closed when that happens — the icon is the only place the user
+/// can learn something went wrong.
+const TRAY_ERROR_ICON: &[u8] = include_bytes!("../icons/tray-error.png");
+
 /// The tray's update item, kept reachable so `announce_update` can rewrite it.
 struct UpdateItem(tauri::menu::MenuItem<tauri::Wry>);
 
@@ -470,6 +475,69 @@ async fn install_update(app: &AppHandle) -> Result<(), String> {
     }
 }
 
+/// A release is waiting. Static because the icon has two claimants and each has
+/// to know about the other: clearing a failure must go back to green if an
+/// update is still pending, not to the plain frog.
+static UPDATE_PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A dictation was transcribed but never typed, and the user has not seen it yet.
+static INSERT_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What the menu-bar icon is saying right now.
+#[derive(Debug, PartialEq, Eq)]
+enum TrayBadge {
+    None,
+    Update,
+    Failure,
+}
+
+/// Failure outranks an update: one costs the user text they already spoke, the
+/// other waits happily until tomorrow.
+fn tray_badge(insert_failed: bool, update_pending: bool) -> TrayBadge {
+    if insert_failed {
+        TrayBadge::Failure
+    } else if update_pending {
+        TrayBadge::Update
+    } else {
+        TrayBadge::None
+    }
+}
+
+/// Paint the menu-bar icon for whatever the app currently has to say.
+fn repaint_tray(app: &AppHandle) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some(tray) = app.tray_by_id("main") else { return };
+    let badge = match tray_badge(INSERT_FAILED.load(Relaxed), UPDATE_PENDING.load(Relaxed)) {
+        TrayBadge::Failure => Some(TRAY_ERROR_ICON),
+        TrayBadge::Update => Some(TRAY_UPDATE_ICON),
+        TrayBadge::None => None,
+    };
+    match badge {
+        Some(bytes) => {
+            if let Ok(icon) = tauri::image::Image::from_bytes(bytes) {
+                let _ = tray.set_icon(Some(icon));
+            }
+        }
+        // Back to the plain frog: nothing to report.
+        None => {
+            let plain = app.default_window_icon().cloned();
+            let _ = tray.set_icon(plain);
+        }
+    }
+}
+
+/// Raise or clear the "your text never arrived" badge.
+fn set_insert_failed(app: &AppHandle, failed: bool) {
+    INSERT_FAILED.store(failed, std::sync::atomic::Ordering::Relaxed);
+    repaint_tray(app);
+}
+
+/// The user has seen the failure (dismissed the note in the window).
+#[tauri::command]
+fn dismiss_alert(app: AppHandle) {
+    set_insert_failed(&app, false);
+}
+
 /// Light the menu-bar icon green and turn the menu's update item into the
 /// install action. Called from both the manual check and the background poll —
 /// one place, so a release found either way gives the user the same signal.
@@ -477,11 +545,8 @@ fn announce_update(app: &AppHandle, version: &str) {
     if let Some(item) = app.try_state::<UpdateItem>() {
         let _ = item.0.set_text(format!("Update to v{}", version));
     }
-    if let Some(tray) = app.tray_by_id("main") {
-        if let Ok(icon) = tauri::image::Image::from_bytes(TRAY_UPDATE_ICON) {
-            let _ = tray.set_icon(Some(icon));
-        }
-    }
+    UPDATE_PENDING.store(true, std::sync::atomic::Ordering::Relaxed);
+    repaint_tray(app);
 }
 
 /// One menu item, two jobs: check while nothing is pending, install once a
@@ -633,7 +698,7 @@ fn start_recording(state: &Arc<Mutex<RecordingState>>, app: &AppHandle) {
 
     // Show "warming up" immediately — the actual "Listening" + start sound
     // fires from audio::record_audio after the mic stream starts
-    let _ = app.emit("status-detail", "Starting mic...");
+    let _ = app.emit("status-detail", "starting mic...");
 
     let state_clone = Arc::clone(state);
     let app_clone = app.clone();
@@ -668,18 +733,18 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
     debug_log::log(&format!("audio: {} samples, {:.1}s, RMS={:.6}", audio_data.len(), duration_secs, rms));
 
     if audio_data.is_empty() || duration_secs < 0.3 {
-        let _ = app.emit("status-detail", "Too short, try again.");
+        let _ = app.emit("status-detail", "too short, try again");
         return;
     }
 
     if rms < 0.001 {
         debug_log::log("WARNING: audio is silence (RMS < 0.001), check mic permissions");
-        let _ = app.emit("status-detail", "Mic silent — check mic permissions in system settings");
+        let _ = app.emit("status-detail", "mic heard nothing — check microphone access in system settings");
         return;
     }
 
     let _ = app.emit("status-detail",
-        format!("Ribbiting... ({:.1}s of audio)", duration_secs));
+        format!("ribbiting... ({:.1}s of audio)", duration_secs));
 
     // Use a dedicated thread for the transcribe flow.
     // Avoids tokio runtime issues.
@@ -824,7 +889,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     text.chars().count()
                 ));
                 if text.is_empty() {
-                    let _ = app_handle.emit("status-detail", "No speech detected.");
+                    let _ = app_handle.emit("status-detail", "no speech detected");
                 } else {
                     let _ = app_handle.emit("transcription", serde_json::json!({
                         "text": &text,
@@ -834,7 +899,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         "llm_model": llm_model,
                     }));
 
-                    let _ = app_handle.emit("status-detail", "Inserting text...");
+                    let _ = app_handle.emit("status-detail", "typing...");
 
                     // Small delay so the UI updates and the previous app regains focus.
                     std::thread::sleep(std::time::Duration::from_millis(200));
@@ -850,14 +915,25 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         Ok(()) => None,
                         Err(e) => {
                             debug_log::log(&format!("insert error: {}", e));
-                            let _ = app_handle.emit("error",
-                                format!("Insert failed — text saved to log. {}", e));
+                            // Not the `error` channel: this failure has a survivor
+                            // — the words are in the log — so the UI marks that
+                            // entry as well as showing the note.
+                            let _ = app_handle.emit("insert-failed", serde_json::json!({
+                                "error": &e,
+                                "text": &text,
+                            }));
+                            set_insert_failed(&app_handle, true);
                             Some(e)
                         }
                     };
                     let insert_secs = t_insert.elapsed().as_secs_f32();
 
-                    let _ = app_handle.emit("status-detail", "Done!");
+                    if insert_error.is_none() {
+                        // A dictation that landed is the acknowledgement: the
+                        // hotkey works again, so the old red badge is stale.
+                        set_insert_failed(&app_handle, false);
+                        let _ = app_handle.emit("status-detail", "done");
+                    }
 
                     // Logged after insert so insert_secs/total_secs are real.
                     // The UI history already received the transcript via the
@@ -1323,7 +1399,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, get_shortcut, set_shortcut, test_sound, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, get_shortcut, set_shortcut, test_sound, dismiss_alert, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -1465,6 +1541,29 @@ mod endpoint_tests {
         assert!(require_https("https://api.groq.com/openai/v1").is_ok());
         assert!(require_https("  https://api.openai.com/v1 ").is_ok());
         assert!(require_https("").is_ok(), "clearing the field is not an attack");
+    }
+}
+
+#[cfg(test)]
+mod tray_badge_tests {
+    use super::{tray_badge, TrayBadge};
+
+    #[test]
+    fn a_dictation_that_never_arrived_outranks_a_waiting_release() {
+        // Both signals live on one icon. The update waits happily until
+        // tomorrow; the lost text is the user's, and they don't know yet.
+        assert_eq!(tray_badge(true, true), TrayBadge::Failure);
+        assert_eq!(tray_badge(true, false), TrayBadge::Failure);
+    }
+
+    #[test]
+    fn clearing_a_failure_falls_back_to_the_release_badge() {
+        assert_eq!(tray_badge(false, true), TrayBadge::Update);
+    }
+
+    #[test]
+    fn nothing_to_report_leaves_the_plain_frog() {
+        assert_eq!(tray_badge(false, false), TrayBadge::None);
     }
 }
 

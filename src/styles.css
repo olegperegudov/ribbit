@@ -144,6 +144,39 @@ body {
 }
 .win-btn svg { display: block; }
 
+/* Failure note. Same shape as the amber fallback banner one panel down, in the
+   failure colour: a dictation that never reached the app is the one thing the
+   user has actually lost, so it wraps to full length instead of ellipsizing and
+   stays until dismissed — the note explains a system setting the user has to
+   walk through. */
+#alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 4px;
+  padding: 0.35rem 0.45rem;
+  margin-bottom: 0.4rem;
+  flex-shrink: 0;
+}
+#alert-text { flex: 1; min-width: 0; word-break: break-word; }
+#alert-close {
+  background: none;
+  border: none;
+  color: rgba(248, 113, 113, 0.7);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+#alert-close:hover { color: #f87171; }
+
 /* Log entries */
 #log-entries {
   flex: 1;
@@ -630,9 +663,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#log-entries:not(.show-llm-dots) .log-meta { display: none; }
+/* The rephrased/not-rephrased dot is only meaningful while post-processing is
+   on — but a row that never reached the app keeps its dot either way. That is
+   not a pipeline detail, it is the reason the row is still here. */
+#log-entries:not(.show-llm-dots) .log-entry:not(.failed) .log-meta { display: none; }
 .log-llm-dot.edited::before { background: #4ade80; }
 .log-llm-dot.unedited::before { background: #facc15; }
+.log-llm-dot.failed::before { background: #f87171; }
 
 kbd {
   background: #1a1f28;

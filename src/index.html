@@ -31,6 +31,14 @@
         </div>
       </div>
 
+      <!-- Failure note. Lives above the panels, not inside the log, because the
+           dictation it reports on happened while the window was closed and the
+           user may open it on any panel. -->
+      <div id="alert" style="display:none">
+        <span id="alert-text"></span>
+        <button id="alert-close" aria-label="Dismiss">&#x2715;</button>
+      </div>
+
       <div id="log-entries"></div>
 
       <!-- Quick search popup (magnifier in header) -->

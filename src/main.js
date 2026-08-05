@@ -31,7 +31,7 @@ function formatDate(isoString) {
   return `${wd}, ${mon} ${day}${ordinal(day)}`;
 }
 
-function addLogEntry(text, ts, edited, llmHost, llmModel) {
+function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
   const log = $("#log-entries");
   const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const dateLabel = formatDate(ts);
@@ -49,9 +49,14 @@ function addLogEntry(text, ts, edited, llmHost, llmModel) {
   }
 
   const entry = document.createElement("div");
-  entry.className = "log-entry";
-  const dotClass = edited === true ? "edited" : "unedited";
-  const dotHint = edited === true ? "rephrased" : "not rephrased";
+  entry.className = insertError ? "log-entry failed" : "log-entry";
+  // A dictation that was never typed is still a dictation — it keeps its row and
+  // its text (click still copies), and says so with a red dot. Failure outranks
+  // the rephrased/not-rephrased signal: the user needs to find these rows.
+  const dotClass = insertError ? "failed" : edited === true ? "edited" : "unedited";
+  const dotHint = insertError
+    ? `never typed into the app — click the line to copy it. ${insertError}`
+    : edited === true ? "rephrased" : "not rephrased";
   // Provider label rides under the message, next to the indicator — but only
   // when the LLM actually ran (green). A yellow entry had no provider, so the
   // dot stands alone.
@@ -59,7 +64,7 @@ function addLogEntry(text, ts, edited, llmHost, llmModel) {
   const labelHtml = (edited === true && llmHost && llmModel)
     ? `<span class="log-llm-label" data-hint="${escapeHtml(labelText)}" tabindex="0">${escapeHtml(labelText)}</span>`
     : "";
-  entry.innerHTML = `<span class="log-time">${time}</span><div class="log-body"><span class="log-text">${escapeHtml(text)}</span><div class="log-meta"><span class="log-llm-dot ${dotClass}" data-hint="${dotHint}" tabindex="0"></span>${labelHtml}</div></div>`;
+  entry.innerHTML = `<span class="log-time">${time}</span><div class="log-body"><span class="log-text">${escapeHtml(text)}</span><div class="log-meta"><span class="log-llm-dot ${dotClass}" data-hint="${escapeHtml(dotHint)}" tabindex="0"></span>${labelHtml}</div></div>`;
   entry.title = "click to copy";
   entry.addEventListener("click", () => {
     // Don't copy if user is selecting text (for vocab popup)
@@ -81,6 +86,23 @@ function addLogEntry(text, ts, edited, llmHost, llmModel) {
 
   // A transcript arriving while search is active must obey the active filter.
   if (searchQuery.trim()) applySearchFilter();
+  return entry;
+}
+
+// The row is created the moment the text exists; the insert is attempted after,
+// so a failure has to find the row again. Newest first, and the text is the
+// identity — a repeat of the same sentence would be the same row anyway.
+function markEntryFailed(text, error) {
+  const rows = $("#log-entries").querySelectorAll(".log-entry");
+  for (const row of Array.from(rows).slice(0, 5)) {
+    if (row.querySelector(".log-text").textContent !== text) continue;
+    row.classList.add("failed");
+    const dot = row.querySelector(".log-llm-dot");
+    dot.classList.remove("edited", "unedited");
+    dot.classList.add("failed");
+    dot.dataset.hint = `never typed into the app — click the line to copy it. ${error}`;
+    return;
+  }
 }
 
 // Escapes quotes too — several call sites interpolate into data-* attributes,
@@ -89,6 +111,18 @@ function addLogEntry(text, ts, edited, llmHost, llmModel) {
 function escapeHtml(text) {
   const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   return String(text).replace(/[&<>"']/g, (c) => map[c]);
+}
+
+// The failure note above the panels. Dismissing it also clears the red badge on
+// the menu-bar icon — the icon and this note report the same one fact.
+function showAlert(text) {
+  $("#alert-text").textContent = text;
+  $("#alert").style.display = "flex";
+}
+
+function hideAlert() {
+  $("#alert").style.display = "none";
+  invoke("dismiss_alert");
 }
 
 // Show one panel at a time (log, settings, debug, vocab).
@@ -379,7 +413,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // limit 0 = load everything inside the retention window (search needs all days).
     const history = await invoke("get_log_history", { limit: 0 });
     for (const entry of history.reverse()) {
-      addLogEntry(entry.text, entry.ts, entry.edited, entry.llm_host, entry.llm_model);
+      addLogEntry(entry.text, entry.ts, entry.edited, entry.llm_host, entry.llm_model, entry.insert_error);
     }
   } catch (e) {
     console.error("Failed to load history:", e);
@@ -431,19 +465,21 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("#audio-meter-bar").style.height = meterHeight.toFixed(1) + "%";
   });
 
-  let hasError = false;
-
   await listen("transcribing", (event) => {
     if (event.payload) {
-      hasError = false;
       $("#status-icon").className = "transcribing";
       $("#status-detail").textContent = "ribbiting...";
     } else {
       $("#status-icon").className = "idle";
-      if (!hasError) {
-        $("#status-detail").textContent = "";
-      }
+      $("#status-detail").textContent = "";
     }
+  });
+
+  // The pipeline narrates itself — "no speech detected", "mic heard nothing",
+  // "typing...". Until this listener existed the backend was talking to nobody
+  // and a dictation that produced nothing looked identical to one that worked.
+  await listen("status-detail", (event) => {
+    $("#status-detail").textContent = String(event.payload);
   });
 
   await listen("transcription", (event) => {
@@ -453,11 +489,21 @@ window.addEventListener("DOMContentLoaded", async () => {
     refreshLlmError();
   });
 
-  await listen("error", (event) => {
-    hasError = true;
-    $("#status-detail").textContent = event.payload.toLowerCase();
-    setTimeout(() => { $("#status-detail").textContent = ""; hasError = false; }, 5000);
+  // The words exist, they just never reached the app. Say it in full, keep it
+  // until dismissed (the fix is a walk through System Settings), and mark the
+  // row that was not delivered.
+  await listen("insert-failed", (event) => {
+    const { error, text } = event.payload;
+    markEntryFailed(text, error);
+    showAlert(error);
   });
+
+  // Nothing survived this one — no text, no row. Same note, no row to mark.
+  await listen("error", (event) => {
+    showAlert(String(event.payload));
+  });
+
+  $("#alert-close").addEventListener("click", hideAlert);
 
   // Settings panel (gear toggles it)
   $("#settings-btn").addEventListener("click", () => {
