@@ -39,16 +39,16 @@
         <button id="alert-close" aria-label="Dismiss">&#x2715;</button>
       </div>
 
-      <div id="log-entries"></div>
+      <div id="log-entries" role="log" aria-live="polite" aria-label="dictations"></div>
 
       <!-- Quick search popup (magnifier in header) -->
       <div id="search-popup" style="display:none">
-        <input id="search-input" type="text" placeholder="Search..." autocomplete="off" />
+        <input id="search-input" type="text" placeholder="search..." aria-label="search transcripts" autocomplete="off" />
       </div>
 
       <!-- Selection popup for quick vocab add -->
       <div id="vocab-popup" style="display:none">
-        <input id="vocab-popup-input" type="text" placeholder="replace with..." autocomplete="off" />
+        <input id="vocab-popup-input" type="text" placeholder="replace with..." aria-label="replace the selected word with" autocomplete="off" />
         <div id="vocab-popup-suggestion" style="display:none"></div>
       </div>
 
@@ -59,11 +59,11 @@
           <div class="settings-group-head">speaking</div>
           <div class="setting-row">
             <span class="setting-label">hotkey <span class="hint-icon" data-hint="Click the shortcut, press your new combo, then Enter to save or Esc to cancel." tabindex="0" role="button" aria-label="Help: hotkey">?</span></span>
-            <kbd id="shortcut-display">ctrl+alt+space</kbd>
+            <kbd id="shortcut-display" role="button" tabindex="0" aria-label="change the dictation hotkey">ctrl+alt+space</kbd>
           </div>
           <div class="setting-row">
             <span class="setting-label">sound <span class="hint-icon" data-hint="Audio feedback when recording starts. Frog = quack, Ping = subtle knock." tabindex="0" role="button" aria-label="Help: sound">?</span></span>
-            <select id="sound-select">
+            <select id="sound-select" aria-label="sound">
               <option value="frog">frog</option>
               <option value="ping">ping</option>
             </select>
@@ -72,7 +72,7 @@
             <span class="setting-label">languages <span class="hint-icon" data-hint="Optional. Groq auto-detects the language, but selecting yours reduces errors — especially for short phrases." tabindex="0" role="button" aria-label="Help: languages">?</span></span>
             <div class="lang-right">
               <div id="lang-chips"></div>
-              <select id="lang-select">
+              <select id="lang-select" aria-label="add a language">
                 <option value="" disabled selected>add...</option>
                 <option value="en">English</option>
                 <option value="ru">Русский</option>
@@ -98,19 +98,19 @@
           <div class="setting-row fallback-row">
             <span class="setting-label">auto-fallback <span class="hint-icon" data-hint="Applies to both speech and edit stacks. Switch to the next provider after this many consecutive rate-limit / server-error / timeout failures, then return to the primary after the cooldown." tabindex="0" role="button" aria-label="Help: auto-fallback">?</span></span>
             <span class="fallback-knobs">
-              after <input type="number" id="fb-threshold" min="1" max="100" /> fails ·
-              back after <input type="number" id="fb-cooldown" min="1" max="1440" /> min
+              after <input type="number" id="fb-threshold" min="1" max="100" aria-label="failures before switching provider" /> fails ·
+              back after <input type="number" id="fb-cooldown" min="1" max="1440" aria-label="minutes before returning to the primary provider" /> min
             </span>
           </div>
           <div class="settings-group-head">text</div>
           <div class="setting-row">
             <span class="setting-label">vocabulary <span class="hint-icon" data-hint="Custom word replacements. Fix recurring transcription mistakes — e.g. 'def' → 'dev'. Select a word in the log to add it quickly." tabindex="0" role="button" aria-label="Help: vocabulary">?</span></span>
-            <button id="vocab-btn" class="setting-btn">abc</button>
+            <button id="vocab-btn" class="setting-btn" aria-label="open the vocabulary">abc</button>
           </div>
           <div class="setting-row">
             <span class="setting-label">edit transcription <span class="hint-icon" data-hint="Send each transcription through a small LLM to fix punctuation, spelling and anglicisms before it lands in the log. Adds ~150-300ms. Needs an LLM provider key (pick below)." tabindex="0" role="button" aria-label="Help: edit transcription">?</span></span>
             <label class="toggle">
-              <input type="checkbox" id="postprocess-toggle" />
+              <input type="checkbox" id="postprocess-toggle" aria-label="edit transcription with an LLM" />
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -126,13 +126,13 @@
           <div class="setting-row">
             <span class="setting-label">history <span class="hint-icon" data-hint="How many days of transcripts to keep on this computer, counting today. Older days are deleted automatically. Quick search looks across everything kept here. Set to 1 to keep only today." tabindex="0" role="button" aria-label="Help: history">?</span></span>
             <div class="history-days">
-              <input type="number" id="history-days-input" min="1" max="365" />
+              <input type="number" id="history-days-input" min="1" max="365" aria-label="days of history to keep" />
               <span class="history-days-unit">days</span>
             </div>
           </div>
           <div class="setting-row">
             <span class="setting-label">debug log <span class="hint-icon" data-hint="Internal log for troubleshooting. Shows recording events, API calls, and errors." tabindex="0" role="button" aria-label="Help: debug log">?</span></span>
-            <button id="debug-btn" class="setting-btn">&gt;_</button>
+            <button id="debug-btn" class="setting-btn" aria-label="open the debug log">&gt;_</button>
           </div>
           <div class="setting-row">
             <a class="setting-label version-link" id="version-label" href="#" title="see changelog">v0.7.95</a>
@@ -144,23 +144,23 @@
       <div id="vocab-panel" style="display:none">
         <div class="panel-header">
           <span>add words to vocabulary manually</span>
-          <button id="vocab-close">&times;</button>
+          <button id="vocab-close" aria-label="back to the log">&times;</button>
         </div>
         <div class="vocab-hint">or select words on transcript screen</div>
         <div class="vocab-add-row">
-          <input id="vocab-add-target" type="text" placeholder="correct word" autocomplete="off" />
+          <input id="vocab-add-target" type="text" placeholder="correct word" aria-label="correct word" autocomplete="off" />
           <span class="vocab-arrow">&larr;</span>
-          <input id="vocab-add-alias" type="text" placeholder="misheard word" autocomplete="off" />
-          <button id="vocab-add-btn">+</button>
+          <input id="vocab-add-alias" type="text" placeholder="misheard word" aria-label="misheard word to replace" autocomplete="off" />
+          <button id="vocab-add-btn" aria-label="add this replacement">+</button>
         </div>
-        <input id="vocab-search" type="text" placeholder="search..." autocomplete="off" />
+        <input id="vocab-search" type="text" placeholder="search..." aria-label="search the vocabulary" autocomplete="off" />
         <div id="vocab-list"></div>
       </div>
 
       <div id="debug-panel" style="display:none">
         <div class="panel-header">
           <span>debug log</span>
-          <button id="debug-close">&times;</button>
+          <button id="debug-close" aria-label="back to the log">&times;</button>
         </div>
         <pre id="debug-content"></pre>
       </div>
@@ -182,7 +182,7 @@
           </div>
         </div>
         <form id="key-form">
-          <input type="password" id="api-key-input" placeholder="gsk_..." autocomplete="off" />
+          <input type="password" id="api-key-input" placeholder="gsk_..." aria-label="Groq API key" autocomplete="off" />
           <button type="submit">save</button>
         </form>
       </div>

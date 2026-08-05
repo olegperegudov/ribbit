@@ -66,8 +66,14 @@ function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
     ? `<span class="log-llm-label" data-hint="${escapeHtml(labelText)}" tabindex="0">${escapeHtml(labelText)}</span>`
     : "";
   entry.innerHTML = `<span class="log-time">${time}</span><div class="log-body"><span class="log-text">${escapeHtml(text)}</span><div class="log-meta"><span class="log-llm-dot ${dotClass}" data-hint="${escapeHtml(dotHint)}" tabindex="0"></span>${labelHtml}</div></div>`;
-  entry.title = "click to copy";
-  entry.addEventListener("click", () => {
+  // Copying a line is why the window opens, so the row is a real button: it
+  // takes focus, answers Enter and Space, and announces itself. Its "click to
+  // copy" hint moved off native title=, which WKWebView never draws.
+  entry.setAttribute("role", "button");
+  entry.tabIndex = 0;
+  entry.dataset.hint = "click to copy";
+  entry.setAttribute("aria-label", `copy: ${text}`);
+  const copy = () => {
     // Don't copy if user is selecting text (for vocab popup)
     const sel = window.getSelection();
     if (sel && sel.toString().trim()) return;
@@ -76,6 +82,12 @@ function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
       entry.classList.add("copied");
       setTimeout(() => entry.classList.remove("copied"), 800);
     });
+  };
+  entry.addEventListener("click", copy);
+  entry.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    copy();
   });
 
   const firstSep = log.querySelector(".date-sep");
@@ -506,6 +518,21 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   $("#alert-close").addEventListener("click", hideAlert);
 
+  // One key out of every panel, and one key into search. Without these the
+  // window was mouse-only once you left the log: Escape was handled inside the
+  // search field and the vocab popup, but nothing took you back from settings.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("#log-entries").style.display === "none") {
+      showPanel("log");
+      return;
+    }
+    if (e.key.toLowerCase() === "f" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if ($("#log-entries").style.display === "none") showPanel("log");
+      openSearch();
+    }
+  });
+
   // Settings panel (gear toggles it)
   $("#settings-btn").addEventListener("click", () => {
     const visible = $("#settings-panel").style.display !== "none";
@@ -800,13 +827,22 @@ window.addEventListener("DOMContentLoaded", async () => {
     console.error("Failed to load shortcut:", e);
   }
 
-  shortcutEl.addEventListener("click", () => {
+  function startCapture() {
     if (capturing) return;
     capturing = true;
     capturedKeys = "";
     shortcutEl.textContent = "press shortcut...";
     shortcutEl.classList.add("capturing");
     shortcutLabel.textContent = "enter=save  esc=cancel";
+  }
+
+  shortcutEl.addEventListener("click", startCapture);
+  // <kbd> is not focusable on its own; the row is now reachable by keyboard,
+  // which is the only way to change a keyboard shortcut without a mouse.
+  shortcutEl.addEventListener("keydown", (e) => {
+    if (capturing || (e.key !== "Enter" && e.key !== " ")) return;
+    e.preventDefault();
+    startCapture();
   });
 
   document.addEventListener("keydown", async (e) => {
