@@ -406,7 +406,7 @@ fn hide_main(app: &AppHandle) {
         let _ = w.hide();
     }
     if let Some(item) = app.try_state::<tauri::menu::MenuItem<tauri::Wry>>() {
-        let _ = item.set_text("Show Ribbit");
+        let _ = item.set_text(tray_window_label(false));
     }
 }
 
@@ -963,7 +963,21 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Single source of truth for showing/hiding the main window from the tray.
+/// Text the tray's window item carries when the window is (or is not) on screen.
+///
+/// macOS never says "Hide": the menu itself opens on a left click, that click
+/// takes key away from the panel, and the panel hides on lost key — so the
+/// window is already gone by the time the item is read. A "Hide Ribbit" there
+/// was a label that could never be true, on an item that then showed the window.
+fn tray_window_label(visible: bool) -> &'static str {
+    if cfg!(target_os = "macos") || !visible {
+        "Show Ribbit"
+    } else {
+        "Hide Ribbit"
+    }
+}
+
+/// The tray's window item.
 ///
 /// macOS: the window is a non-activating NSPanel (see `mac_window::setup_panel`).
 /// `show_panel` surfaces it on the user's CURRENT Space — over a full-screen app
@@ -972,31 +986,17 @@ fn save_config(config: &serde_json::Value) -> Result<(), String> {
 /// attempts to coax one (MoveToActiveSpace, CanJoinAllSpaces|FullScreenAuxiliary,
 /// accessory policy, dropping set_focus, orderFrontRegardless) each failed
 /// because macOS simply won't show a normal window over a foreign full-screen
-/// Space. The panel is the mechanism that can.
+/// Space. The panel is the mechanism that can. The item only ever shows —
+/// dismissing is a click anywhere else, which the panel already handles itself.
 ///
-/// Other platforms keep the plain window show/hide (no Spaces to worry about).
+/// Other platforms keep the show/hide toggle: an ordinary window stays put when
+/// focus leaves it, so both halves of the label are real.
 fn toggle_main_window(app: &AppHandle, label: &tauri::menu::MenuItem<tauri::Wry>) {
     #[cfg(target_os = "macos")]
     {
-        // The panel hides itself the moment focus leaves it (mac_window), and
-        // clicking this very icon is what took the focus away — so by the time we
-        // run, an open panel already reads as hidden. Showing it again here would
-        // make the icon unable to close the window (open → auto-hide → shown
-        // again, a flicker). `just_auto_hid` is that "the click you are handling
-        // is the one that closed it" signal.
-        let visible = mac_window::panel_visible(app);
-        let dismissed_by_this_click = !visible && mac_window::just_auto_hid();
-        crate::debug_log::log(&format!(
-            "tray toggle: visible={} dismissed_by_this_click={}",
-            visible, dismissed_by_this_click
-        ));
-        if visible || dismissed_by_this_click {
-            mac_window::hide_panel(app);
-            let _ = label.set_text("Show Ribbit");
-        } else {
-            mac_window::show_panel(app);
-            let _ = label.set_text("Hide Ribbit");
-        }
+        let _ = label;
+        crate::debug_log::log("tray: show Ribbit");
+        mac_window::show_panel(app);
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1004,14 +1004,14 @@ fn toggle_main_window(app: &AppHandle, label: &tauri::menu::MenuItem<tauri::Wry>
         let visible = w.is_visible().unwrap_or(false);
         if visible && w.is_focused().unwrap_or(false) {
             let _ = w.hide();
-            let _ = label.set_text("Show Ribbit");
+            let _ = label.set_text(tray_window_label(false));
         } else {
             // unminimize is harmless if not minimized — safety net for the "_"
             // button's real minimize; show()+set_focus raise and focus it.
             let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();
-            let _ = label.set_text("Hide Ribbit");
+            let _ = label.set_text(tray_window_label(true));
         }
     }
 }
@@ -1438,6 +1438,31 @@ mod endpoint_tests {
         assert!(require_https("https://api.groq.com/openai/v1").is_ok());
         assert!(require_https("  https://api.openai.com/v1 ").is_ok());
         assert!(require_https("").is_ok(), "clearing the field is not an attack");
+    }
+}
+
+#[cfg(test)]
+mod tray_label_tests {
+    use super::tray_window_label;
+
+    #[test]
+    fn the_item_says_show_whenever_the_window_is_gone() {
+        assert_eq!(tray_window_label(false), "Show Ribbit");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_never_offers_to_hide() {
+        // The menu's own click auto-hides the panel, so "Hide Ribbit" was read
+        // by the user only ever on an already-hidden window — and clicking it
+        // showed the window instead of hiding it.
+        assert_eq!(tray_window_label(true), "Show Ribbit");
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn elsewhere_a_window_that_stays_put_can_be_hidden() {
+        assert_eq!(tray_window_label(true), "Hide Ribbit");
     }
 }
 

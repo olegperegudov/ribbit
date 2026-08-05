@@ -37,6 +37,17 @@ numbers increase quickly — each entry below maps to a published
 
 ### Fixed
 
+- **The tray menu no longer offers "Hide Ribbit" and then shows it.** On macOS
+  the window is a panel that hides itself as soon as focus leaves — clicking
+  another window, or the tray icon itself, dismisses it. The menu label was not
+  told: it stayed on "Hide Ribbit" from the last time the window was opened, so
+  the next visit to the tray showed "Hide" on an already-hidden window, and
+  pressing it opened the window. The item is now always "Show Ribbit" and always
+  shows: hiding is a click anywhere else, which the panel handles on its own.
+  Windows and Linux keep the real Show/Hide toggle — an ordinary window there
+  stays put when focus leaves it. The "the click you are handling is the one
+  that dismissed it" timer this relied on is gone with it.
+
 - **The Mac can fall asleep again while Ribbit is running.** The sound player
   opened an output stream on startup and kept it cached for the lifetime of the
   app. A live stream keeps the speaker device running, and CoreAudio asserts

@@ -79,33 +79,6 @@ tauri_nspanel::tauri_panel! {
 #[cfg(target_os = "macos")]
 static ALWAYS_ON_TOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// When the panel last hid itself because focus went elsewhere.
-///
-/// Clicking the tray icon is one such "elsewhere": the panel resigns key and
-/// auto-hides *before* the tray click handler runs, so the toggle would see a
-/// hidden panel and show it right back — the icon would stop closing the window.
-/// The tray consults this to tell "the user just closed it by clicking me" from
-/// "it was already closed".
-#[cfg(target_os = "macos")]
-static LAST_AUTO_HIDE: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
-
-/// True when the panel auto-hid a moment ago — i.e. the click being handled is
-/// what dismissed it.
-#[cfg(target_os = "macos")]
-pub fn just_auto_hid() -> bool {
-    LAST_AUTO_HIDE
-        .lock()
-        .ok()
-        .and_then(|t| *t)
-        .map(|t| t.elapsed() < std::time::Duration::from_millis(400))
-        .unwrap_or(false)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn just_auto_hid() -> bool {
-    false
-}
-
 #[cfg(target_os = "macos")]
 pub fn set_always_on_top(value: bool) {
     ALWAYS_ON_TOP.store(value, std::sync::atomic::Ordering::Relaxed);
@@ -164,9 +137,6 @@ pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
         if ALWAYS_ON_TOP.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
-        if let Ok(mut t) = LAST_AUTO_HIDE.lock() {
-            *t = Some(std::time::Instant::now());
-        }
         hide_panel(&app);
         crate::debug_log::log("panel: focus left → hidden to tray");
     });
@@ -183,14 +153,6 @@ pub fn setup_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
 pub fn setup_panel(_window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
-
-/// Whether the main panel is currently on screen.
-#[cfg(target_os = "macos")]
-pub fn panel_visible(app: &tauri::AppHandle) -> bool {
-    use tauri_nspanel::ManagerExt;
-    app.get_webview_panel("main").map(|p| p.is_visible()).unwrap_or(false)
-}
-
 
 /// Show the panel on the user's CURRENT Space (over full-screen apps included)
 /// and give it keyboard focus, without activating Ribbit.
