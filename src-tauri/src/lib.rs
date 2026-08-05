@@ -1016,11 +1016,12 @@ fn tray_icon_clicked(app: &AppHandle, rect: tauri::Rect) {
     // time we run here. `just_auto_hid` is the "the click you are handling is the
     // one that closed it" signal; without it the icon could never close the
     // window (it would hide and be shown right back, a flicker).
-    let visible = if cfg!(target_os = "macos") {
-        mac_window::panel_visible(app)
-    } else {
-        w.is_visible().unwrap_or(false)
-    };
+    // `cfg!` would not do: the macOS-only panel call has to be compiled out on
+    // Windows, not merely skipped at runtime.
+    #[cfg(target_os = "macos")]
+    let visible = mac_window::panel_visible(app);
+    #[cfg(not(target_os = "macos"))]
+    let visible = w.is_visible().unwrap_or(false);
     if visible || just_auto_hid() {
         hide_main(app);
         return;
