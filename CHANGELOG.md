@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.105 — 2026-08-10
+
 - Updates reach you again: a release that passes every check now moves to the
   stable channel by itself instead of waiting for a button nobody pressed.
     - Five releases sat as prereleases while the installed app polled the
