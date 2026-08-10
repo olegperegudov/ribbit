@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.101 — 2026-08-10
+
 - Every build is now installed and launched on a clean machine before it is
   published, so a version that crashes at startup never reaches the update.
 
