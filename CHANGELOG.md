@@ -12,6 +12,17 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- Updates reach you again: a release that passes every check now moves to the
+  stable channel by itself instead of waiting for a button nobody pressed.
+    - Five releases sat as prereleases while the installed app polled the
+      stable endpoint and saw nothing newer than v0.7.98. The `promote` job in
+      build.yml needs the tests, both builds (with their install-and-launch
+      stage checks) and the canary, so the gate that used to be a person is
+      now the pipeline itself. Rollback stays manual in Release control.
+    - Release control's own promote button was broken too: it asked
+      `gh release view` for an `isLatest` field that the CLI on the runner
+      does not have, so it died before touching anything.
+
 ## v0.7.104 — 2026-08-10
 
 - A build no longer goes red because the speech provider's daily quota ran out;

@@ -35,10 +35,13 @@ never needs a reinstall.
    all three platforms, version == tag, no universal macOS bundle) and mirrors
    it into the fixed `beta` prerelease as `beta.json`. Beta machines update
    immediately; stable users see nothing yet.
-5. After the beta bake-in, promote with the **Release control** workflow
-   (Actions → Release control → Run workflow): action `promote`, tag `vX.Y.Z`.
-   The release becomes `latest` and stable machines start updating.
-6. If a promoted release turns out bad: same workflow, action `rollback`,
+5. With every gate green — tests, both builds, both stage checks, the canary —
+   the `promote` job marks the release `latest` and stable machines start
+   updating. Nothing is left to bake by then, and a release nobody promotes is
+   a release nobody receives. Any red gate stops the pipeline before this job,
+   so the build stays a prerelease that only beta machines can see.
+6. If a promoted release turns out bad: the **Release control** workflow
+   (Actions → Release control → Run workflow), action `rollback`,
    tag = the previous good release. The bad one is demoted back to prerelease,
    the good one becomes `latest` again. No rebuild — the stable endpoint just
    follows whichever release is marked `latest`.

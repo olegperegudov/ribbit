@@ -557,3 +557,27 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: node scripts/canary.mjs
+
+  # The stable channel moves only after every gate above is green: unit tests,
+  # both platform builds, the install-and-launch smoke checks inside them, and
+  # the live canary. That is what the prerelease window is for — once it has
+  # passed there is nothing left to bake, and a release nobody promotes is a
+  # release nobody receives. Demote by hand with the Release control workflow
+  # (action `rollback`) if a promoted build turns out bad.
+  promote:
+    needs: [version, test, build-windows, build-macos, release-canary]
+    if: needs.version.outputs.skipped != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Promote to stable
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --prerelease=false --latest=true
+          gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
+            --jq '"stable channel now serves \(.tag_name)"'

@@ -63,8 +63,8 @@ jobs:
             exit 1
           fi
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" \
-            --json tagName,isPrerelease,isLatest \
-            --jq '"target: \(.tagName) prerelease=\(.isPrerelease) latest=\(.isLatest)"'
+            --json tagName,isPrerelease \
+            --jq '"target: \(.tagName) prerelease=\(.isPrerelease)"'
 
       # Never move the stable channel onto a manifest we have not re-verified:
       # all platform keys, the right version, no universal macOS bundle. Same
