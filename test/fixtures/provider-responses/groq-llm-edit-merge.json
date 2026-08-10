@@ -1,0 +1,9 @@
+{
+  "//": "Recorded Groq chat completion (llama-3.3-70b-versatile) for the LLM edit pass over 'надо сделать мёрж этой ветки'. The editor punctuates/capitalizes but must NOT touch the term 'мёрж' — the strict vocab pass afterwards maps it to 'merge'. Replayed by src/pipeline_replay.test.js and src-tauri/src/postprocess.rs tests.",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "message": { "content": "Надо сделать мёрж этой ветки." }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "//": "Recorded Groq transcription response for the mixed RU phrase 'надо сделать мердж этой ветки' (whisper-large-v3-turbo). Whisper spells the anglicism phonetically — 'мёрж' — which is exactly what the user's vocab maps to 'merge'. Replayed by src/pipeline_replay.test.js.",
+  "text": "надо сделать мёрж этой ветки"
+}

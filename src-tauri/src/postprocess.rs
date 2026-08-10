@@ -590,3 +590,67 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
         assert!(edit_text("hello", p.base_url, "", p.default_model).is_err());
     }
 }
+
+/// Replay of recorded provider responses (test/fixtures/provider-responses/)
+/// through the correction guards and the strict vocab pass — the offline half
+/// of the canary. Add a fixture whenever a real provider output surprises us.
+#[cfg(test)]
+mod replay_tests {
+    use super::*;
+
+    /// The vocab a Ribbit user teaches after the first mixed RU/EN dictation.
+    fn merge_vocab() -> std::collections::HashMap<String, Vec<String>> {
+        std::collections::HashMap::from([(
+            "merge".to_string(),
+            vec!["мёрж".to_string(), "мерж".to_string()],
+        )])
+    }
+
+    /// Recorded Groq LLM edit of "надо сделать мёрж этой ветки": the model
+    /// punctuates and leaves the term alone, then the deterministic vocab pass
+    /// maps it — same two steps as the pipeline in lib.rs.
+    #[test]
+    fn recorded_edit_passes_guards_and_vocab_maps_the_term() {
+        let raw = "надо сделать мёрж этой ветки";
+        let json: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test/fixtures/provider-responses/groq-llm-edit-merge.json"
+        ))
+        .unwrap();
+        let edited = parse_response(&json).expect("recorded edit parses");
+        assert!(!is_runaway_edit(raw, &edited));
+        assert!(!drops_the_dictation(raw, &edited));
+        assert_eq!(
+            crate::vocab::apply_with(&edited, &merge_vocab()),
+            "Надо сделать merge этой ветки."
+        );
+    }
+
+    /// Recorded response where the model answered the dictation instead of
+    /// editing it — the guards must reject it so the caller falls back to
+    /// strict vocab instead of pasting a stranger's tutorial.
+    #[test]
+    fn recorded_runaway_answer_is_rejected_by_the_guards() {
+        let raw = "надо сделать мёрж этой ветки";
+        let json: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test/fixtures/provider-responses/groq-llm-runaway.json"
+        ))
+        .unwrap();
+        let answered = parse_response(&json).expect("recorded answer parses");
+        assert!(is_runaway_edit(raw, &answered));
+    }
+
+    /// Recorded Groq STT output for the same phrase: phonetic "мёрж" must
+    /// become "merge" even with no LLM pass at all (postprocess off).
+    #[test]
+    fn recorded_stt_text_maps_through_strict_vocab() {
+        let json: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test/fixtures/provider-responses/groq-stt-mixed-merge.json"
+        ))
+        .unwrap();
+        let text = json["text"].as_str().unwrap();
+        assert_eq!(
+            crate::vocab::apply_with(text, &merge_vocab()),
+            "надо сделать merge этой ветки"
+        );
+    }
+}

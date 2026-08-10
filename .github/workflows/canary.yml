@@ -1,0 +1,31 @@
+name: Canary
+
+# Nightly live-provider check: scripts/canary.mjs pushes the audio fixtures in
+# test/fixtures/audio/ through the real Groq STT + LLM edit pipeline and checks
+# the words that matter survive. Unit tests replay canned responses; this is
+# the tripwire for a provider retiring a model id or degrading on our phrases.
+# Missing GROQ_API_KEY → the script skips with a notice (forks stay green).
+
+on:
+  schedule:
+    - cron: "0 5 * * *" # 05:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Run live canary
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: node scripts/canary.mjs

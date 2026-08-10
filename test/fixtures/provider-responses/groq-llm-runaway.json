@@ -1,0 +1,9 @@
+{
+  "//": "Recorded Groq chat completion where the model answered the dictation instead of editing it — the failure the runaway/recall guards exist for. The edit pass must reject this and fall back to strict vocab. Replayed by src-tauri/src/postprocess.rs tests.",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "message": { "content": "Чтобы сделать merge ветки, выполните git checkout main, затем git merge <имя-ветки>. Конфликты, если они возникнут, нужно разрешить вручную и закоммитить результат." }
+    }
+  ]
+}

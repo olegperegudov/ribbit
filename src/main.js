@@ -1033,6 +1033,20 @@ window.addEventListener("DOMContentLoaded", async () => {
     invoke("test_sound");
   });
 
+  // Update channel — one flip puts this machine on the beta stream (or back).
+  // The backend picks it up on the next check; no restart, no reinstall.
+  const channelSelect = $("#channel-select");
+  channelSelect.value = config.update_channel === "beta" ? "beta" : "stable";
+  channelSelect.addEventListener("change", async () => {
+    try {
+      await invoke("set_update_channel", { channel: channelSelect.value });
+      dlog(`update channel set to ${channelSelect.value}`);
+    } catch (e) {
+      channelSelect.value = "stable";
+      console.error("set_update_channel failed:", e);
+    }
+  });
+
   // History retention — rolling window of days kept on disk and searchable.
   const historyInput = $("#history-days-input");
   historyInput.value = config.history_days ?? 7;

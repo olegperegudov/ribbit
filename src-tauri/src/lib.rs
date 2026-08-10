@@ -162,6 +162,7 @@ fn get_config() -> Result<serde_json::Value, String> {
             "text": stack_state_json(&cfg, fallback::Stack::Text),
         }),
         "history_days": history_days(),
+        "update_channel": update_channel(),
     }))
 }
 
@@ -434,10 +435,73 @@ fn just_auto_hid() -> bool {
         .unwrap_or(false)
 }
 
+/// Updater endpoints, one per channel. Stable follows the GitHub "latest"
+/// release — the same URL as plugins.updater.endpoints in tauri.conf.json.
+/// Beta is a fixed prerelease whose single asset (beta.json) is the newest
+/// verified manifest, re-uploaded by every build (see build.yml).
+const STABLE_ENDPOINT: &str =
+    "https://github.com/olegperegudov/ribbit/releases/latest/download/latest.json";
+const BETA_ENDPOINT: &str =
+    "https://github.com/olegperegudov/ribbit/releases/download/beta/beta.json";
+
+/// Which release stream this install polls: "stable" (default) or "beta".
+/// Anything unknown falls back to stable — a typo in the config must never
+/// point the updater at a URL we don't control.
+fn update_channel() -> String {
+    read_config()["update_channel"]
+        .as_str()
+        .filter(|c| *c == "beta")
+        .unwrap_or("stable")
+        .to_string()
+}
+
+fn endpoint_for_channel(channel: &str) -> &'static str {
+    match channel {
+        "beta" => BETA_ENDPOINT,
+        _ => STABLE_ENDPOINT,
+    }
+}
+
+/// Build an updater pointed at the configured channel. The endpoint is set in
+/// code (not baked into tauri.conf.json per channel) so one binary serves both
+/// channels — switching is a settings toggle, not a reinstall.
+fn updater_for(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    let channel = update_channel();
+    let url: tauri::Url = endpoint_for_channel(&channel)
+        .parse()
+        .map_err(|e| format!("bad updater endpoint: {}", e))?;
+    app.updater_builder()
+        .endpoints(vec![url])
+        .map_err(|e| e.to_string())?
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_update_channel() -> String {
+    update_channel()
+}
+
+/// One action in Settings flips this machine between the stable and beta
+/// streams. Takes effect on the next update check (the auto-poll reads the
+/// config from disk each time) — no restart, no reinstall.
+#[tauri::command]
+fn set_update_channel(channel: String) -> Result<(), String> {
+    if channel != "stable" && channel != "beta" {
+        return Err(format!("unknown update channel: {}", channel));
+    }
+    let mut config = read_config();
+    config["update_channel"] = serde_json::Value::String(channel.clone());
+    save_config(&config)?;
+    debug_log::log(&format!("update channel set to: {}", channel));
+    Ok(())
+}
+
 /// Looks for a release and, if one is there, lights the tray. Not a command any
 /// more: updating lives in the menu-bar menu, so the window never asks for it.
 async fn check_for_update(app: &AppHandle) -> Result<Option<String>, String> {
-    let updater = app.updater().map_err(|e| e.to_string())?;
+    let updater = updater_for(app)?;
+    debug_log::log(&format!("update: checking {} channel", update_channel()));
     match updater.check().await {
         Ok(Some(update)) => {
             let version = update.version.clone();
@@ -457,7 +521,7 @@ async fn check_for_update(app: &AppHandle) -> Result<Option<String>, String> {
 }
 
 async fn install_update(app: &AppHandle) -> Result<(), String> {
-    let updater = app.updater().map_err(|e| e.to_string())?;
+    let updater = updater_for(app)?;
     match updater.check().await {
         Ok(Some(update)) => {
             debug_log::log(&format!("update: downloading v{}", update.version));
@@ -1399,7 +1463,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, get_shortcut, set_shortcut, test_sound, dismiss_alert, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown])
+        .invoke_handler(tauri::generate_handler![get_config, set_api_key, get_log_history, set_history_days, get_debug_log, js_debug_log, get_shortcut, set_shortcut, test_sound, dismiss_alert, get_current_version, get_sound_pack, set_sound_pack, get_languages, set_languages, get_vocab, set_vocab, add_vocab_entry, remove_vocab_alias, remove_vocab_entry, set_postprocess_enabled, get_llm_last_error, list_provider_catalog, add_provider, remove_provider, set_provider_field, move_provider, set_provider_key, set_fallback_threshold, set_fallback_cooldown, get_update_channel, set_update_channel])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -1523,6 +1587,31 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Ribbit");
+}
+
+#[cfg(test)]
+mod update_channel_tests {
+    use super::{endpoint_for_channel, BETA_ENDPOINT, STABLE_ENDPOINT};
+
+    #[test]
+    fn stable_is_the_default_and_the_fallback() {
+        assert_eq!(endpoint_for_channel("stable"), STABLE_ENDPOINT);
+        // A typo in the config must never aim the updater at an unknown URL.
+        assert_eq!(endpoint_for_channel("betaa"), STABLE_ENDPOINT);
+        assert_eq!(endpoint_for_channel(""), STABLE_ENDPOINT);
+    }
+
+    #[test]
+    fn beta_points_at_the_moving_prerelease() {
+        assert_eq!(endpoint_for_channel("beta"), BETA_ENDPOINT);
+        assert!(BETA_ENDPOINT.ends_with("/releases/download/beta/beta.json"));
+    }
+
+    #[test]
+    fn both_channels_hit_the_same_repo() {
+        assert!(STABLE_ENDPOINT.starts_with("https://github.com/olegperegudov/ribbit/"));
+        assert!(BETA_ENDPOINT.starts_with("https://github.com/olegperegudov/ribbit/"));
+    }
 }
 
 #[cfg(test)]

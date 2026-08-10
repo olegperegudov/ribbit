@@ -1,0 +1,39 @@
+{
+  "//": "Nightly canary fixtures. Each wav is macOS `say` TTS (16 kHz mono) pushed through the live Groq pipeline by scripts/canary.mjs. `expected` tokens are checked as case-insensitive substrings of the STT transcript — use word stems, not exact words (e.g. 'ветк' matches 'ветки'/'ветку'), so a passing check survives harmless model drift. `llm_expected` additionally runs the transcript through the LLM edit pass and checks the result. Keep expectations to the words that carry the fixture's meaning.",
+  "stt_model": "whisper-large-v3-turbo",
+  "llm_model": "llama-3.3-70b-versatile",
+  "fixtures": [
+    {
+      "file": "en-merge.wav",
+      "language": "en",
+      "said": "Please merge this pull request before noon",
+      "expected": ["merge", "pull request"]
+    },
+    {
+      "file": "ru-mixed-merge.wav",
+      "language": "ru",
+      "said": "надо сделать мердж этой ветки",
+      "expected": ["надо", "ветк"],
+      "llm_expected": ["надо", "ветк"]
+    },
+    {
+      "file": "ru-devops.wav",
+      "language": "ru",
+      "said": "привет это девопс инженер",
+      "expected": ["привет", "инженер"],
+      "llm_expected": ["привет", "инженер"]
+    },
+    {
+      "file": "en-terminal.wav",
+      "language": "en",
+      "said": "open the terminal and run cargo test",
+      "expected": ["terminal", "cargo"]
+    },
+    {
+      "file": "ru-meeting.wav",
+      "language": "ru",
+      "said": "завтра созвон с командой в три часа",
+      "expected": ["завтра", "команд"]
+    }
+  ]
+}

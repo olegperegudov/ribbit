@@ -150,7 +150,7 @@ jobs:
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       - name: Build Tauri app (retry)
         if: steps.build.outcome == 'failure'
@@ -165,7 +165,7 @@ jobs:
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       # Re-upload the installer under a stable, version-less name so the README
       # download button can link straight at the file
@@ -306,7 +306,7 @@ jobs:
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       - name: Build Tauri app (Apple Silicon, retry)
         if: steps.build_arm.outcome == 'failure'
@@ -326,7 +326,7 @@ jobs:
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       - name: Build Tauri app (Intel)
         id: build_intel
@@ -347,7 +347,7 @@ jobs:
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       - name: Build Tauri app (Intel, retry)
         if: steps.build_intel.outcome == 'failure'
@@ -367,7 +367,7 @@ jobs:
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: "See the assets below to download and install."
           releaseDraft: false
-          prerelease: false
+          prerelease: true
 
       # Stable, version-less copies for the README download buttons (both Macs).
       # Direct links: releases/latest/download/Ribbit_macOS_*.dmg.
@@ -383,6 +383,27 @@ jobs:
           cp "$intel" Ribbit_macOS_Intel.dmg
           gh release upload "$TAG" Ribbit_macOS_AppleSilicon.dmg Ribbit_macOS_Intel.dmg --clobber --repo "$GITHUB_REPOSITORY"
 
+      # Release smoke: the bundle the user is about to install must be signed
+      # (deep + strict, entitlements included) and must claim the version we
+      # tagged — a mismatched Info.plist would have the updater offer the same
+      # version forever. Fails the job before the manifest is trusted.
+      - name: Smoke-test macOS bundles
+        shell: bash
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for arch in aarch64-apple-darwin x86_64-apple-darwin; do
+            app=$(ls -d src-tauri/target/$arch/release/bundle/macos/*.app | head -1)
+            echo "== $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            plist_ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
+            if [ "v$plist_ver" != "$TAG" ]; then
+              echo "::error::$app version $plist_ver != tag $TAG"
+              exit 1
+            fi
+          done
+
       # Guard: the in-app updater is only as good as latest.json. Fetch the
       # manifest we just published and fail the build if any platform key is
       # missing or the version is wrong — a broken manifest must never ship
@@ -395,27 +416,23 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p latest.json --clobber
-          python3 - "$TAG" <<'PY'
-          import json, sys
-          tag = sys.argv[1]
-          want = {"windows-x86_64", "darwin-aarch64", "darwin-x86_64"}
-          m = json.load(open("latest.json"))
-          plats = m.get("platforms", {})
-          have = set(plats)
-          missing = want - have
-          if missing:
-              print(f"::error::latest.json missing platform keys: {sorted(missing)} (present: {sorted(have)})")
-              sys.exit(1)
-          if f"v{m.get('version')}" != tag:
-              print(f"::error::latest.json version {m.get('version')!r} != tag {tag!r}")
-              sys.exit(1)
-          # The macOS bundle must be per-arch, never universal: a lipo'd ad-hoc
-          # binary fails to anchor TCC grants, so the microphone silently stops
-          # working after an update. Catch a regression to universal here.
-          for key in ("darwin-aarch64", "darwin-x86_64"):
-              url = plats[key].get("url", "")
-              if "universal" in url.lower():
-                  print(f"::error::{key} points at a universal bundle ({url.split('/')[-1]}); macOS must ship per-arch or the mic breaks")
-                  sys.exit(1)
-          print(f"latest.json OK: version {m['version']}, platforms {sorted(have)}")
-          PY
+          node scripts/verify_manifest.mjs latest.json "$TAG"
+
+      # Every push-built release starts as a PRERELEASE: it is the beta channel.
+      # The stable channel only moves when someone promotes the release with the
+      # release-control workflow. Beta installs poll a fixed moving endpoint —
+      # releases/download/beta/beta.json — so this step mirrors the manifest we
+      # just verified into the `beta` service release (created on first use).
+      - name: Publish beta channel manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cp latest.json beta.json
+          if ! gh release view beta -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create beta -R "$GITHUB_REPOSITORY" --prerelease \
+              --title "Beta channel" \
+              --notes "Moving target for the beta update channel"
+          fi
+          gh release upload beta beta.json -R "$GITHUB_REPOSITORY" --clobber

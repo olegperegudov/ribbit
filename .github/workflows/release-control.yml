@@ -1,0 +1,123 @@
+name: Release control
+
+# The two buttons of the stable channel. Every push-built release ships as a
+# prerelease (the beta channel, see build.yml); this workflow moves a verified
+# release onto the stable endpoint — or moves it back.
+#
+#   promote  vX.Y.Z  → the release becomes latest; stable-channel apps update
+#   rollback vX.Y.Z  → vX.Y.Z (a known-good earlier release) becomes latest
+#                      again and the release that WAS latest is demoted back
+#                      to prerelease
+#
+# The stable updater endpoint (releases/latest/download/latest.json) follows
+# whichever release is marked "latest" — no rebuild, no re-upload.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.7.95"
+        required: true
+        type: string
+      action:
+        description: "What to do with the tag"
+        required: true
+        type: choice
+        options:
+          - promote
+          - rollback
+
+permissions:
+  contents: write
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ inputs.tag }}
+      ACTION: ${{ inputs.action }}
+    steps:
+      # Only needed for scripts/verify_manifest.mjs — no build outputs here.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag '$TAG' does not look like vX.Y.Z"
+            exit 1
+          fi
+          if [[ "$TAG" == "beta" ]]; then
+            echo "::error::'beta' is the service release for the beta channel, not a version — refusing"
+            exit 1
+          fi
+
+      - name: Check target release exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+            echo "::error::release '$TAG' not found — check the tag on the releases page"
+            exit 1
+          fi
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" \
+            --json tagName,isPrerelease,isLatest \
+            --jq '"target: \(.tagName) prerelease=\(.isPrerelease) latest=\(.isLatest)"'
+
+      # Never move the stable channel onto a manifest we have not re-verified:
+      # all platform keys, the right version, no universal macOS bundle. Same
+      # check build.yml runs at publish time.
+      - name: Verify target updater manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p latest.json --clobber
+          node scripts/verify_manifest.mjs latest.json "$TAG"
+
+      - name: Resolve current latest
+        id: current
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          echo "current latest: $CURRENT"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+      - name: Promote
+        if: inputs.action == 'promote'
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT="${{ steps.current.outputs.current }}"
+          if [[ "$CURRENT" == "$TAG" ]]; then
+            echo "::notice::$TAG is already the latest stable release — nothing to do"
+            exit 0
+          fi
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --prerelease=false --latest=true
+          echo "promoted $TAG: stable channel now serves $TAG (was $CURRENT)"
+
+      - name: Rollback
+        if: inputs.action == 'rollback'
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT="${{ steps.current.outputs.current }}"
+          if [[ "$CURRENT" == "$TAG" ]]; then
+            echo "::notice::$TAG is already the latest stable release — nothing to roll back"
+            exit 0
+          fi
+          # Demote the broken release first so apps never see a gap where no
+          # release is latest: GitHub keeps "latest" pointing at the demoted
+          # release until the next edit re-points it.
+          gh release edit "$CURRENT" -R "$GITHUB_REPOSITORY" --prerelease=true --latest=false
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --prerelease=false --latest=true
+          echo "rolled back: $CURRENT demoted to prerelease, stable channel now serves $TAG"
+
+      - name: Confirm resulting latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
+            --jq '"latest stable is now: \(.tag_name) (prerelease=\(.prerelease))"'

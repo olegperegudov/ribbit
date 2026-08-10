@@ -126,6 +126,13 @@
           </div>
           <div class="settings-group-head">this computer</div>
           <div class="setting-row">
+            <span class="setting-label">update channel <span class="hint-icon" data-hint="Which releases this machine installs. Stable only gets promoted releases; beta gets every build as soon as CI finishes. Applies to the next update check — no restart needed." tabindex="0" role="button" aria-label="Help: update channel">?</span></span>
+            <select id="channel-select" aria-label="update channel">
+              <option value="stable">stable</option>
+              <option value="beta">beta</option>
+            </select>
+          </div>
+          <div class="setting-row">
             <span class="setting-label">history <span class="hint-icon" data-hint="How many days of transcripts to keep on this computer, counting today. Older days are deleted automatically. Quick search looks across everything kept here. Set to 1 to keep only today." tabindex="0" role="button" aria-label="Help: history">?</span></span>
             <div class="history-days">
               <input type="number" id="history-days-input" min="1" max="365" aria-label="days of history to keep" />
