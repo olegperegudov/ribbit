@@ -36,3 +36,6 @@ CLAUDE.md
 *.pem
 *.p12
 .env
+
+# Python bytecode from the release-notes script
+__pycache__/

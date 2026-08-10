@@ -15,6 +15,7 @@ jobs:
       version: ${{ steps.bump.outputs.version }}
       tag: ${{ steps.bump.outputs.tag }}
       skipped: ${{ steps.bump.outputs.skipped }}
+      notes: ${{ steps.bump.outputs.notes }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -60,6 +61,17 @@ jobs:
           "
 
           sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" src-tauri/Cargo.toml
+
+          # Close the changelog's Unreleased section under this version and carry
+          # its bullets into the release the tray's version item opens. Runs
+          # before `git add -A` so the rewritten file goes in the bump commit.
+          python3 .github/scripts/cut_release_notes.py "$NEW" > /tmp/release-notes.md
+          {
+            echo "notes<<RIBBIT_NOTES_EOF"
+            cat /tmp/release-notes.md
+            echo "RIBBIT_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
           sed -i "s/v$CURRENT/v$NEW/" src/index.html
 
           # Commit and tag
@@ -148,7 +160,7 @@ jobs:
           args: --target x86_64-pc-windows-msvc --bundles nsis
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
-          releaseBody: "See the assets below to download and install."
+          releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
           prerelease: true
 
@@ -163,7 +175,7 @@ jobs:
           args: --target x86_64-pc-windows-msvc --bundles nsis
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
-          releaseBody: "See the assets below to download and install."
+          releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
           prerelease: true
 
@@ -304,7 +316,7 @@ jobs:
           args: --target aarch64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
-          releaseBody: "See the assets below to download and install."
+          releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
           prerelease: true
 
@@ -324,7 +336,7 @@ jobs:
           args: --target aarch64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
-          releaseBody: "See the assets below to download and install."
+          releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
           prerelease: true
 
@@ -345,7 +357,7 @@ jobs:
           args: --target x86_64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
-          releaseBody: "See the assets below to download and install."
+          releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
           prerelease: true
 
@@ -365,7 +377,7 @@ jobs:
           args: --target x86_64-apple-darwin --bundles app,dmg
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
-          releaseBody: "See the assets below to download and install."
+          releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
           releaseDraft: false
           prerelease: true
 

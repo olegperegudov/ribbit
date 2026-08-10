@@ -444,6 +444,11 @@ const STABLE_ENDPOINT: &str =
 const BETA_ENDPOINT: &str =
     "https://github.com/olegperegudov/ribbit/releases/download/beta/beta.json";
 
+/// The release list, opened by the tray's version item. Not this build's own
+/// tag: the click happens when an update has been offered, and the list has
+/// that version on top and the installed one below, each with its bullets.
+const RELEASES_URL: &str = "https://github.com/olegperegudov/ribbit/releases";
+
 /// Which release stream this install polls: "stable" (default) or "beta".
 /// Anything unknown falls back to stable — a typo in the config must never
 /// point the updater at a URL we don't control.
@@ -1485,8 +1490,10 @@ pub fn run() {
             // right click opens the housekeeping menu — update, version, quit.
             // No "Show Ribbit" item, because the left click is that item.
             let update = MenuItemBuilder::with_id("update", "Check for updates").build(app)?;
+            // The version is a way in, not a label: it opens the release list,
+            // where every build says what changed in it. Deciding whether an
+            // update is worth installing used to mean going and finding out.
             let version = MenuItemBuilder::with_id("version", format!("Ribbit v{}", env!("CARGO_PKG_VERSION")))
-                .enabled(false)
                 .build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit Ribbit").build(app)?;
             let menu = MenuBuilder::new(app)
@@ -1520,6 +1527,12 @@ pub fn run() {
                         tauri::async_runtime::spawn(async move {
                             on_update_clicked(app).await;
                         });
+                    }
+                    "version" => {
+                        use tauri_plugin_opener::OpenerExt;
+                        if let Err(e) = app.opener().open_url(RELEASES_URL, None::<&str>) {
+                            debug_log::log(&format!("opening the release list failed: {}", e));
+                        }
                     }
                     "quit" => app.exit(0),
                     _ => {}
@@ -1591,7 +1604,14 @@ pub fn run() {
 
 #[cfg(test)]
 mod update_channel_tests {
-    use super::{endpoint_for_channel, BETA_ENDPOINT, STABLE_ENDPOINT};
+    use super::{endpoint_for_channel, BETA_ENDPOINT, RELEASES_URL, STABLE_ENDPOINT};
+
+    #[test]
+    fn the_version_item_points_at_the_release_list() {
+        // Not `/releases/tag/v…`: the list is what answers "should I install
+        // the version being offered", which is when this item gets clicked.
+        assert_eq!(RELEASES_URL, "https://github.com/olegperegudov/ribbit/releases");
+    }
 
     #[test]
     fn stable_is_the_default_and_the_fallback() {

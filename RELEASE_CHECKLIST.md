@@ -56,6 +56,9 @@ native window chrome, hardware) live here.
 ## Auto-update
 
 - [ ] Tray menu: "Check for updates" reports current state correctly
+- [ ] Tray menu: the "Ribbit vX.Y.Z" item is clickable and opens the release
+      list in the browser
+- [ ] The release page for this version lists what changed, in bullets
 - [ ] When an update is available: tray frog goes green, the item reads "Update to vX.Y.Z" and installs on click
 - [ ] After install: app restarts on new version, settings preserved
 

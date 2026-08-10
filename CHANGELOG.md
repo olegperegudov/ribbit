@@ -2,256 +2,267 @@
 
 All notable changes to Ribbit are documented here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Two readers, one file. The top-level bullets of a section are what the release
+page shows the person installing the update: one line each, plain language.
+Everything indented under them is for the next engineer and stays here.
+
 Patch versions are bumped automatically by CI on every release, so version
 numbers increase quickly — each entry below maps to a published
 [GitHub release](https://github.com/olegperegudov/ribbit/releases).
 
-## [Unreleased]
+## Unreleased
 
-### Fixed
+- Hovering a provider name only shows a tooltip when the name is actually cut
+  off by the column.
+- A dictation that never reached the app now says so in red and stays until
+  dismissed, instead of flashing a cut-off line in the success colour.
+- The settings panel is three groups instead of eleven rows.
+- The version in the tray menu opens the release list, where every version says
+  what changed in it.
 
-- **The provider label no longer repeats itself in a tooltip.** Hovering
-  `api.groq.com | llama-3.3-70b-versatile` popped a tooltip with exactly those
-  words, over the row below. The hint exists to recover the value when the
-  column is too narrow for it, so it is now attached only to a label that is
-  actually ellipsized, and dropped again when it fits. The row's own "click to
-  copy" hint is unaffected. Both measurements (this and the four-line clamp)
-  now also re-run on window resize — the window is resizable and they went
-  stale silently. Guard: `log_density.test.js` fails if a hint is baked into
-  the markup again; verified in the rendered page at both widths.
+  ### Fixed
 
-- **A dictation that never reached the app now says so.** When macOS refuses the
-  keystrokes, the words are transcribed and the insert fails — and that failure
-  was announced in the app's own success colour, cut off mid-sentence by a
-  single-line field, lowercased (mangling the `System Settings → Privacy &
-  Security → Accessibility` path it asks you to walk), for five seconds, in a
-  window that is closed while you dictate. It now appears as a red note above
-  the panels that wraps to full length and stays until dismissed, the row that
-  was not delivered keeps a red dot in the log (including when the
-  post-processing dots are off), and the menu-bar frog wears a red badge until
-  the next dictation lands or the note is dismissed. Six status messages the
-  backend had been emitting all along — "no speech detected", "mic heard
-  nothing", "too short" — had no listener in the window at all; they are now
-  shown, so a dictation that produced nothing no longer looks like one that
-  worked.
+  - **The provider label no longer repeats itself in a tooltip.** Hovering
+    `api.groq.com | llama-3.3-70b-versatile` popped a tooltip with exactly those
+    words, over the row below. The hint exists to recover the value when the
+    column is too narrow for it, so it is now attached only to a label that is
+    actually ellipsized, and dropped again when it fits. The row's own "click to
+    copy" hint is unaffected. Both measurements (this and the four-line clamp)
+    now also re-run on window resize — the window is resizable and they went
+    stale silently. Guard: `log_density.test.js` fails if a hint is baked into
+    the markup again; verified in the rendered page at both widths.
 
-- **The settings panel is three groups, not eleven rows.** With five speech
-  providers the provider stack alone ran longer than the whole scroll region,
-  pushing the hotkey, the vocabulary and history off screen behind url / model /
-  key fields that are set once and never touched. A provider is now a summary
-  line — name, PRIMARY, host — that expands on click and opens itself only when
-  it has no key yet. The rows sit under three heads: *speaking*, *text*, *this
-  computer*; history moved down to where the things kept on this computer live.
+  - **A dictation that never reached the app now says so.** When macOS refuses the
+    keystrokes, the words are transcribed and the insert fails — and that failure
+    was announced in the app's own success colour, cut off mid-sentence by a
+    single-line field, lowercased (mangling the `System Settings → Privacy &
+    Security → Accessibility` path it asks you to walk), for five seconds, in a
+    window that is closed while you dictate. It now appears as a red note above
+    the panels that wraps to full length and stays until dismissed, the row that
+    was not delivered keeps a red dot in the log (including when the
+    post-processing dots are off), and the menu-bar frog wears a red badge until
+    the next dictation lands or the note is dismissed. Six status messages the
+    backend had been emitting all along — "no speech detected", "mic heard
+    nothing", "too short" — had no listener in the window at all; they are now
+    shown, so a dictation that produced nothing no longer looks like one that
+    worked.
 
-- **The log answers the keyboard, and its faint text is readable.** Copying a
-  line is why the window opens, and the row was a plain div with a click
-  handler: no focus, no Enter, and a "click to copy" hint that macOS webviews
-  never draw. It is a button now, Escape leaves any panel, and ⌘F opens search.
-  Two steps of the grey ramp failed the WCAG AA contrast minimum (2.5:1 and
-  3.9:1) while carrying timestamps, the `?` hints, provider labels and the
-  hotkey display — they merge into one step at 5.6:1, and functional text below
-  11px comes up to the floor. Fifteen inputs and six symbol-only buttons had no
-  name for a screen reader; they do now.
+  - **The settings panel is three groups, not eleven rows.** With five speech
+    providers the provider stack alone ran longer than the whole scroll region,
+    pushing the hotkey, the vocabulary and history off screen behind url / model /
+    key fields that are set once and never touched. A provider is now a summary
+    line — name, PRIMARY, host — that expands on click and opens itself only when
+    it has no key yet. The rows sit under three heads: *speaking*, *text*, *this
+    computer*; history moved down to where the things kept on this computer live.
 
-- **A long dictation no longer eats the window.** A one-minute transcript
-  rendered about eighteen lines and buried everything you came back for. Entries
-  fold at four lines with a *show all* that unfolds in place; copying still
-  takes the whole text. The empty log and a search that matched nothing now say
-  so instead of both rendering as the same blank region.
+  - **The log answers the keyboard, and its faint text is readable.** Copying a
+    line is why the window opens, and the row was a plain div with a click
+    handler: no focus, no Enter, and a "click to copy" hint that macOS webviews
+    never draw. It is a button now, Escape leaves any panel, and ⌘F opens search.
+    Two steps of the grey ramp failed the WCAG AA contrast minimum (2.5:1 and
+    3.9:1) while carrying timestamps, the `?` hints, provider labels and the
+    hotkey display — they merge into one step at 5.6:1, and functional text below
+    11px comes up to the floor. Fifteen inputs and six symbol-only buttons had no
+    name for a screen reader; they do now.
 
-- **The font ships with the app.** Ribbit relied on JetBrains Mono being
-  installed, and the fallback resolves per glyph — so a sentence mixing Russian
-  and English rendered half monospace, half whatever the system had. The face is
-  bundled now (SIL Open Font License), and a mixed line keeps one rhythm. The
-  vocabulary list also stops sorting Latin ahead of Cyrillic, which had pushed
-  every Russian term below the fold.
+  - **A long dictation no longer eats the window.** A one-minute transcript
+    rendered about eighteen lines and buried everything you came back for. Entries
+    fold at four lines with a *show all* that unfolds in place; copying still
+    takes the whole text. The empty log and a search that matched nothing now say
+    so instead of both rendering as the same blank region.
 
-- **Deleting a vocabulary word asks first.** The × that removes a word and every
-  alias taught for it sat a few pixels from the × that removes one alias, in the
-  same faint grey, and committed on the first click with no undo — one mis-aimed
-  click could take months of corrections. It now turns into `remove word?` and
-  waits for a second click (reverting after three seconds), and it keeps a
-  gutter away from the alias chips. Removing a provider, which takes its saved
-  key with it, asks the same way. Removing a single alias stays one click.
+  - **The font ships with the app.** Ribbit relied on JetBrains Mono being
+    installed, and the fallback resolves per glyph — so a sentence mixing Russian
+    and English rendered half monospace, half whatever the system had. The face is
+    bundled now (SIL Open Font License), and a mixed line keeps one rhythm. The
+    vocabulary list also stops sorting Latin ahead of Cyrillic, which had pushed
+    every Russian term below the fold.
 
-### Changed
+  - **Deleting a vocabulary word asks first.** The × that removes a word and every
+    alias taught for it sat a few pixels from the × that removes one alias, in the
+    same faint grey, and committed on the first click with no undo — one mis-aimed
+    click could take months of corrections. It now turns into `remove word?` and
+    waits for a second click (reverting after three seconds), and it keeps a
+    gutter away from the alias chips. Removing a provider, which takes its saved
+    key with it, asks the same way. Removing a single alias stays one click.
 
-- **The window now hangs off the menu-bar icon instead of floating on its own.**
-  A left click on the icon drops it out right below the icon; clicking anywhere
-  else puts it away, the way a menu closes. A right click opens the small
-  housekeeping menu — check for updates, version, quit — which no longer carries
-  a "Show Ribbit" item, because the left click *is* that item. On Windows and
-  Linux the same click works off the taskbar corner: the window sits above the
-  icon there, and it too closes as soon as focus leaves it.
+  ### Changed
 
-  Three controls went with the change, all of them now saying what the window's
-  place already says: the minimize and close buttons in the title bar (the
-  window is dismissed by looking away, and only the gear and the magnifier are
-  left up there) and the "always on top" setting (a window pinned to the tray
-  icon that stays up over everything else is not a tray window any more).
+  - **The window now hangs off the menu-bar icon instead of floating on its own.**
+    A left click on the icon drops it out right below the icon; clicking anywhere
+    else puts it away, the way a menu closes. A right click opens the small
+    housekeeping menu — check for updates, version, quit — which no longer carries
+    a "Show Ribbit" item, because the left click *is* that item. On Windows and
+    Linux the same click works off the taskbar corner: the window sits above the
+    icon there, and it too closes as soon as focus leaves it.
 
-- **A dictation that was never typed now says so.** macOS can swallow synthetic
-  keystrokes two ways — the Accessibility grant for posting events is gone, or
-  some password field holds secure input for the whole system — and in both
-  cases the event API still reports success. Ribbit believed it: the session log
-  said "inserted N chars", the daily log carried a normal `insert_secs`, and the
-  only sign anything went wrong was an empty text field. Both gates are now
-  checked before typing; when one is up, insertion fails with the reason on
-  screen instead of silently succeeding. Every dictation also records which app
-  received the keystrokes (`insert_target`) and why insertion failed
-  (`insert_error`) in the daily log, which — unlike the session log — survives a
-  restart. Launch stamps the gate state too, so a grant revoked overnight
-  explains every insert that follows it.
+    Three controls went with the change, all of them now saying what the window's
+    place already says: the minimize and close buttons in the title bar (the
+    window is dismissed by looking away, and only the gear and the magnifier are
+    left up there) and the "always on top" setting (a window pinned to the tray
+    icon that stays up over everything else is not a tray window any more).
 
-- **Dictionary terms are now enforced deterministically, not by the LLM.** The
-  editor model was handed the vocab table and asked to map terms itself — and it
-  either ignored mandatory replacements (dictated "ТУТУ" stayed "ТУТУ" instead of
-  "TO-DO") or invented "corrections" of its own (a dictated term came back as an
-  unrelated "Qwen"). The model no longer sees the dictionary at all: it only
-  punctuates, fixes ordinary spelling, and is explicitly forbidden from touching
-  or inventing terms, names, acronyms, and Latin words. Term mapping is done
-  afterwards by the exact `vocab::apply` pass, which runs over the edited text and
-  guarantees the table verbatim. Add an alias to the dictionary and it is now
-  applied every time, regardless of the model's mood.
+  - **A dictation that was never typed now says so.** macOS can swallow synthetic
+    keystrokes two ways — the Accessibility grant for posting events is gone, or
+    some password field holds secure input for the whole system — and in both
+    cases the event API still reports success. Ribbit believed it: the session log
+    said "inserted N chars", the daily log carried a normal `insert_secs`, and the
+    only sign anything went wrong was an empty text field. Both gates are now
+    checked before typing; when one is up, insertion fails with the reason on
+    screen instead of silently succeeding. Every dictation also records which app
+    received the keystrokes (`insert_target`) and why insertion failed
+    (`insert_error`) in the daily log, which — unlike the session log — survives a
+    restart. Launch stamps the gate state too, so a grant revoked overnight
+    explains every insert that follows it.
 
-### Fixed
+  - **Dictionary terms are now enforced deterministically, not by the LLM.** The
+    editor model was handed the vocab table and asked to map terms itself — and it
+    either ignored mandatory replacements (dictated "ТУТУ" stayed "ТУТУ" instead of
+    "TO-DO") or invented "corrections" of its own (a dictated term came back as an
+    unrelated "Qwen"). The model no longer sees the dictionary at all: it only
+    punctuates, fixes ordinary spelling, and is explicitly forbidden from touching
+    or inventing terms, names, acronyms, and Latin words. Term mapping is done
+    afterwards by the exact `vocab::apply` pass, which runs over the edited text and
+    guarantees the table verbatim. Add an alias to the dictionary and it is now
+    applied every time, regardless of the model's mood.
 
-- **The tray menu no longer offers "Hide Ribbit" and then shows it.** On macOS
-  the window is a panel that hides itself as soon as focus leaves — clicking
-  another window, or the tray icon itself, dismisses it. The menu label was not
-  told: it stayed on "Hide Ribbit" from the last time the window was opened, so
-  the next visit to the tray showed "Hide" on an already-hidden window, and
-  pressing it opened the window. The item is now always "Show Ribbit" and always
-  shows: hiding is a click anywhere else, which the panel handles on its own.
-  Windows and Linux keep the real Show/Hide toggle — an ordinary window there
-  stays put when focus leaves it. The "the click you are handling is the one
-  that dismissed it" timer this relied on is gone with it.
+  ### Fixed
 
-- **The Mac can fall asleep again while Ribbit is running.** The sound player
-  opened an output stream on startup and kept it cached for the lifetime of the
-  app. A live stream keeps the speaker device running, and CoreAudio asserts
-  `PreventUserIdleSystemSleep` for as long as it does — so a Mac with Ribbit in
-  the tray never idled to sleep, and the display stayed lit past its timeout
-  (`pmset -g assertions` showed the assertion held for hours at −120 dB, i.e.
-  silence). The stream is now opened per sound and dropped right after playback,
-  so nothing claims the speakers between dictations. Windows still keeps the last
-  working stream cached — it refuses to open new audio sessions for unfocused
-  apps. Verified live: quitting Ribbit dropped the assertion, relaunching it
-  brought the assertion back within 10s.
+  - **The tray menu no longer offers "Hide Ribbit" and then shows it.** On macOS
+    the window is a panel that hides itself as soon as focus leaves — clicking
+    another window, or the tray icon itself, dismisses it. The menu label was not
+    told: it stayed on "Hide Ribbit" from the last time the window was opened, so
+    the next visit to the tray showed "Hide" on an already-hidden window, and
+    pressing it opened the window. The item is now always "Show Ribbit" and always
+    shows: hiding is a click anywhere else, which the panel handles on its own.
+    Windows and Linux keep the real Show/Hide toggle — an ordinary window there
+    stays put when focus leaves it. The "the click you are handling is the one
+    that dismissed it" timer this relied on is gone with it.
 
-- **A network blip no longer costs half a minute.** On a lossy link a dictation
-  that normally takes ~1s took 25–33s (4 of 14 dictations on 2026-07-14, while
-  the Wi-Fi was dropping 30–90% of packets; median latency the whole week before
-  was 1.0s). Two amplifiers, both in Ribbit:
-  - *No connect timeout anywhere.* A handshake that can't complete on a lossy
-    link hangs for tens of seconds and dies anyway — one STT call sat 17s before
-    the transport error, then the retry succeeded in a second. Connect is now
-    capped (4s for STT, 3s for the edit) while the response timeouts stay as
-    they were: the provider being slow and the link being broken are different
-    animals.
-  - *The edit walked the whole text stack with no ceiling.* Three providers ×
-    (5s timeout + a retry that also re-paid the timeout) turned one blip into a
-    26.5s edit — on a transcript that had been ready in half a second. The walk
-    now has an 8s budget and stops when it's spent, timeouts are no longer
-    retried (a retry only stacks another wait on a user already waiting; the
-    next stack entry is the right move), and the raw transcript goes through
-    `vocab::apply` as before. The audio stack deliberately keeps no budget —
-    a dropped dictation is unrecoverable, so there it's right to wait.
+  - **The Mac can fall asleep again while Ribbit is running.** The sound player
+    opened an output stream on startup and kept it cached for the lifetime of the
+    app. A live stream keeps the speaker device running, and CoreAudio asserts
+    `PreventUserIdleSystemSleep` for as long as it does — so a Mac with Ribbit in
+    the tray never idled to sleep, and the display stayed lit past its timeout
+    (`pmset -g assertions` showed the assertion held for hours at −120 dB, i.e.
+    silence). The stream is now opened per sound and dropped right after playback,
+    so nothing claims the speakers between dictations. Windows still keeps the last
+    working stream cached — it refuses to open new audio sessions for unfocused
+    apps. Verified live: quitting Ribbit dropped the assertion, relaunching it
+    brought the assertion back within 10s.
 
-  Worst case for the LLM edit: ~10s instead of 26.5s, and the text still lands.
-  Tests: the stack walk stops once the budget is spent, and never skips its
-  first rung even with a zero budget (a request must always reach a provider).
+  - **A network blip no longer costs half a minute.** On a lossy link a dictation
+    that normally takes ~1s took 25–33s (4 of 14 dictations on 2026-07-14, while
+    the Wi-Fi was dropping 30–90% of packets; median latency the whole week before
+    was 1.0s). Two amplifiers, both in Ribbit:
+    - *No connect timeout anywhere.* A handshake that can't complete on a lossy
+      link hangs for tens of seconds and dies anyway — one STT call sat 17s before
+      the transport error, then the retry succeeded in a second. Connect is now
+      capped (4s for STT, 3s for the edit) while the response timeouts stay as
+      they were: the provider being slow and the link being broken are different
+      animals.
+    - *The edit walked the whole text stack with no ceiling.* Three providers ×
+      (5s timeout + a retry that also re-paid the timeout) turned one blip into a
+      26.5s edit — on a transcript that had been ready in half a second. The walk
+      now has an 8s budget and stops when it's spent, timeouts are no longer
+      retried (a retry only stacks another wait on a user already waiting; the
+      next stack entry is the right move), and the raw transcript goes through
+      `vocab::apply` as before. The audio stack deliberately keeps no budget —
+      a dropped dictation is unrecoverable, so there it's right to wait.
 
-- **Closing the window no longer kills the app.** The window was destroyed on
-  close (the cross, or ⌘W — macOS installs its own Close item whenever an app
-  sets no menu of its own), and Ribbit has exactly one window: with it gone the
-  hotkey opened nothing, the tray item opened nothing, and Tauri, seeing no
-  windows left, exited the process — menu-bar icon and all. Closing now hides,
-  as it always should have. A test reads `tauri.conf.json` and fails if a window
-  is declared there without a hide-on-close guard, so the next window cannot
-  reintroduce this. Same bug, same fix, in Quill and CopyPaster.
+    Worst case for the LLM edit: ~10s instead of 26.5s, and the text still lands.
+    Tests: the stack walk stops once the budget is spent, and never skips its
+    first rung even with a zero budget (a request must always reach a provider).
 
-### Security
+  - **Closing the window no longer kills the app.** The window was destroyed on
+    close (the cross, or ⌘W — macOS installs its own Close item whenever an app
+    sets no menu of its own), and Ribbit has exactly one window: with it gone the
+    hotkey opened nothing, the tray item opened nothing, and Tauri, seeing no
+    windows left, exited the process — menu-bar icon and all. Closing now hides,
+    as it always should have. A test reads `tauri.conf.json` and fails if a window
+    is declared there without a hide-on-close guard, so the next window cannot
+    reintroduce this. Same bug, same fix, in Quill and CopyPaster.
 
-- **The debug log records events, not speech.** It carried a 60–80 character
-  preview of every transcription and every LLM edit, appended forever and swept
-  by nothing — the retention sweep only ever looked at `*.jsonl`, so "keep 7
-  days" was a promise the app did not keep for this file. Lines now say how many
-  characters came back, not which ones, and the file starts empty on every
-  launch (an append-only log on an app that runs for weeks is also a slow disk
-  leak). The transcript still lives in the history, where it expires.
+  ### Security
 
-- **Keys, transcripts and the vocabulary are written owner-only (0600).** `fs::write`
-  obeys the umask, which is 022 on a default macOS account: on a fresh install the
-  `.env` holding the API keys, the dictation log and the config all landed
-  world-readable, and any process on the machine could read them. Everything now
-  goes through `private.rs` (folders 0700, files 0600, the mode set on the open
-  handle so a file an older build left at 0644 is narrowed rather than kept).
-- **A provider endpoint must be `https://`.** It was possible to type an `http://`
-  URL, after which the API key travelled the network in the clear on every
-  request. Refused when typed, with a test.
-- **The release workflow pins every action to a commit SHA** (was `@v4`, `@v0`,
-  `@stable` — tags their owners can move) and hands the updater signing key only
-  to the step that signs, instead of exporting it into the environment of every
-  step in the job. These jobs hold the key that signs auto-updates: an upstream
-  compromise there ships a signed malicious update to every user. Dependabot now
-  watches the pins.
-- **Content-Security-Policy is set** (`default-src 'self'`, no remote script, image
-  or connection). The frontend never talks to the network itself — only Rust does —
-  so an injected script now has nowhere to send anything. Verified against all
-  three frontends under the real policy: zero violations.
-- The maintainer's personal key path is gone from the docs.
+  - **The debug log records events, not speech.** It carried a 60–80 character
+    preview of every transcription and every LLM edit, appended forever and swept
+    by nothing — the retention sweep only ever looked at `*.jsonl`, so "keep 7
+    days" was a promise the app did not keep for this file. Lines now say how many
+    characters came back, not which ones, and the file starts empty on every
+    launch (an append-only log on an app that runs for weeks is also a slow disk
+    leak). The transcript still lives in the history, where it expires.
 
-### Changed
+  - **Keys, transcripts and the vocabulary are written owner-only (0600).** `fs::write`
+    obeys the umask, which is 022 on a default macOS account: on a fresh install the
+    `.env` holding the API keys, the dictation log and the config all landed
+    world-readable, and any process on the machine could read them. Everything now
+    goes through `private.rs` (folders 0700, files 0600, the mode set on the open
+    handle so a file an older build left at 0644 is narrowed rather than kept).
+  - **A provider endpoint must be `https://`.** It was possible to type an `http://`
+    URL, after which the API key travelled the network in the clear on every
+    request. Refused when typed, with a test.
+  - **The release workflow pins every action to a commit SHA** (was `@v4`, `@v0`,
+    `@stable` — tags their owners can move) and hands the updater signing key only
+    to the step that signs, instead of exporting it into the environment of every
+    step in the job. These jobs hold the key that signs auto-updates: an upstream
+    compromise there ships a signed malicious update to every user. Dependabot now
+    watches the pins.
+  - **Content-Security-Policy is set** (`default-src 'self'`, no remote script, image
+    or connection). The frontend never talks to the network itself — only Rust does —
+    so an injected script now has nowhere to send anything. Verified against all
+    three frontends under the real policy: zero violations.
+  - The maintainer's personal key path is gone from the docs.
 
-- **The README screenshots were re-shot.** All four had half a screen of empty
-  background under the content, which reads as a broken picture rather than as
-  air; the provider shot showed the whole settings page instead of the provider
-  stack it illustrates, and the log carried an entry whose lone yellow dot ("not
-  rephrased") looked like a defect to anyone who had not read the code. The
-  harness now fits the viewport to the content and crops the settings page to
-  the relevant band.
-- **`docs/DEVELOPMENT.md` explains why the transcript is typed, not pasted** —
-  a clipboard paste would clobber whatever the user had saved and litter every
-  clipboard manager, including our own CopyPaster.
-- **The README is a shop window now, not a manual.** It opens with three fat
-  buttons that download the installer for a platform *directly* — the old ones
-  linked at `/releases/latest`, which is a page, so "download" meant landing in a
-  list of files and picking one. A direct link can only be made to a name that
-  survives the next version bump, so CI now also uploads version-less copies of
-  each installer (`Ribbit_macOS_AppleSilicon.dmg`, `Ribbit_macOS_Intel.dmg`,
-  `Ribbit_Windows_Setup.exe`) next to Tauri's own assets, which the updater keeps
-  reading.
-- **"Releases" points at `/releases`, not `/releases/latest`.** The old link
-  showed one release and its five files — read as "variants of the same thing".
-  The plain `/releases` page lists every version, so anyone can roll back if we
-  ship something broken.
-- **Screenshots.** The log (click a line to copy), replacing a misheard word in
-  place, the vocabulary, and the provider stack with its fallback. Taken with the
-  headless harness (`web_eye/_ribbit_shot.mjs`) — the app renders them with its
-  own code, so the README cannot show an interface that does not exist.
-- **The technical half of the README moved to `docs/DEVELOPMENT.md`** — stack,
-  local build, tests, release pipeline, signing, where the files live. The front
-  page tells a person how to install and use the app, nothing else.
+  ### Changed
 
-- **Updating moved to the frog in the menu bar.** A left click on the tray icon
-  now opens a menu — *Check for updates*, *Show Ribbit*, the version, *Quit* —
-  instead of silently toggling the window. Two reasons: a click that only flips a
-  hidden window gives no sign the app is even alive, and the update had to be
-  hunted for at the bottom of the settings panel, which is opened about once a
-  month.
+  - **The README screenshots were re-shot.** All four had half a screen of empty
+    background under the content, which reads as a broken picture rather than as
+    air; the provider shot showed the whole settings page instead of the provider
+    stack it illustrates, and the log carried an entry whose lone yellow dot ("not
+    rephrased") looked like a defect to anyone who had not read the code. The
+    harness now fits the viewport to the content and crops the settings page to
+    the relevant band.
+  - **`docs/DEVELOPMENT.md` explains why the transcript is typed, not pasted** —
+    a clipboard paste would clobber whatever the user had saved and litter every
+    clipboard manager, including our own CopyPaster.
+  - **The README is a shop window now, not a manual.** It opens with three fat
+    buttons that download the installer for a platform *directly* — the old ones
+    linked at `/releases/latest`, which is a page, so "download" meant landing in a
+    list of files and picking one. A direct link can only be made to a name that
+    survives the next version bump, so CI now also uploads version-less copies of
+    each installer (`Ribbit_macOS_AppleSilicon.dmg`, `Ribbit_macOS_Intel.dmg`,
+    `Ribbit_Windows_Setup.exe`) next to Tauri's own assets, which the updater keeps
+    reading.
+  - **"Releases" points at `/releases`, not `/releases/latest`.** The old link
+    showed one release and its five files — read as "variants of the same thing".
+    The plain `/releases` page lists every version, so anyone can roll back if we
+    ship something broken.
+  - **Screenshots.** The log (click a line to copy), replacing a misheard word in
+    place, the vocabulary, and the provider stack with its fallback. Taken with the
+    headless harness (`web_eye/_ribbit_shot.mjs`) — the app renders them with its
+    own code, so the README cannot show an interface that does not exist.
+  - **The technical half of the README moved to `docs/DEVELOPMENT.md`** — stack,
+    local build, tests, release pipeline, signing, where the files live. The front
+    page tells a person how to install and use the app, nothing else.
 
-  When a release lands, the frog turns green (same emerald badge as CopyPaster's
-  parrot) and the first menu item becomes *Update to vX.Y.Z* — one item, two
-  jobs, so there is never a dead "check" sitting next to a live "update". The
-  background poll and the manual check now go through the same `announce_update`,
-  so a release found either way gives exactly the same signal.
+  - **Updating moved to the frog in the menu bar.** A left click on the tray icon
+    now opens a menu — *Check for updates*, *Show Ribbit*, the version, *Quit* —
+    instead of silently toggling the window. Two reasons: a click that only flips a
+    hidden window gives no sign the app is even alive, and the update had to be
+    hunted for at the bottom of the settings panel, which is opened about once a
+    month.
 
-- **The settings panel lost its update button** — and the gear its green glow.
-  The row now just says where updating went. All three apps behave alike again.
+    When a release lands, the frog turns green (same emerald badge as CopyPaster's
+    parrot) and the first menu item becomes *Update to vX.Y.Z* — one item, two
+    jobs, so there is never a dead "check" sitting next to a live "update". The
+    background poll and the manual check now go through the same `announce_update`,
+    so a release found either way gives exactly the same signal.
 
-## [0.7.75] - 2026-07-13
+  - **The settings panel lost its update button** — and the gear its green glow.
+    The row now just says where updating went. All three apps behave alike again.
+
+## v0.7.75 — 2026-07-13
 
 ### Fixed
 
@@ -277,7 +288,7 @@ numbers increase quickly — each entry below maps to a published
   now recognises a panel that auto-hid within the last 400 ms as "closed by this
   very click" and leaves it closed.
 
-## [0.7.72] - 2026-07-13
+## v0.7.72 — 2026-07-13
 
 ### Fixed
 
@@ -330,7 +341,7 @@ numbers increase quickly — each entry below maps to a published
   itself. Pinned by `src/window_chrome.test.js` — the bounce only reproduces on a
   real macOS build, so the CSS is guarded by a test rather than by memory.
 
-## [0.7.71] - 2026-07-11
+## v0.7.71 — 2026-07-11
 
 ### Fixed
 - **The tray icon summons the window again when it's buried behind another
@@ -346,7 +357,7 @@ numbers increase quickly — each entry below maps to a published
   is the **key** window (genuinely frontmost) and otherwise raises it to front,
   the Spotlight/Raycast behaviour (`panel_is_key`).
 
-## [0.7.70] - 2026-07-04
+## v0.7.70 — 2026-07-04
 
 ### Fixed
 - **The window is no longer always-on-top.** `setup_panel` forced the NSPanel
@@ -358,7 +369,7 @@ numbers increase quickly — each entry below maps to a published
   behavior unchanged), but other windows can cover it afterwards. The
   Always-on-Top toggle is now the single owner of the window level.
 
-## [0.7.69] - 2026-07-04
+## v0.7.69 — 2026-07-04
 
 ### Fixed
 - **Microphone works again — the hardened runtime was missing the audio-input
@@ -376,7 +387,7 @@ numbers increase quickly — each entry below maps to a published
   prompt; grant it once and it sticks (same signing identity, so nothing else
   resets).
 
-## [0.7.68] - 2026-07-04
+## v0.7.68 — 2026-07-04
 
 ### Fixed
 - **Microphone can be re-granted after the one-time reset — the app now asks for
@@ -391,7 +402,7 @@ numbers increase quickly — each entry below maps to a published
   treats the programmatic focus-on-show as focus-visible, so the ring stayed. The
   ring is now cleared outright on the header buttons and the log indicator dots.
 
-## [0.7.67] - 2026-07-04
+## v0.7.67 — 2026-07-04
 
 ### Fixed
 - **Text insertion no longer breaks on every update — stable self-signed
@@ -417,7 +428,7 @@ numbers increase quickly — each entry below maps to a published
   `:focus-visible`, so only keyboard navigation shows one; opening the UI leaves
   nothing highlighted.
 
-## [0.7.66] - 2026-07-03
+## v0.7.66 — 2026-07-03
 
 ### Fixed
 - **Restored the working tray behavior — undoes the 0.7.64 "roll back to
@@ -437,7 +448,7 @@ numbers increase quickly — each entry below maps to a published
   gated on `:focus-visible`, so only real keyboard navigation triggers it, not
   programmatic focus.
 
-## [0.7.63] - 2026-07-03
+## v0.7.63 — 2026-07-03
 
 ### Fixed
 - **Tray icon now shows Ribbit on the desktop you're on — including full-screen
@@ -461,7 +472,7 @@ numbers increase quickly — each entry below maps to a published
   (`apply_spaces_behavior`, `orderFrontRegardless` show path) in favor of the
   panel's own API — one mechanism, not a pile.
 
-## [0.7.62] - 2026-07-02
+## v0.7.62 — 2026-07-02
 
 ### Fixed
 - **The tray icon shows the window again — on the desktop you're on, no
@@ -478,7 +489,7 @@ numbers increase quickly — each entry below maps to a published
 - The tray toggle on macOS now keys off visibility alone (the window is never
   the "focused" app window, since it's never force-activated).
 
-## [0.7.61] - 2026-07-02
+## v0.7.61 — 2026-07-02
 
 ### Fixed
 - **The real teleport fix: clicking the tray icon now shows Ribbit on the
@@ -496,7 +507,7 @@ numbers increase quickly — each entry below maps to a published
   current Space but is not force-focused (that's the activation we removed), so
   clicking into a Settings/vocab text field once before typing is expected.
 
-## [0.7.60] - 2026-07-02
+## v0.7.60 — 2026-07-02
 
 ### Fixed
 - **Actually fixed: opening Ribbit from the menu bar icon no longer teleports
@@ -523,7 +534,7 @@ numbers increase quickly — each entry below maps to a published
   the mechanism that stops the desktop-teleport above; it also means Ribbit no
   longer appears in the Dock or Cmd-Tab switcher.
 
-## [0.7.59] - 2026-07-02
+## v0.7.59 — 2026-07-02
 
 ### Fixed
 - **Opening Ribbit from the menu bar icon while in a full-screen app no longer
@@ -536,7 +547,7 @@ numbers increase quickly — each entry below maps to a published
   where you are. Side effect of the same mechanism: while visible, the window
   follows you across desktops (hide it with X or the tray icon as before).
 
-## [0.7.58] - 2026-07-02
+## v0.7.58 — 2026-07-02
 
 Stability audit release: two data-loss paths in dictation, four small bugs,
 and a dead-code sweep. No new features.
@@ -590,7 +601,7 @@ and a dead-code sweep. No new features.
   concurrent settings change and lose it). Stale "3s timeout" comments
   corrected to the real 5s.
 
-## [0.7.56] - 2026-06-26
+## v0.7.56 — 2026-06-26
 
 ### Changed
 - **The green/yellow LLM indicator moved under each message, and now names the
@@ -603,7 +614,7 @@ and a dead-code sweep. No new features.
   cleanup happened — stands alone with no label. Hover the label to see the full
   endpoint/model if it's truncated.
 
-## [0.7.55] - 2026-06-25
+## v0.7.55 — 2026-06-25
 
 ### Added
 - **Provider stacks with automatic fallback — for both speech-to-text and the
@@ -629,7 +640,7 @@ and a dead-code sweep. No new features.
     at any OpenAI-compatible endpoint. Your existing setup is migrated into the
     new stacks automatically on first launch — nothing to re-enter.
 
-## [0.7.54] - 2026-06-25
+## v0.7.54 — 2026-06-25
 
 ### Fixed
 - **The text cleanup step sometimes answered your dictation instead of typing
@@ -643,7 +654,7 @@ and a dead-code sweep. No new features.
   falls back to the strict dictionary pass, so you get your own words — never
   someone else's answer — in the paste.
 
-## [0.7.53] - 2026-06-24
+## v0.7.53 — 2026-06-24
 
 ### Fixed
 - **Microphone broke on macOS after updating to 0.7.52.** Pressing the record
@@ -660,7 +671,7 @@ and a dead-code sweep. No new features.
   CI guard now also refuses to publish a universal macOS bundle, so this exact
   regression can't ship again.
 
-## [0.7.52] - 2026-06-24
+## v0.7.52 — 2026-06-24
 
 ### Fixed
 - **In-app update failed on Apple-Silicon Macs.** The release manifest
@@ -675,7 +686,7 @@ and a dead-code sweep. No new features.
   fails the build if any platform key is ever missing from the published
   manifest, so a broken updater can never ship silently again.
 
-## [0.7.51] - 2026-06-24
+## v0.7.51 — 2026-06-24
 
 ### Changed
 - **Settings keys renamed by role.** Two rows both read "groq key", which was
@@ -690,7 +701,7 @@ and a dead-code sweep. No new features.
   entirely when the toggle is off. The speech key moved up next to languages, and
   debug log moved down to the footer next to the version.
 
-## [0.7.50] - 2026-06-19
+## v0.7.50 — 2026-06-19
 
 ### Fixed
 - **Dictations could vanish.** The previous release cut the speech-to-text
@@ -707,7 +718,7 @@ and a dead-code sweep. No new features.
   native rate, so no accuracy loss — cuts the upload threefold and noticeably
   speeds up transcription, most visibly on longer dictations.
 
-## [0.7.49] - 2026-06-19
+## v0.7.49 — 2026-06-19
 
 ### Changed
 - **Text-edit step now defaults to Groq** (`llama-3.3-70b-versatile`) instead of
@@ -724,7 +735,7 @@ and a dead-code sweep. No new features.
   the log — ~2% of calls run over 5s). A stuck call now fails fast so you can
   re-dictate in a couple of seconds instead of watching a frozen "Ribbiting…".
 
-## [0.7.48] - 2026-06-07
+## v0.7.48 — 2026-06-07
 
 ### Fixed
 - The "edit transcription" LLM stopped working for anyone on the **openrouter**
@@ -744,7 +755,7 @@ and a dead-code sweep. No new features.
   diagnosable only by digging through the debug log. Now a provider quietly
   retiring a model, an expired key, or a network failure is visible in Settings.
 
-## [0.7.47] - 2026-06-01
+## v0.7.47 — 2026-06-01
 
 ### Fixed
 - The LLM "edit transcription" feature no longer answers the dictation as
@@ -761,14 +772,14 @@ and a dead-code sweep. No new features.
   names (Dev, Prod, Alrosa, …) keep their dictionary spelling. Snapshot
   test updated to pin the new framing and the anti-reply example.
 
-## [0.7.46] - 2026-05-21
+## v0.7.46 — 2026-05-21
 
 ### Added
 - Quick search now highlights the matched letters inside each log
   entry — searching "алр" paints the "Алр" of "Алросы" pink-purple, so
   the hit is visible at a glance instead of having to eyeball the row.
 
-## [0.7.45] - 2026-05-21
+## v0.7.45 — 2026-05-21
 
 ### Changed
 - Release builds now retry once automatically when uploading the
@@ -777,7 +788,7 @@ and a dead-code sweep. No new features.
   upload timeout, even though the build itself was fine. Internal CI
   reliability only — no change to the app.
 
-## [0.7.44] - 2026-05-21
+## v0.7.44 — 2026-05-21
 
 ### Added
 - Every dictation now records a per-stage timing breakdown into the
@@ -787,7 +798,7 @@ and a dead-code sweep. No new features.
   possible to tell, after the fact, which stage is responsible when a
   dictation feels slow. No effect on the dictation experience itself.
 
-## [0.7.43] - 2026-05-21
+## v0.7.43 — 2026-05-21
 
 ### Fixed
 - The hover tooltip on the LLM status dot now reliably appears — the
@@ -797,14 +808,14 @@ and a dead-code sweep. No new features.
 ### Changed
 - That tooltip now reads simply "rephrased" / "not rephrased".
 
-## [0.7.42] - 2026-05-21
+## v0.7.42 — 2026-05-21
 
 ### Changed
 - The update auto-check now repeats every 30 minutes while Ribbit is
   running, not just once at launch — the gear lights up on its own when
   a release ships during the day, no manual "check update" needed.
 
-## [0.7.41] - 2026-05-21
+## v0.7.41 — 2026-05-21
 
 ### Added
 - Quick search: a magnifier button in the header opens a small popup;
@@ -818,37 +829,37 @@ and a dead-code sweep. No new features.
 - Day separators in the log are now a faded rule with the weekday and
   date centered in it (e.g. "tu, may 5th").
 
-## [0.7.40] - 2026-05-21
+## v0.7.40 — 2026-05-21
 
 ### Fixed
 - The app title in the header is no longer selectable, so a drag that
   starts elsewhere can't leave it stuck in a highlighted state.
 
-## [0.7.38] - 2026-05-19
+## v0.7.38 — 2026-05-19
 
 ### Fixed
 - Moved the per-entry LLM status dot left so it no longer overlaps the
   history scrollbar.
 
-## [0.7.37] - 2026-05-19
+## v0.7.37 — 2026-05-19
 
 ### Changed
 - LLM post-processing now retries once on transient network errors and
   reports the failure kind, instead of silently leaving the transcript
   unedited.
 
-## [0.7.36] - 2026-05-19
+## v0.7.36 — 2026-05-19
 
 ### Changed
 - The LLM status dot uses the app's themed tooltip on hover.
 
-## [0.7.35] - 2026-05-19
+## v0.7.35 — 2026-05-19
 
 ### Changed
 - Settings polish: lowercase labels, themed LLM provider dropdown, and
   regrouped rows for a cleaner layout.
 
-## [0.7.34] - 2026-05-19
+## v0.7.34 — 2026-05-19
 
 ### Added
 - Pluggable LLM providers for transcript post-processing — pick the
@@ -857,30 +868,30 @@ and a dead-code sweep. No new features.
   respect your preferred spellings.
 - Per-entry status dot showing whether a transcript was edited by the LLM.
 
-## [0.7.33] - 2026-05-19
+## v0.7.33 — 2026-05-19
 
 ### Added
 - Visible confirmation in settings when the RouterAI key is saved.
 
-## [0.7.32] - 2026-05-19
+## v0.7.32 — 2026-05-19
 
 ### Fixed
 - Rapid multi-clicks no longer start a stray text selection across
   history entries.
 
-## [0.7.31] - 2026-05-18
+## v0.7.31 — 2026-05-18
 
 ### Changed
 - Transcripts are now typed directly at the cursor instead of going
   through the clipboard.
 
-## [0.7.30] - 2026-05-18
+## v0.7.30 — 2026-05-18
 
 ### Fixed
 - macOS: clicking the tray icon opens the window on the active Space
   instead of teleporting it to another desktop.
 
-## [0.7.29] - 2026-05-18
+## v0.7.29 — 2026-05-18
 
 ### Changed
 - Removed automatic copying of transcripts to the clipboard.
@@ -888,18 +899,18 @@ and a dead-code sweep. No new features.
 ### Fixed
 - Vocabulary now matches aliases that contain dots.
 
-## [0.7.28] - 2026-05-18
+## v0.7.28 — 2026-05-18
 
 ### Fixed
 - Gave the scrollbar its own gutter and adjusted window height so content
   always fits.
 
-## [0.7.27] - 2026-05-18
+## v0.7.27 — 2026-05-18
 
 ### Fixed
 - Cleaner window corners via a frame view; smaller default window height.
 
-## [0.7.26] - 2026-05-18
+## v0.7.26 — 2026-05-18
 
 ### Added
 - Native rounded window corners on macOS.
@@ -907,79 +918,79 @@ and a dead-code sweep. No new features.
 ### Changed
 - The settings panel is now scrollable.
 
-## [0.7.25] - 2026-05-18
+## v0.7.25 — 2026-05-18
 
 ### Fixed
 - Ribbit no longer restores your previous clipboard contents after pasting.
 
-## [0.7.24] - 2026-05-17
+## v0.7.24 — 2026-05-17
 
 ### Added
 - User-facing documentation for the optional LLM transcript-editing feature.
 
-## [0.7.23] - 2026-05-15
+## v0.7.23 — 2026-05-15
 
 ### Fixed
 - CI: use an absolute Cargo path on macOS so unit tests run reliably.
 
-## [0.7.22] - 2026-05-15
+## v0.7.22 — 2026-05-15
 
 ### Fixed
 - Post-processing no longer strips text too aggressively when removing
   speaker labels.
 - macOS builds pin the stable Rust toolchain.
 
-## [0.7.21] - 2026-05-15
+## v0.7.21 — 2026-05-15
 
 ### Added
 - Optional LLM editing of transcripts via RouterAI — clean up filler words
   and punctuation automatically.
 
-## [0.7.20] - 2026-05-15
+## v0.7.20 — 2026-05-15
 
 ### Added
 - Test coverage for the vocabulary feature (Vitest + Cargo tests) as a
   regression guardrail.
 
-## [0.7.19] - 2026-05-14
+## v0.7.19 — 2026-05-14
 
 ### Added
 - In-app debug log for diagnosing issues without a development build.
 
-## [0.7.18] - 2026-05-08
+## v0.7.18 — 2026-05-08
 
 ### Security
 - Updated vulnerable transitive dependencies in the Rust backend.
 
-## [0.7.17] - 2026-05-08
+## v0.7.17 — 2026-05-08
 
 ### Changed
 - Custom themed tooltips for the settings hint icons.
 
-## [0.7.16] - 2026-05-06
+## v0.7.16 — 2026-05-06
 
 ### Fixed
 - macOS: accessibility permission is reset automatically after an update,
   so pasting keeps working instead of silently failing.
 - Corrected the sort order of the transcription history.
 
-## [0.7.15] - 2026-05-05
+## v0.7.15 — 2026-05-05
 
 ### Fixed
 - macOS: text in history entries can be selected again.
 
-## [0.7.14] - 2026-05-05
+## v0.7.14 — 2026-05-05
 
 ### Added
 - In-app updater enabled for macOS (signed app bundle).
 
-## [0.7.13] - 2026-05-05
+## v0.7.13 — 2026-05-05
 
 ### Fixed
 - macOS: the Cmd-based hotkey is captured correctly.
 - Fixed a crash that could happen right after transcription.
 
-## [0.7.12] - 2026-04-30
+## v0.7.12 — 2026-04-30
 
 ### Added
 - Live audio-level meter next to the frog while recording.
@@ -988,12 +999,12 @@ and a dead-code sweep. No new features.
 - Error messages stay visible for 5 seconds instead of clearing the moment
   recording stops.
 
-## [0.7.11] - 2026-03-23
+## v0.7.11 — 2026-03-23
 
 ### Fixed
 - The vocabulary popup keeps the selected word highlighted while it's open.
 
-## [0.7.10] - 2026-03-23
+## v0.7.10 — 2026-03-23
 
 ### Added
 - Vocabulary: instant delete and editable keys, with detection of merges
@@ -1003,56 +1014,56 @@ and a dead-code sweep. No new features.
 - Copying a log entry now copies the vocabulary-replaced text rather than
   the raw transcript.
 
-## [0.7.9] - 2026-03-17
+## v0.7.9 — 2026-03-17
 
 ### Fixed
 - Resolved a sound-playback crash caused by an audio-buffer lifetime issue.
 
-## [0.7.8] - 2026-03-17
+## v0.7.8 — 2026-03-17
 
 ### Fixed
 - More reliable sound playback: a fresh audio stream with a cached fallback.
 
-## [0.7.7] - 2026-03-16
+## v0.7.7 — 2026-03-16
 
 ### Fixed
 - Sounds play even when the Ribbit window is not focused.
 
-## [0.7.6] - 2026-03-15
+## v0.7.6 — 2026-03-15
 
 ### Added
 - Vocabulary panel header with usage hints.
 
-## [0.7.5] - 2026-03-15
+## v0.7.5 — 2026-03-15
 
 ### Fixed
 - The window auto-resizes to fit the settings panel, removing the scrollbar.
 
-## [0.7.4] - 2026-03-15
+## v0.7.4 — 2026-03-15
 
 ### Changed
 - Settings are always visible.
 - Always-on-top is now off by default.
 
-## [0.7.3] - 2026-03-14
+## v0.7.3 — 2026-03-14
 
 ### Fixed
 - New entries use 24-hour time.
 - The selected language is passed through correctly when multiple
   languages are configured.
 
-## [0.7.2] - 2026-03-14
+## v0.7.2 — 2026-03-14
 
 ### Fixed
 - Restored pasting on Windows; Unicode-based insertion is now used only on
   macOS.
 
-## [0.7.1] - 2026-03-14
+## v0.7.1 — 2026-03-14
 
 ### Changed
 - History entries display time in 24-hour format.
 
-## [0.7.0] - 2026-03-14
+## v0.7.0 — 2026-03-14
 
 ### Added
 - **Vocabulary** — define custom word replacements so Ribbit consistently
@@ -1064,27 +1075,27 @@ and a dead-code sweep. No new features.
 - UI improvements throughout.
 - Clearer messaging that a free Groq account is required.
 
-## [0.6.4] - 2026-03-13
+## v0.6.4 — 2026-03-13
 
 ### Changed
 - History keeps the last 24 hours of transcriptions instead of only today.
 
-## [0.6.3] - 2026-03-12
+## v0.6.3 — 2026-03-12
 
 ### Added
 - Tooltip hint for the language selector.
 
-## [0.6.2] - 2026-03-12
+## v0.6.2 — 2026-03-12
 
 ### Changed
 - Old transcription logs are cleaned up on startup.
 
-## [0.6.1] - 2026-03-12
+## v0.6.1 — 2026-03-12
 
 ### Changed
 - Ribbit checks for updates on every launch.
 
-## [0.6.0] - 2026-03-12
+## v0.6.0 — 2026-03-12
 
 ### Added
 - Language selector in settings.
@@ -1093,22 +1104,22 @@ and a dead-code sweep. No new features.
 ### Removed
 - Sound playback modifiers (speed/amplify).
 
-## [0.5.5] - 2026-03-10
+## v0.5.5 — 2026-03-10
 
 ### Changed
 - Replaced the ping sound with real wood-knock sounds.
 
-## [0.5.4] - 2026-03-10
+## v0.5.4 — 2026-03-10
 
 ### Fixed
 - Fixed a doubled quack sound; deepened the ping sound.
 
-## [0.5.3] - 2026-03-10
+## v0.5.3 — 2026-03-10
 
 ### Fixed
 - Fixed a doubled sound on key release and the ping sometimes not playing.
 
-## [0.5.2] - 2026-03-10
+## v0.5.2 — 2026-03-10
 
 ### Added
 - Ribbit auto-follows the system default audio device.
@@ -1116,13 +1127,13 @@ and a dead-code sweep. No new features.
 ### Changed
 - New frog sound.
 
-## [0.5.1] - 2026-03-10
+## v0.5.1 — 2026-03-10
 
 ### Changed
 - Bassier ping sound.
 - README with logo and a privacy section.
 
-## [0.5.0] - 2026-03-10
+## v0.5.0 — 2026-03-10
 
 ### Added
 - Clickable version label that opens the changelog on GitHub.
@@ -1131,18 +1142,18 @@ and a dead-code sweep. No new features.
 - Windows updater build: resolved signing-key corruption and migrated off
   deprecated updater APIs.
 
-## [0.4.0] - 2026-03-10
+## v0.4.0 — 2026-03-10
 
 ### Added
 - Automatic update check on startup, with visual indicators when an update
   is available.
 
-## [0.3.0] - 2026-03-10
+## v0.3.0 — 2026-03-10
 
 ### Added
 - Sound pack selector — choose between the frog and ping sound packs.
 
-## [0.2.0] - 2026-03-10
+## v0.2.0 — 2026-03-10
 
 Initial public release.
 
