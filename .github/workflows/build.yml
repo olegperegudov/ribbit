@@ -109,6 +109,10 @@ jobs:
       - name: JS unit tests (vitest)
         run: npm test
 
+      - name: Release-notes cutter tests
+        working-directory: .github/scripts
+        run: python3 test_cut_release_notes.py
+
   build-windows:
     needs: [version, test]
     if: needs.version.outputs.skipped != 'true'

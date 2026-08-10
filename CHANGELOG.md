@@ -12,6 +12,16 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- A release page is a list of what changed again, not a paragraph with the
+  engineering notes glued onto the end of it.
+    - The cutter dropped indented detail only when a blank line separated it,
+      so a sub-list written flush against its parent was read as the bullet's
+      own wrapped text and shipped to the release page — which is exactly what
+      happened to v0.7.105, edited by hand afterwards. A bullet now ends at the
+      first blank line *or* the first indented sub-bullet. `test_cut_release_notes.py`
+      pins all four shapes and runs in the test job; it fails on the old cutter.
+      Same fix copied into Camel, Iago and Quill, which share the script.
+
 ## v0.7.105 — 2026-08-10
 
 - Updates reach you again: a release that passes every check now moves to the

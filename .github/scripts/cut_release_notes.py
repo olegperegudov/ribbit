@@ -34,24 +34,31 @@ HEADING = "## Unreleased"
 def collect_bullets(body: str) -> list[str]:
     """The section's top-level bullets, each rejoined into one line.
 
-    A bullet runs until the first blank line: the wrapped continuation lines are
-    part of it, the indented paragraphs after the blank line are the engineering
-    detail and belong to the file, not to the release.
+    A bullet ends at the first blank line or the first indented sub-bullet,
+    whichever comes first. Only its own wrapped continuation lines are kept:
+    an indented list and an indented paragraph are both engineering detail and
+    belong to the file, not to the release page — glue either onto the bullet
+    and the release turns into the wall of text this cutter exists to prevent.
     """
     bullets: list[str] = []
     current: list[str] = []
-    for line in body.splitlines():
-        if line.startswith("- "):
-            if current:
-                bullets.append(" ".join(current))
-            current = [line.strip()]
-        elif current and line.strip():
-            current.append(line.strip())
-        elif current:
+
+    def close() -> None:
+        nonlocal current
+        if current:
             bullets.append(" ".join(current))
             current = []
-    if current:
-        bullets.append(" ".join(current))
+
+    for line in body.splitlines():
+        indented_bullet = line[:1].isspace() and line.lstrip().startswith(("- ", "* "))
+        if line.startswith("- "):
+            close()
+            current = [line.strip()]
+        elif indented_bullet or not line.strip():
+            close()
+        elif current:
+            current.append(line.strip())
+    close()
     return bullets
 
 
