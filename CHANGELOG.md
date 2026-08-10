@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.100 — 2026-08-10
+
 - Hovering a provider name only shows a tooltip when the name is actually cut
   off by the column.
 - A dictation that never reached the app now says so in red and stays until

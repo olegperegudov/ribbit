@@ -1,6 +1,6 @@
 [package]
 name = "ribbit"
-version = "0.7.99"
+version = "0.7.100"
 description = "Voice-to-text dictation app"
 authors = ["Oleg Peregudov"]
 edition = "2021"
