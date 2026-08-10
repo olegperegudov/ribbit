@@ -12,6 +12,9 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- A build no longer goes red because the speech provider's daily quota ran out;
+  a real provider failure still does.
+
 ## v0.7.103 — 2026-08-10
 
 - The release canary no longer fails when speech recognition spells "DevOps

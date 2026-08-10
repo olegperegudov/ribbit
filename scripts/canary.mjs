@@ -59,6 +59,17 @@ function missingTokens(text, tokens) {
   return tokens.filter((t) => !hay.includes(norm(t)));
 }
 
+// A provider that answers "not right now" says nothing about whether the
+// pipeline still works: Groq's daily token allowance runs out on a busy day,
+// and a canary that goes red on it teaches everyone to ignore a red canary.
+// Marked as throttled and reported, never counted as a failure.
+class Throttled extends Error {}
+
+function httpError(stage, res, body) {
+  const message = `${stage} http ${res.status}: ${body.slice(0, 200)}`;
+  return res.status === 429 ? new Throttled(message) : new Error(message);
+}
+
 async function transcribe(file, language, model, key) {
   const form = new FormData();
   form.append("file", new Blob([readFileSync(join(AUDIO_DIR, file))]), file);
@@ -71,7 +82,7 @@ async function transcribe(file, language, model, key) {
     body: form,
   });
   const latency = (performance.now() - t0) / 1000;
-  if (!res.ok) throw new Error(`STT http ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw httpError("STT", res, await res.text());
   const json = await res.json();
   if (typeof json.text !== "string") throw new Error("STT response has no .text");
   return { text: json.text, latency };
@@ -93,7 +104,7 @@ async function llmEdit(text, model, key) {
     }),
   });
   const latency = (performance.now() - t0) / 1000;
-  if (!res.ok) throw new Error(`LLM http ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw httpError("LLM", res, await res.text());
   const json = await res.json();
   const content = json.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) throw new Error("LLM response has no content");
@@ -118,6 +129,7 @@ summary("| fixture | stage | result | latency | output |");
 summary("|---|---|---|---|---|");
 
 let failures = 0;
+let throttled = 0;
 for (const fx of manifest.fixtures) {
   let row;
   try {
@@ -140,6 +152,12 @@ for (const fx of manifest.fixtures) {
       summary(`| ${fx.file} | llm (${manifest.llm_model}) | ${llmPass ? "✅ pass" : `❌ missing: ${llmMissing.join(", ")}`} | ${llm.latency.toFixed(1)}s | ${llm.text.replaceAll("|", "\\|")} |`);
     }
   } catch (e) {
+    if (e instanceof Throttled) {
+      throttled++;
+      console.log(`SKIP [throttled] ${fx.file}: ${e.message}`);
+      summary(`| ${fx.file} | — | ⏳ throttled: ${e.message.replaceAll("|", "\\|")} | — | — |`);
+      continue;
+    }
     failures++;
     console.log(`FAIL [error] ${fx.file}: ${e.message}`);
     summary(`| ${fx.file} | — | ❌ error: ${e.message.replaceAll("|", "\\|")} | — | — |`);
@@ -148,10 +166,14 @@ for (const fx of manifest.fixtures) {
 
 summary("");
 summary(failures === 0 ? "**All fixtures passed.**" : `**${failures} fixture check(s) failed.**`);
+if (throttled > 0) summary(`${throttled} fixture(s) skipped — the provider was rate-limiting.`);
 flushSummary();
 
 if (failures > 0) {
   console.error(`::error::canary: ${failures} fixture check(s) failed`);
   process.exit(1);
+}
+if (throttled > 0) {
+  console.log(`::notice::canary: ${throttled} fixture(s) skipped — the provider was rate-limiting`);
 }
 console.log("canary: all fixtures passed");

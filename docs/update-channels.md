@@ -27,7 +27,10 @@ never needs a reinstall.
      mic-permission request is async — so a clean runner user is a fair stage.
 3. **Release canary**: `scripts/canary.mjs` pushes the audio fixtures through
    the live Groq pipeline (same script as the nightly canary). Without
-   `GROQ_API_KEY` it skips with a notice and does not block anything.
+   `GROQ_API_KEY` it skips with a notice and does not block anything, and a
+   fixture the provider rate-limits (HTTP 429 — Groq's daily token allowance)
+   is reported as skipped rather than failed: "not right now" says nothing
+   about whether the pipeline still works.
 4. CI verifies the release's `latest.json` (`scripts/verify_manifest.mjs`:
    all three platforms, version == tag, no universal macOS bundle) and mirrors
    it into the fixed `beta` prerelease as `beta.json`. Beta machines update
