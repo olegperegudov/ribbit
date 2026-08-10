@@ -26,7 +26,7 @@ Each button downloads the latest installer for that platform. Want an older buil
 
 Then:
 
-1. **Open it.** Apple isn't paid to trust us, so the first launch claims the app is *"damaged"*. It isn't — run `xattr -cr /Applications/Ribbit.app` once in Terminal, then open it normally. Updates after that install themselves.
+1. **Open it.** macOS blocks the first launch, says it cannot verify the app and offers the Trash. The file is fine — Apple vouches only for developers who pay it $99 a year, and this app is free. Press **Done**, then **System Settings → Privacy & Security**, scroll to *Security*, press **Open Anyway**. Once per app, not per version: updates after that install themselves.
 2. **Paste a key.** Ribbit asks for one on the first launch: [console.groq.com](https://console.groq.com/keys) → *API Keys* → *Create API Key* → copy the `gsk_…` string. Free, no card.
 3. **Hold ⌃⌥Space, speak, let go.** The text is typed into whatever window you were in. On Windows: `Ctrl+Alt+Space`.
 

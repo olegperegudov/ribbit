@@ -13,20 +13,37 @@ never needs a reinstall.
 
 1. Push to `main` → CI bumps the patch version, runs vitest + cargo tests,
    builds Windows + macOS, and publishes the release **as a prerelease**.
-2. CI verifies the release's `latest.json` (`scripts/verify_manifest.mjs`:
+2. **Stage checks on real OS runners** — the build is installed and started
+   before anyone is offered it:
+   - Windows: the NSIS installer runs silently (`/S`), the installed app's
+     `ProductVersion` must equal the tag, and the process must still be alive
+     10s after launch. A tray app has no window to assert on — a living
+     process is the smoke signal. The app is killed and uninstalled after.
+   - macOS: `codesign --verify --deep --strict`, `Info.plist` version == tag,
+     and the bundle executable must stay alive 10s after launch (Intel build:
+     the launch is skipped with a notice when the runner has no Rosetta —
+     codesign and version are still verified).
+   - Startup touches no hardware — the mic opens only on hotkey, the
+     mic-permission request is async — so a clean runner user is a fair stage.
+3. **Release canary**: `scripts/canary.mjs` pushes the audio fixtures through
+   the live Groq pipeline (same script as the nightly canary). Without
+   `GROQ_API_KEY` it skips with a notice and does not block anything.
+4. CI verifies the release's `latest.json` (`scripts/verify_manifest.mjs`:
    all three platforms, version == tag, no universal macOS bundle) and mirrors
    it into the fixed `beta` prerelease as `beta.json`. Beta machines update
    immediately; stable users see nothing yet.
-3. After the beta bake-in, promote with the **Release control** workflow
+5. After the beta bake-in, promote with the **Release control** workflow
    (Actions → Release control → Run workflow): action `promote`, tag `vX.Y.Z`.
    The release becomes `latest` and stable machines start updating.
-4. If a promoted release turns out bad: same workflow, action `rollback`,
+6. If a promoted release turns out bad: same workflow, action `rollback`,
    tag = the previous good release. The bad one is demoted back to prerelease,
    the good one becomes `latest` again. No rebuild — the stable endpoint just
    follows whichever release is marked `latest`.
 
-Both actions re-verify the target release's manifest before touching the
-channel. Promoting what is already latest (or rolling back to it) is a no-op.
+Any failed stage check fails the workflow, so a build that cannot start never
+becomes a prerelease anyone can install. Both channel actions re-verify the
+target release's manifest before touching the channel; promoting what is
+already latest (or rolling back to it) is a no-op.
 
 ## Switching a machine to beta
 
@@ -38,20 +55,22 @@ Note: on `stable`, the updater only sees releases *newer* than the installed
 one — a machine that ran a beta build does not "downgrade" when switched back,
 it simply waits for the next stable release past its version.
 
-## Canary (nightly live check)
+## Nightly canary (guard between releases)
 
 `.github/workflows/canary.yml` runs `scripts/canary.mjs` daily at 05:00 UTC
-(and on demand). It pushes the audio fixtures in `test/fixtures/audio/`
-through the live Groq pipeline — STT (`whisper-large-v3-turbo`), plus the LLM
-edit pass (`llama-3.3-70b-versatile`) for fixtures that declare
-`llm_expected` — and checks the tokens that carry each fixture's meaning.
-Results land in the job summary; failures fail the workflow. Without
-`GROQ_API_KEY` in repo secrets the canary skips with a notice (forks stay
-green).
+(and on demand) against `main`. It pushes the audio fixtures in
+`test/fixtures/audio/` through the live Groq pipeline — STT
+(`whisper-large-v3-turbo`), plus the LLM edit pass
+(`llama-3.3-70b-versatile`) for fixtures that declare `llm_expected` — and
+checks the tokens that carry each fixture's meaning. The release-time canary
+(step 3 above) checks the pipeline at ship time; the nightly one catches a
+provider retiring a model id or degrading *between* releases. Results land in
+the job summary; failures fail the workflow. Without `GROQ_API_KEY` in repo
+secrets the canary skips with a notice (forks stay green).
 
 Unit tests replay *recorded* provider responses offline
 (`src/pipeline_replay.test.js`, `postprocess.rs::replay_tests`, fixtures in
-`test/fixtures/provider-responses/`); the canary is the live half of the pair.
+`test/fixtures/provider-responses/`); the canaries are the live half of the pair.
 
 ### Adding an audio fixture
 
@@ -75,4 +94,4 @@ afconvert -f WAVE -d LEI16@16000 /tmp/f.aiff test/fixtures/audio/en-merge.wav
 |---|---|
 | `TAURI_SIGNING_PRIVATE_KEY` | updater artifact signing (already set) |
 | `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS signing (already set) |
-| `GROQ_API_KEY` | the canary — add to make it run |
+| `GROQ_API_KEY` | both canaries — add to make them run |
