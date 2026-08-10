@@ -20,7 +20,8 @@
       "file": "ru-devops.wav",
       "language": "ru",
       "said": "привет это девопс инженер",
-      "expected": ["привет", "инженер"],
+      "_why": "STT is free to spell the anglicism in Latin (\"DevOps Engineer\"), which is what Whisper does with it now — turning it back into Russian is the LLM pass's job, so only llm_expected asks for 'инженер'.",
+      "expected": ["привет"],
       "llm_expected": ["привет", "инженер"]
     },
     {

@@ -12,6 +12,10 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- The release canary no longer fails when speech recognition spells "DevOps
+  Engineer" in Latin — the check that it comes back as Russian now sits where
+  the app actually does that, on the post-processing pass.
+
 ## v0.7.101 — 2026-08-10
 
 - Every build is now installed and launched on a clean machine before it is
