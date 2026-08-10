@@ -194,6 +194,60 @@ jobs:
           cp "$exe" Ribbit_Windows_Setup.exe
           gh release upload "$TAG" Ribbit_Windows_Setup.exe --clobber --repo "$GITHUB_REPOSITORY"
 
+      # Stage check on the real OS: install what we are about to ship, launch
+      # it, and demand it still be alive 10s later with the right version. A
+      # tray app has no window to assert on — a living process IS the smoke
+      # signal. Nothing here needs a mic: recording starts only on hotkey.
+      - name: Smoke-test installed app
+        shell: pwsh
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = ".\Ribbit_Windows_Setup.exe"
+          Write-Host "Installing $installer silently..."
+          Start-Process -FilePath $installer -ArgumentList "/S" -Wait
+
+          # Tauri NSIS (installMode currentUser) installs under %LOCALAPPDATA%\<ProductName>.
+          $installDir = Join-Path $env:LOCALAPPDATA "Ribbit"
+          $app = Get-ChildItem (Join-Path $installDir "*.exe") -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch "unins" } | Select-Object -First 1
+          if (-not $app) { Write-Host "::error::installed binary not found under $installDir"; exit 1 }
+          Write-Host "Installed: $($app.FullName)"
+
+          $ver = $app.VersionInfo.ProductVersion
+          Write-Host "ProductVersion: $ver"
+          if ("v$ver" -ne $env:TAG) {
+            Write-Host "::error::installed version '$ver' != tag '$env:TAG'"
+            exit 1
+          }
+
+          $proc = Start-Process -FilePath $app.FullName -PassThru
+          Start-Sleep -Seconds 10
+
+          # The app keeps its own debug log — on a crash it is the only
+          # diagnostic a headless runner can offer.
+          $appLog = Join-Path $env:APPDATA "ribbit\logs\debug.log"
+
+          $alive = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+          if (-not $alive) {
+            $code = try { $proc.ExitCode } catch { "unknown" }
+            Write-Host "::error::Ribbit exited within 10s of launch on a clean machine (exit code $code)"
+            if (Test-Path $appLog) { Write-Host "--- debug.log tail ---"; Get-Content $appLog -Tail 50 }
+            exit 1
+          }
+          Write-Host "Ribbit alive after 10s (PID $($proc.Id))"
+          if (Test-Path $appLog) { Write-Host "--- debug.log tail ---"; Get-Content $appLog -Tail 20 }
+
+          Stop-Process -Id $proc.Id -Force
+          # Leave the runner clean: silent uninstall, best-effort (runners are
+          # ephemeral, so a failure here is noise, not a build failure).
+          $unins = Get-ChildItem (Join-Path $installDir "unins*.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($unins) {
+            Start-Process -FilePath $unins.FullName -ArgumentList "/S" -Wait
+            Write-Host "Uninstalled."
+          }
+
   build-macos:
     # Native per-arch builds (arm64 + Intel), NOT a universal binary. A universal
     # (lipo'd) ad-hoc-signed bundle does not anchor macOS TCC grants reliably: the
@@ -396,9 +450,11 @@ jobs:
           gh release upload "$TAG" Ribbit_macOS_AppleSilicon.dmg Ribbit_macOS_Intel.dmg --clobber --repo "$GITHUB_REPOSITORY"
 
       # Release smoke: the bundle the user is about to install must be signed
-      # (deep + strict, entitlements included) and must claim the version we
-      # tagged — a mismatched Info.plist would have the updater offer the same
-      # version forever. Fails the job before the manifest is trusted.
+      # (deep + strict, entitlements included), must claim the version we
+      # tagged, and must actually START on a clean machine — a mismatched
+      # Info.plist would have the updater offer the same version forever, and
+      # a crash-at-launch build must never reach users. The app is a tray
+      # utility: no window to assert on, a living process IS the smoke signal.
       - name: Smoke-test macOS bundles
         shell: bash
         env:
@@ -412,6 +468,37 @@ jobs:
             plist_ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
             if [ "v$plist_ver" != "$TAG" ]; then
               echo "::error::$app version $plist_ver != tag $TAG"
+              exit 1
+            fi
+
+            # Launch smoke: run the bundle's executable, give it 10s, require
+            # the process to still be alive. Startup touches no hardware (mic
+            # is only opened on hotkey; the mic-permission request is async),
+            # so a clean runner user is a fair stage. Locally built binaries
+            # carry no quarantine attribute, so Gatekeeper stays out of it.
+            # The runner is Apple Silicon: the Intel build can only launch via
+            # Rosetta, and a runner without Rosetta is NOT evidence the build
+            # is broken — skip the launch (codesign/version still verified).
+            native=$(uname -m)
+            if [ "$arch" = "x86_64-apple-darwin" ] && [ "$native" = "arm64" ] \
+               && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+              echo "::notice::Rosetta unavailable — skipping launch smoke for the Intel build (codesign + version OK)"
+              continue
+            fi
+            bin=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")
+            "$app/Contents/MacOS/$bin" & pid=$!
+            sleep 10
+            if kill -0 "$pid" 2>/dev/null; then
+              echo "Ribbit ($arch) alive after 10s (PID $pid)"
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            else
+              code=0; wait "$pid" || code=$?
+              echo "::error::Ribbit ($arch) exited within 10s of launch on a clean machine (exit code $code)"
+              # The app's own debug log is the only diagnostic a headless
+              # runner can offer on a startup crash.
+              log="$HOME/Library/Application Support/ribbit/logs/debug.log"
+              [ -f "$log" ] && { echo "--- debug.log tail ---"; tail -50 "$log"; }
               exit 1
             fi
           done
@@ -448,3 +535,25 @@ jobs:
               --notes "Moving target for the beta update channel"
           fi
           gh release upload beta beta.json -R "$GITHUB_REPOSITORY" --clobber
+
+  # Release-time canary: same live-provider check as the nightly one, run
+  # against the tag being shipped. A missing GROQ_API_KEY skips with a notice
+  # (exit 0) and does not block promotion — same rule as canary.yml.
+  release-canary:
+    needs: [version, build-windows, build-macos]
+    if: needs.version.outputs.skipped != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Run live canary
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: node scripts/canary.mjs

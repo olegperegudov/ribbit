@@ -12,6 +12,16 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- Every build is now installed and launched on a clean machine before it is
+  published, so a version that crashes at startup never reaches the update.
+
+  Windows installs the real NSIS package under a clean user, launches it and
+  requires the process alive after 10s with the tagged version; macOS runs each
+  bundle's executable after the codesign and Info.plist checks (the Intel build
+  skips the launch when the arm64 runner has no Rosetta — that is not evidence
+  of a broken build). A release-time canary re-runs the live Groq check against
+  the tag being shipped; without GROQ_API_KEY it skips loudly and stays green.
+
 ## v0.7.100 — 2026-08-10
 
 - Hovering a provider name only shows a tooltip when the name is actually cut
