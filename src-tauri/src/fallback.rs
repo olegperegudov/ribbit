@@ -85,18 +85,43 @@ pub struct CallError {
     pub status: Option<u16>,
     pub is_timeout: bool,
     pub message: String,
+    /// The same failure in the user's words, for the history row next to the
+    /// yellow dot ("timed out", "rate limit / free tier").
+    /// Written where the error is born, so nothing downstream has to re-read
+    /// `message` — which is a provider's raw body and changes shape per vendor.
+    pub reason: &'static str,
 }
 
 impl CallError {
     pub fn transport(is_timeout: bool, message: String) -> Self {
-        Self { status: None, is_timeout, message }
+        let reason = if is_timeout { "timed out" } else { "provider unreachable" };
+        Self { status: None, is_timeout, message, reason }
     }
     pub fn http(status: u16, message: String) -> Self {
-        Self { status: Some(status), is_timeout: false, message }
+        Self { status: Some(status), is_timeout: false, message, reason: http_reason(status) }
     }
     /// HTTP succeeded but the body was unusable — never a switch trigger.
     pub fn rejected(message: String) -> Self {
-        Self { status: Some(200), is_timeout: false, message }
+        Self { status: Some(200), is_timeout: false, message, reason: "reply unusable" }
+    }
+    /// Nothing in the stack had a key, so no request was ever made.
+    pub fn no_key(message: String) -> Self {
+        Self { status: Some(200), is_timeout: false, message, reason: "no key set" }
+    }
+}
+
+/// The user-facing half of `classify`: what an HTTP status means for the person
+/// looking at the log. 429 gets the free-tier wording because that is what it
+/// almost always is here — the alternative reading (too many dictations per
+/// minute) leads to the same place, waiting or another provider.
+fn http_reason(status: u16) -> &'static str {
+    match status {
+        429 => "rate limit / free tier",
+        s if (500..600).contains(&s) => "provider is down",
+        401 | 403 => "key rejected",
+        404 => "model or url not found",
+        400 => "request rejected",
+        _ => "call failed",
     }
 }
 
@@ -217,7 +242,7 @@ pub fn run_with_failover<T>(
     threshold: u32,
     budget: Option<Duration>,
     call: impl Fn(&ProviderEntry, &str) -> Result<T, CallError>,
-) -> Result<(T, usize), String> {
+) -> Result<(T, usize), CallError> {
     let t0 = Instant::now();
     run_with_failover_on(state(stack), stack, entries, start, threshold, budget, move || t0.elapsed(), call)
 }
@@ -236,8 +261,8 @@ fn run_with_failover_on<T>(
     budget: Option<Duration>,
     elapsed: impl Fn() -> Duration,
     call: impl Fn(&ProviderEntry, &str) -> Result<T, CallError>,
-) -> Result<(T, usize), String> {
-    let mut last_err: Option<String> = None;
+) -> Result<(T, usize), CallError> {
+    let mut last_err: Option<CallError> = None;
     for (i, entry) in entries.iter().enumerate().skip(start) {
         let name = if entry.label.is_empty() { entry.url.as_str() } else { entry.label.as_str() };
         // Checked before the call, not after: the budget bounds how long the
@@ -272,19 +297,21 @@ fn run_with_failover_on<T>(
                         "{} stack: transient fail on '{}' ({}); trying next entry",
                         stack.name(), name, e.message
                     ));
-                    last_err = Some(e.message);
+                    last_err = Some(e);
                 }
                 FailKind::Hard => {
                     crate::debug_log::log(&format!(
                         "{} stack: hard fail on '{}': {} (surfacing, no failover)",
                         stack.name(), name, e.message
                     ));
-                    return Err(e.message);
+                    return Err(e);
                 }
             },
         }
     }
-    Err(last_err.unwrap_or_else(|| "no API key set for any provider — add one in Settings".to_string()))
+    Err(last_err.unwrap_or_else(
+        || CallError::no_key("no API key set for any provider — add one in Settings".to_string()),
+    ))
 }
 
 // --- config readers -------------------------------------------------------
@@ -501,7 +528,8 @@ mod tests {
             calls.set(calls.get() + 1);
             Err::<String, _>(CallError::http(401, "bad key".into()))
         });
-        assert_eq!(out.unwrap_err(), "bad key");
+        assert_eq!(out.as_ref().unwrap_err().message, "bad key");
+        assert_eq!(out.unwrap_err().reason, "key rejected");
         assert_eq!(calls.get(), 1, "hard error must not try further entries");
         assert_eq!(st.lock().unwrap().consec_fail, 0, "hard errors never feed the switch tally");
     }
@@ -526,7 +554,9 @@ mod tests {
         let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 2, None, no_time, |_, _| {
             Ok::<_, CallError>(String::new())
         });
-        assert!(out.unwrap_err().contains("no API key"));
+        let err = out.unwrap_err();
+        assert!(err.message.contains("no API key"));
+        assert_eq!(err.reason, "no key set");
     }
 
     #[test]
@@ -548,7 +578,9 @@ mod tests {
                 Err::<String, _>(CallError::transport(true, "timeout".into()))
             },
         );
-        assert_eq!(out.unwrap_err(), "timeout");
+        let err = out.unwrap_err();
+        assert_eq!(err.message, "timeout");
+        assert_eq!(err.reason, "timed out");
         assert_eq!(calls.get(), 2, "third entry starts past the budget and must be skipped");
     }
 
@@ -580,7 +612,7 @@ mod tests {
         let out = run_with_failover_on(&st, Stack::Audio, &entries, 0, 5, None, no_time, |_, _| {
             Err::<String, _>(CallError::transport(true, "timeout".into()))
         });
-        assert_eq!(out.unwrap_err(), "timeout");
+        assert_eq!(out.unwrap_err().message, "timeout");
         // Both entries failed, but only the starting one counts.
         assert_eq!(st.lock().unwrap().consec_fail, 1);
     }

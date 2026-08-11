@@ -1,5 +1,6 @@
 import { applyVocab, findBestMatch } from "./vocab.js";
 import { armConfirm } from "./confirm.js";
+import { logMeta } from "./llm_status.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -32,7 +33,7 @@ function formatDate(isoString) {
   return `${wd}, ${mon} ${day}${ordinal(day)}`;
 }
 
-function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
+function addLogEntry(text, ts, edited, llmHost, llmModel, insertError, llmError) {
   const log = $("#log-entries");
   const time = ts ? formatTime(ts) : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const dateLabel = formatDate(ts);
@@ -52,19 +53,14 @@ function addLogEntry(text, ts, edited, llmHost, llmModel, insertError) {
   const entry = document.createElement("div");
   entry.className = insertError ? "log-entry failed" : "log-entry";
   // A dictation that was never typed is still a dictation — it keeps its row and
-  // its text (click still copies), and says so with a red dot. Failure outranks
-  // the rephrased/not-rephrased signal: the user needs to find these rows.
-  const dotClass = insertError ? "failed" : edited === true ? "edited" : "unedited";
-  const dotHint = insertError
-    ? `never typed into the app — click the line to copy it. ${insertError}`
-    : edited === true ? "rephrased" : "not rephrased";
-  // Provider label rides under the message, next to the indicator — but only
-  // when the LLM actually ran (green). A yellow entry had no provider, so the
-  // dot stands alone.
-  const labelText = `${llmHost} | ${llmModel}`;
-  const labelHtml = (edited === true && llmHost && llmModel)
-    ? `<span class="log-llm-label">${escapeHtml(labelText)}</span>`
-    : "";
+  // its text (click still copies), and says so with a red dot. Colour, hover
+  // text and the label beside the dot are decided in one place (llm_status.js).
+  const { dotClass, hint: dotHint, label } = logMeta({
+    edited, llmError, llmHost, llmModel, insertError,
+  });
+  // The label rides under the message, next to the indicator: the model that
+  // rephrased the line, or — when nothing did — why not.
+  const labelHtml = label ? `<span class="log-llm-label">${escapeHtml(label)}</span>` : "";
   entry.innerHTML = `<span class="log-time">${time}</span><div class="log-body"><span class="log-text">${escapeHtml(text)}</span><button class="log-more" type="button">show all</button><div class="log-meta"><span class="log-llm-dot ${dotClass}" data-hint="${escapeHtml(dotHint)}" tabindex="0"></span>${labelHtml}</div></div>`;
   // Copying a line is why the window opens, so the row is a real button: it
   // takes focus, answers Enter and Space, and announces itself. Its "click to
@@ -172,7 +168,7 @@ function markEntryFailed(text, error) {
     const dot = row.querySelector(".log-llm-dot");
     dot.classList.remove("edited", "unedited");
     dot.classList.add("failed");
-    dot.dataset.hint = `never typed into the app — click the line to copy it. ${error}`;
+    dot.dataset.hint = logMeta({ insertError: error }).hint;
     return;
   }
 }
@@ -501,7 +497,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // limit 0 = load everything inside the retention window (search needs all days).
     const history = await invoke("get_log_history", { limit: 0 });
     for (const entry of history.reverse()) {
-      addLogEntry(entry.text, entry.ts, entry.edited, entry.llm_host, entry.llm_model, entry.insert_error);
+      addLogEntry(entry.text, entry.ts, entry.edited, entry.llm_host, entry.llm_model, entry.insert_error, entry.llm_error);
     }
     refreshLogEmpty();
   } catch (e) {
@@ -572,8 +568,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await listen("transcription", (event) => {
-    const { text, edited, llm_host, llm_model } = event.payload;
-    addLogEntry(text, null, edited, llm_host, llm_model);
+    const { text, edited, llm_host, llm_model, llm_error } = event.payload;
+    addLogEntry(text, null, edited, llm_host, llm_model, null, llm_error);
     // Keep the Settings "last error" note in sync if the panel is open.
     refreshLlmError();
   });

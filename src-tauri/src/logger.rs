@@ -33,6 +33,11 @@ pub struct TranscriptionLog<'a> {
     /// "routerai.ru"). Shown next to the green/yellow indicator in the history
     /// so a glance tells which provider — and which fallback rung — was live.
     pub llm_host: Option<&'a str>,
+    /// Why the editor didn't produce this entry ("timed out", "rate limit /
+    /// free tier"), `None` when it ran or was never asked to.
+    /// The yellow dot in the history is drawn from the daily log after a
+    /// restart, so the reason has to outlive the session that saw it.
+    pub llm_error: Option<&'a str>,
     /// Wall time of typing the text into the focused app.
     pub insert_secs: f32,
     /// Bundle id of the app that received the keystrokes. Answers "the text is
@@ -88,6 +93,7 @@ fn build_entry(rec: &TranscriptionLog, ts: &str) -> serde_json::Value {
         "llm_secs": rec.llm_secs,
         "llm_model": rec.llm_model,
         "llm_host": rec.llm_host,
+        "llm_error": rec.llm_error,
         "insert_secs": rec.insert_secs,
         "insert_target": rec.insert_target,
         "insert_error": rec.insert_error,
@@ -175,6 +181,7 @@ mod tests {
             llm_secs: Some(1.5),
             llm_model: Some("google/gemma-4-26b-a4b-it"),
             llm_host: Some("routerai.ru"),
+            llm_error: None,
             insert_secs: 0.5,
             insert_target: Some("com.apple.Safari"),
             insert_error: None,
@@ -213,6 +220,7 @@ mod tests {
             llm_secs: None,
             llm_model: None,
             llm_host: None,
+            llm_error: None,
             insert_secs: 0.0,
             insert_target: Some("com.apple.Terminal"),
             insert_error: Some("macOS secure input is on"),
@@ -222,6 +230,34 @@ mod tests {
         let e = build_entry(&rec, "ts");
         assert_eq!(e["insert_error"], "macOS secure input is on");
         assert_eq!(e["insert_target"], "com.apple.Terminal");
+    }
+
+    /// A yellow dot with no reason is the bug this field exists to fix: the
+    /// history is rebuilt from these lines, so "why not edited" has to be in
+    /// them and not only in the session that watched it happen.
+    #[test]
+    fn build_entry_records_why_the_edit_did_not_happen() {
+        let rec = TranscriptionLog {
+            text: "привет",
+            raw_text: Some("привет"),
+            edited: false,
+            audio_secs: 1.0,
+            stt_secs: 0.5,
+            stt_model: "groq/whisper-large-v3-turbo",
+            llm_secs: Some(5.0),
+            llm_model: Some("llama-3.3-70b-versatile"),
+            llm_host: Some("api.groq.com"),
+            llm_error: Some("rate limit / free tier"),
+            insert_secs: 0.1,
+            insert_target: None,
+            insert_error: None,
+            total_secs: 5.7,
+            idle_secs: None,
+        };
+        let e = build_entry(&rec, "ts");
+        assert_eq!(e["edited"], false);
+        assert_eq!(e["llm_error"], "rate limit / free tier");
+        assert_eq!(e["llm_host"], "api.groq.com");
     }
 
     #[test]
@@ -236,6 +272,7 @@ mod tests {
             llm_secs: None,
             llm_model: None,
             llm_host: None,
+            llm_error: None,
             insert_secs: 0.1,
             insert_target: None,
             insert_error: None,
@@ -246,6 +283,7 @@ mod tests {
         assert!(e["llm_secs"].is_null());
         assert!(e["llm_model"].is_null());
         assert!(e["llm_host"].is_null());
+        assert!(e["llm_error"].is_null());
         assert!(e["raw_text"].is_null());
         assert!(e["idle_secs"].is_null());
     }

@@ -66,6 +66,13 @@ If the LLM call fails (network error, 5xx, timeout, no key set, or a retired
 model id → `http 404`), Ribbit falls back to the vocab-processed text. The user
 always gets a paste within the timeout of the hotkey release.
 
+The row itself says why: next to its yellow dot the history shows the provider
+and the reason — `api.groq.com | rate limit / free tier`, `routerai.ru | timed
+out`, `no key set` — so waiting it out and going to fix something are told apart
+at a glance. The phrase is chosen in `fallback.rs` (`CallError::reason`) and
+stored per entry in the daily jsonl as `llm_error`, so it survives a restart.
+An entry taken while the editor was off reads "the editor was off".
+
 The fallback is no longer *silent*: the last failure reason is shown in
 **Settings** under the edit stack (`⚠ last LLM edit failed: …`) and cleared on
 the next success, so a provider quietly dropping a model can't rot the feature

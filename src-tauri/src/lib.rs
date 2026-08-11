@@ -855,7 +855,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                     ),
                 ) {
                     Ok((text, used)) => (Ok(text), entry_label(&entries[used])),
-                    Err(msg) => (Err(msg), entry_label(&entries[start])),
+                    Err(e) => (Err(e.message), entry_label(&entries[start])),
                 }
             }
         };
@@ -889,6 +889,13 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                 let mut llm_model: Option<String> = None;
                 let mut llm_host: Option<String> = None;
                 let mut llm_attempted = false;
+                // Why this dictation came back unedited, in the user's words. The
+                // yellow dot alone only said "the editor didn't run"; the whole
+                // question a user has at that moment is whether to wait it out
+                // (rate limit, provider down) or go fix something (no key, bad
+                // model). Travels with the entry — event and daily log both — so
+                // the answer is still there after a restart.
+                let mut llm_error: Option<&'static str> = None;
 
                 let text_entries = fallback::read_stack(&cfg, fallback::Stack::Text);
                 let any_text_key = text_entries
@@ -899,6 +906,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         let msg = "no key set for any text provider".to_string();
                         debug_log::log(&format!("postprocess: {} — falling back to strict vocab", msg));
                         set_last_llm_error(Some(msg));
+                        llm_error = Some("no key set");
                         (vocab::apply(&raw_text), false)
                     } else {
                         let vocab_data = vocab::read_vocab();
@@ -936,9 +944,10 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                                 // skipped aliases or invented its own "corrections").
                                 (vocab::apply_with(&edited_text, &vocab_data), true)
                             }
-                            Err(msg) => {
-                                debug_log::log(&format!("postprocess failed ({}) — falling back to strict vocab", msg));
-                                set_last_llm_error(Some(msg));
+                            Err(err) => {
+                                debug_log::log(&format!("postprocess failed ({}) — falling back to strict vocab", err.message));
+                                llm_error = Some(err.reason);
+                                set_last_llm_error(Some(err.message));
                                 // The failed attempt still identifies itself in
                                 // the transcription log (edited=false).
                                 let e = &text_entries[start];
@@ -966,6 +975,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         "edited": edited,
                         "llm_host": llm_host,
                         "llm_model": llm_model,
+                        "llm_error": llm_error,
                     }));
 
                     let _ = app_handle.emit("status-detail", "typing...");
@@ -1019,6 +1029,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                         llm_secs,
                         llm_model: llm_model.as_deref(),
                         llm_host: llm_host.as_deref(),
+                        llm_error,
                         insert_secs,
                         insert_target: insert_target.as_deref(),
                         insert_error: insert_error.as_deref(),

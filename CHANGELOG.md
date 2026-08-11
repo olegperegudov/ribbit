@@ -12,6 +12,19 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- A dictation the editor didn't polish now says why — "timed out",
+  "rate limit / free tier", "no key set" — next to its yellow dot.
+    - The reason is built where the failure is born: `CallError` carries a
+      `reason` phrase alongside the raw provider message, and
+      `run_with_failover` hands the whole error up instead of a bare string, so
+      nothing downstream re-parses a body whose shape differs per vendor. It
+      rides the `transcription` event and the daily jsonl (`llm_error`), which
+      is what the history is rebuilt from after a restart. The row's colour,
+      hover text and label now come from one place, `src/llm_status.js`, unit
+      tested without a DOM; an entry with no reason reads "the editor was off".
+      Settings keeps showing the raw message under the stack — that one is for
+      digging, the row is for glancing.
+
 ## v0.7.106 — 2026-08-10
 
 - A release page is a list of what changed again, not a paragraph with the
