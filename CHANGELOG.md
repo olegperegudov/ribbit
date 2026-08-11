@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.108 — 2026-08-11
+
 - A dictation the editor didn't polish now says why — "timed out",
   "rate limit / free tier", "no key set" — next to its yellow dot.
     - The reason is built where the failure is born: `CallError` carries a
