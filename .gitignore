@@ -39,3 +39,6 @@ CLAUDE.md
 
 # Python bytecode from the release-notes script
 __pycache__/
+
+# Design-tool scratch (not for the public repo)
+.impeccable/
