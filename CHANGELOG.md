@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.109 — 2026-08-12
+
 - Dictation now comes out written, not spoken: the editor deletes «ну», «вот»,
   «как бы» and the false starts speech leaves behind, instead of only
   punctuating them.
