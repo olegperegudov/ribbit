@@ -1225,18 +1225,33 @@ fn audio_entry_json(id: &str, name: &str) -> serde_json::Value {
     })
 }
 
+/// Build a text-stack entry from a catalog provider name.
+fn text_entry_json(id: &str, name: &str) -> serde_json::Value {
+    let p = postprocess::find_provider(name).expect("known text provider");
+    serde_json::json!({
+        "id": id, "label": p.label, "url": p.base_url,
+        "model": p.default_model, "key_env": p.env_var,
+    })
+}
+
 /// Fold legacy single-provider settings into the audio/text stacks. Idempotent:
 /// once a stack array exists it's left untouched, so this is safe on every
 /// launch. Reads key presence from the env (already loaded) to seed sensibly.
 fn migrate_stacks(config: &mut serde_json::Value) -> bool {
     let groq = std::env::var("GROQ_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
     let openai = std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
-    migrate_stacks_inner(config, groq, openai)
+    let routerai = std::env::var("ROUTERAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+    migrate_stacks_inner(config, groq, openai, routerai)
 }
 
-/// Pure core of the migration — `groq`/`openai` are "is that key present".
+/// Pure core of the migration — the bools are "is that key present".
 /// Split out so it can be unit-tested without touching process env.
-fn migrate_stacks_inner(config: &mut serde_json::Value, groq: bool, openai: bool) -> bool {
+fn migrate_stacks_inner(
+    config: &mut serde_json::Value,
+    groq: bool,
+    openai: bool,
+    routerai: bool,
+) -> bool {
     let mut changed = false;
 
     if !config.get("audio_providers").map(|v| v.is_array()).unwrap_or(false) {
@@ -1277,6 +1292,36 @@ fn migrate_stacks_inner(config: &mut serde_json::Value, groq: bool, openai: bool
         changed = true;
     }
 
+    // A single-entry text stack has nowhere to go when the provider refuses,
+    // and the free tier refuses often: measured 2026-08-12, groq answered 429
+    // to seven of nine consecutive edits, and on 45% of that day's dictations.
+    // Every one of those pasted raw, unedited speech.
+    //
+    // So when both keys are present the stack becomes routerai → groq. Order is
+    // not just uptime: on the same dictations gemma via routerai cut the filler
+    // and left the sentence alone, while llama on groq kept "короче", dropped
+    // "как думаешь", and once prefixed its answer with "Нет необходимости
+    // выполнять эту просьбу" — which would have landed in the document. groq
+    // stays as the backup: rougher, but instant and on a different account.
+    //
+    // The flag is what makes this one-time. Reordering or deleting entries in
+    // Settings is a legitimate choice, and the next launch must not undo it.
+    if !config["text_backup_seeded"].as_bool().unwrap_or(false) {
+        config["text_backup_seeded"] = serde_json::json!(true);
+        changed = true;
+
+        let stack = fallback::read_stack(config, fallback::Stack::Text);
+        if stack.len() == 1 {
+            let id = next_provider_id(config);
+            let entries = config["text_providers"].as_array_mut().expect("text stack seeded above");
+            match stack[0].key_env.as_str() {
+                "GROQ_API_KEY" if routerai => entries.insert(0, text_entry_json(&id, "routerai")),
+                "ROUTERAI_API_KEY" if groq => entries.push(text_entry_json(&id, "groq")),
+                _ => {}
+            }
+        }
+    }
+
     if !config.get("fallback_threshold").map(|v| v.is_u64()).unwrap_or(false) {
         config["fallback_threshold"] = serde_json::json!(2);
         changed = true;
@@ -1314,7 +1359,7 @@ mod stack_tests {
     #[test]
     fn migrate_seeds_groq_primary_with_openai_fallback() {
         let mut cfg = serde_json::json!({});
-        assert!(migrate_stacks_inner(&mut cfg, true, true));
+        assert!(migrate_stacks_inner(&mut cfg, true, true, false));
         let audio = fallback::read_stack(&cfg, fallback::Stack::Audio);
         assert_eq!(audio.len(), 2);
         assert_eq!(audio[0].label, "groq");
@@ -1325,7 +1370,7 @@ mod stack_tests {
     #[test]
     fn migrate_seeds_openai_primary_when_only_openai_key() {
         let mut cfg = serde_json::json!({});
-        migrate_stacks_inner(&mut cfg, false, true);
+        migrate_stacks_inner(&mut cfg, false, true, false);
         let audio = fallback::read_stack(&cfg, fallback::Stack::Audio);
         assert_eq!(audio.len(), 1);
         assert_eq!(audio[0].label, "openai");
@@ -1334,7 +1379,7 @@ mod stack_tests {
     #[test]
     fn migrate_seeds_groq_on_fresh_install() {
         let mut cfg = serde_json::json!({});
-        migrate_stacks_inner(&mut cfg, false, false);
+        migrate_stacks_inner(&mut cfg, false, false, false);
         let audio = fallback::read_stack(&cfg, fallback::Stack::Audio);
         assert_eq!(audio.len(), 1);
         assert_eq!(audio[0].label, "groq");
@@ -1346,7 +1391,9 @@ mod stack_tests {
             "llm_provider": "routerai",
             "llm_provider_models": { "routerai": "custom/model-x" }
         });
-        migrate_stacks_inner(&mut cfg, true, false);
+        // No second key anywhere, so the seed stays alone and the backup rule
+        // (covered separately) has nothing to add.
+        migrate_stacks_inner(&mut cfg, false, false, false);
         let text = fallback::read_stack(&cfg, fallback::Stack::Text);
         assert_eq!(text.len(), 1);
         assert_eq!(text[0].label, "routerai");
@@ -1355,17 +1402,65 @@ mod stack_tests {
     }
 
     #[test]
+    fn an_existing_lone_text_provider_gets_a_backup() {
+        // The shape every current install is in: one text provider, seeded
+        // before stacks could fall back at all.
+        let mut cfg = serde_json::json!({
+            "audio_providers": [{"id": "a1", "url": "u", "key_env": "GROQ_API_KEY"}],
+            "text_providers": [{"id": "p1", "label": "groq", "url": "u",
+                                "model": "llama-3.3-70b-versatile", "key_env": "GROQ_API_KEY"}],
+        });
+        assert!(migrate_stacks_inner(&mut cfg, true, false, true));
+        let text = fallback::read_stack(&cfg, fallback::Stack::Text);
+        assert_eq!(text.len(), 2, "the lone groq entry gains a partner");
+        assert_eq!(text[0].key_env, "ROUTERAI_API_KEY", "routerai leads — it edits better");
+        assert_eq!(text[0].label, "routerai");
+        assert_eq!(text[1].key_env, "GROQ_API_KEY", "groq stays as the instant backup");
+    }
+
+    #[test]
+    fn the_backup_is_seeded_once_and_never_reinstated() {
+        let mut cfg = serde_json::json!({
+            "text_providers": [{"id": "p1", "label": "groq", "url": "u",
+                                "model": "m", "key_env": "GROQ_API_KEY"}],
+        });
+        migrate_stacks_inner(&mut cfg, true, false, true);
+        // The user removes the backup in Settings; a later launch must respect that.
+        cfg["text_providers"] = serde_json::json!([{"id": "p1", "label": "groq", "url": "u",
+                                                    "model": "m", "key_env": "GROQ_API_KEY"}]);
+        migrate_stacks_inner(&mut cfg, true, false, true);
+        assert_eq!(fallback::read_stack(&cfg, fallback::Stack::Text).len(), 1);
+    }
+
+    #[test]
+    fn no_backup_without_a_second_key() {
+        let mut cfg = serde_json::json!({});
+        migrate_stacks_inner(&mut cfg, true, false, false);
+        assert_eq!(fallback::read_stack(&cfg, fallback::Stack::Text).len(), 1);
+    }
+
+    #[test]
+    fn a_routerai_primary_is_backed_by_groq() {
+        let mut cfg = serde_json::json!({ "llm_provider": "routerai" });
+        migrate_stacks_inner(&mut cfg, true, false, true);
+        let text = fallback::read_stack(&cfg, fallback::Stack::Text);
+        assert_eq!(text.len(), 2);
+        assert_eq!(text[0].key_env, "ROUTERAI_API_KEY");
+        assert_eq!(text[1].key_env, "GROQ_API_KEY");
+    }
+
+    #[test]
     fn migrate_is_idempotent() {
         let mut cfg = serde_json::json!({});
-        assert!(migrate_stacks_inner(&mut cfg, true, true));
+        assert!(migrate_stacks_inner(&mut cfg, true, true, false));
         // Second pass over an already-migrated config changes nothing.
-        assert!(!migrate_stacks_inner(&mut cfg, true, true));
+        assert!(!migrate_stacks_inner(&mut cfg, true, true, false));
     }
 
     #[test]
     fn migrate_sets_default_knobs() {
         let mut cfg = serde_json::json!({});
-        migrate_stacks_inner(&mut cfg, true, false);
+        migrate_stacks_inner(&mut cfg, true, false, false);
         assert_eq!(cfg["fallback_threshold"], 2);
         assert_eq!(cfg["fallback_cooldown_mins"], 60);
     }

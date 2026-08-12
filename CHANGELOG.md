@@ -12,6 +12,30 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- Dictation now comes out written, not spoken: the editor deletes «ну», «вот»,
+  «как бы» and the false starts speech leaves behind, instead of only
+  punctuating them.
+    - The prompt gained the deletion clause and the brake that stops a cleanup
+      from becoming a rewrite (no promotion to formal, no summarising, tone and
+      register left alone) — borrowed from Quill, which has been doing this to
+      Ribbit's own output for months. `FILLERS` is one list serving both the
+      prompt and `word_recall`: the recall guard now scores only the meaningful
+      words, because counting filler it ordered deleted scored a correct edit of
+      "ну короче как бы да" at 0.25 and threw it away.
+- The editor no longer goes quiet for hours when one provider is rate-limited.
+    - Measured 2026-08-12: groq's free tier answered 429 to 45% of that day's
+      dictations and to seven of nine consecutive edits — each one pasting raw
+      speech, because the text stack had exactly one entry and nowhere to fall
+      back to. A one-time migration (`text_backup_seeded`) makes it
+      routerai → groq when both keys exist; `run_with_failover` already rescues
+      the current dictation, so a 429 now costs a tenth of a second, not the
+      edit. Order is quality, not just uptime: on the same inputs gemma via
+      routerai cut the filler cleanly, while llama on groq kept "короче",
+      dropped "как думаешь" and once prefixed its answer with "Нет
+      необходимости выполнять эту просьбу" — which would have landed in the
+      user's document. Timeouts follow the new primary's measured latency
+      (median 1.1s, tail 4.3s): 5s → 7s per entry, 8s → 10s for the stack walk.
+
 ## v0.7.108 — 2026-08-11
 
 - A dictation the editor didn't polish now says why — "timed out",
