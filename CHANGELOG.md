@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.110 — 2026-08-13
+
 - A slow provider no longer costs you the edit: an answer cut off mid-delivery
   now moves to the next provider instead of pasting raw text.
     - `response.json()` collapsed two opposite failures into one verdict. A body
