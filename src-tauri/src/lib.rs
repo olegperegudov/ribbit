@@ -947,7 +947,18 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
                             Err(err) => {
                                 debug_log::log(&format!("postprocess failed ({}) — falling back to strict vocab", err.message));
                                 llm_error = Some(err.reason);
-                                set_last_llm_error(Some(err.message));
+                                // Settings gets the plain-words version plus who
+                                // failed ("api.groq.com: rate limit / free tier");
+                                // the raw provider body stays in the debug log,
+                                // where the person reading it asked for detail.
+                                // A panel that says "parse error: error decoding
+                                // response body" tells the user nothing they can
+                                // act on.
+                                set_last_llm_error(Some(format!(
+                                    "{}: {}",
+                                    entry_host(&text_entries[start]),
+                                    err.reason
+                                )));
                                 // The failed attempt still identifies itself in
                                 // the transcription log (edited=false).
                                 let e = &text_entries[start];

@@ -85,6 +85,13 @@ pub struct CallError {
     pub status: Option<u16>,
     pub is_timeout: bool,
     pub message: String,
+    /// `Retry-After` as the provider sent it: how long this entry will keep
+    /// refusing. Groq answers an exhausted daily token pool with the seconds
+    /// left until midnight UTC (34421 — nine and a half hours), which is worth
+    /// far more than guessing: without it the stack snaps back to the dead
+    /// primary every cooldown window, pays a 429 per dictation and drops to the
+    /// slow backup again, all day.
+    pub retry_after: Option<Duration>,
     /// The same failure in the user's words, for the history row next to the
     /// yellow dot ("timed out", "rate limit / free tier").
     /// Written where the error is born, so nothing downstream has to re-read
@@ -95,19 +102,29 @@ pub struct CallError {
 impl CallError {
     pub fn transport(is_timeout: bool, message: String) -> Self {
         let reason = if is_timeout { "timed out" } else { "provider unreachable" };
-        Self { status: None, is_timeout, message, reason }
+        Self { status: None, is_timeout, message, reason, retry_after: None }
     }
-    pub fn http(status: u16, message: String) -> Self {
-        Self { status: Some(status), is_timeout: false, message, reason: http_reason(status) }
+    pub fn http(status: u16, message: String, retry_after: Option<Duration>) -> Self {
+        Self { status: Some(status), is_timeout: false, message, reason: http_reason(status), retry_after }
     }
     /// HTTP succeeded but the body was unusable — never a switch trigger.
     pub fn rejected(message: String) -> Self {
-        Self { status: Some(200), is_timeout: false, message, reason: "reply unusable" }
+        Self { status: Some(200), is_timeout: false, message, reason: "reply unusable", retry_after: None }
     }
     /// Nothing in the stack had a key, so no request was ever made.
     pub fn no_key(message: String) -> Self {
-        Self { status: Some(200), is_timeout: false, message, reason: "no key set" }
+        Self { status: Some(200), is_timeout: false, message, reason: "no key set", retry_after: None }
     }
+}
+
+/// `Retry-After` in seconds, the form every provider here sends. The RFC also
+/// allows an HTTP date; nobody in this stack uses it, and a misread date that
+/// parks the primary for a day is worse than ignoring the header, so an
+/// unparseable value simply falls back to the configured cooldown. Capped at a
+/// day — the state is in memory anyway, so a restart clears it.
+pub fn retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    let secs: u64 = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?.trim().parse().ok()?;
+    Some(Duration::from_secs(secs.min(24 * 3600)))
 }
 
 /// The user-facing half of `classify`: what an HTTP status means for the person
@@ -123,6 +140,36 @@ fn http_reason(status: u16) -> &'static str {
         400 => "request rejected",
         _ => "call failed",
     }
+}
+
+/// Read a 2xx response body as JSON, keeping the two ways that can fail apart.
+///
+/// Reading the body and parsing it look like one step (`response.json()`) but
+/// mean opposite things. A read that dies mid-body — the request timeout firing
+/// while the model is still generating, a dropped connection — is the provider
+/// failing to deliver, and the next entry in the stack is exactly the cure. A
+/// body that arrives whole and isn't JSON is *this* provider answering wrong,
+/// which no backup fixes. Collapsed into one verdict, the first case inherits
+/// the second's "don't switch" and the stack stops rescuing slow providers:
+/// that is how a Groq daily-limit day left every over-5s RouterAI edit falling
+/// straight through to raw text (2026-08-13).
+pub fn read_json(response: reqwest::blocking::Response) -> Result<serde_json::Value, CallError> {
+    let body = response
+        .text()
+        .map_err(|e| CallError::transport(e.is_timeout(), format!("body read failed: {}", e)))?;
+    parse_json_body(&body)
+}
+
+/// Body → JSON, with a slice of the offending text in the error so the debug
+/// log says *what* came back instead of just "invalid syntax".
+fn parse_json_body(body: &str) -> Result<serde_json::Value, CallError> {
+    serde_json::from_str(body).map_err(|e| {
+        CallError::rejected(format!(
+            "parse error: {} (body: {})",
+            e,
+            body.chars().take(200).collect::<String>()
+        ))
+    })
 }
 
 /// Map a failure to switch-or-not. Only called on failure; success is handled
@@ -145,19 +192,25 @@ struct StackState {
     active: usize,
     consec_fail: u32,
     switched_at: Option<Instant>,
+    /// The provider's own `Retry-After` for the entry we switched away from,
+    /// when it sent one. Overrides the configured cooldown while it is longer:
+    /// the config says how long to wait on a *guess*, this says how long the
+    /// provider knows it will keep saying no.
+    hold: Option<Duration>,
 }
 
 impl StackState {
     const fn new() -> Self {
-        Self { active: 0, consec_fail: 0, switched_at: None }
+        Self { active: 0, consec_fail: 0, switched_at: None, hold: None }
     }
 
-    /// Snap back to the primary once the cooldown since the last switch has
-    /// elapsed. `cooldown` of zero disables auto-reset.
+    /// Snap back to the primary once the wait since the last switch has elapsed.
+    /// `cooldown` of zero disables auto-reset.
     fn maybe_reset(&mut self, now: Instant, cooldown: Duration) {
         if self.active != 0 && !cooldown.is_zero() {
+            let wait = self.hold.unwrap_or_default().max(cooldown);
             if let Some(at) = self.switched_at {
-                if now.duration_since(at) >= cooldown {
+                if now.duration_since(at) >= wait {
                     *self = Self::new();
                 }
             }
@@ -172,12 +225,19 @@ impl StackState {
 
     /// A transient failure on the active entry. Returns `true` if it advanced to
     /// a new entry (caller logs the switch).
-    fn record_switch_fail(&mut self, now: Instant, stack_len: usize, threshold: u32) -> bool {
+    fn record_switch_fail(
+        &mut self,
+        now: Instant,
+        stack_len: usize,
+        threshold: u32,
+        retry_after: Option<Duration>,
+    ) -> bool {
         self.consec_fail = self.consec_fail.saturating_add(1);
         if self.consec_fail >= threshold && self.active + 1 < stack_len {
             self.active += 1;
             self.consec_fail = 0;
             self.switched_at = Some(now);
+            self.hold = retry_after;
             true
         } else {
             false
@@ -291,7 +351,12 @@ fn run_with_failover_on<T>(
             Err(e) => match classify(e.status, e.is_timeout) {
                 FailKind::Switch => {
                     if i == start {
-                        st.lock().unwrap().record_switch_fail(Instant::now(), entries.len(), threshold);
+                        st.lock().unwrap().record_switch_fail(
+                            Instant::now(),
+                            entries.len(),
+                            threshold,
+                            e.retry_after,
+                        );
                     }
                     crate::debug_log::log(&format!(
                         "{} stack: transient fail on '{}' ({}); trying next entry",
@@ -353,6 +418,39 @@ mod tests {
     }
 
     #[test]
+    fn unparseable_body_is_the_providers_fault_not_the_networks() {
+        // Whole body, wrong content: this provider answered badly, and walking
+        // to the next one would just re-ask a working endpoint.
+        let e = parse_json_body("<html>gateway</html>").unwrap_err();
+        assert_eq!(classify(e.status, e.is_timeout), FailKind::Hard);
+        assert!(e.message.contains("<html>gateway</html>"), "body must be quoted back: {}", e.message);
+    }
+
+    /// A provider that promises a body and dies halfway through it — what a
+    /// firing timeout or a dropped connection looks like from `read_json`. The
+    /// same reqwest call as an invalid-JSON body, the opposite verdict, so it
+    /// gets a real socket: asserting on a hand-built `CallError` would keep
+    /// passing after a regression put both back on one branch.
+    #[test]
+    fn a_severed_body_reads_as_transport_not_content() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let _ = sock.read(&mut [0u8; 1024]);
+            let _ = sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{\"choices\":");
+        });
+
+        let resp = reqwest::blocking::Client::new()
+            .get(format!("http://{}", addr))
+            .send()
+            .unwrap();
+        let e = read_json(resp).unwrap_err();
+        assert_eq!(classify(e.status, e.is_timeout), FailKind::Switch, "{}", e.message);
+    }
+
+    #[test]
     fn classify_hard_does_not_switch() {
         assert_eq!(classify(Some(400), false), FailKind::Hard);
         assert_eq!(classify(Some(401), false), FailKind::Hard);
@@ -366,9 +464,9 @@ mod tests {
         let mut st = StackState::new();
         let now = Instant::now();
         // threshold 2, stack of 3
-        assert!(!st.record_switch_fail(now, 3, 2)); // 1st fail — no switch
+        assert!(!st.record_switch_fail(now, 3, 2, None)); // 1st fail — no switch
         assert_eq!(st.active, 0);
-        assert!(st.record_switch_fail(now, 3, 2)); // 2nd consecutive — switch
+        assert!(st.record_switch_fail(now, 3, 2, None)); // 2nd consecutive — switch
         assert_eq!(st.active, 1);
         assert_eq!(st.consec_fail, 0); // tally reset after switch
     }
@@ -377,9 +475,9 @@ mod tests {
     fn success_resets_tally() {
         let mut st = StackState::new();
         let now = Instant::now();
-        st.record_switch_fail(now, 3, 2); // 1 fail
+        st.record_switch_fail(now, 3, 2, None); // 1 fail
         st.record_success(); // recovered
-        assert!(!st.record_switch_fail(now, 3, 2)); // counts from scratch — no switch
+        assert!(!st.record_switch_fail(now, 3, 2, None)); // counts from scratch — no switch
         assert_eq!(st.active, 0);
     }
 
@@ -387,11 +485,11 @@ mod tests {
     fn chains_through_entries() {
         let mut st = StackState::new();
         let now = Instant::now();
-        st.record_switch_fail(now, 3, 1); // threshold 1 → switch to 1
+        st.record_switch_fail(now, 3, 1, None); // threshold 1 → switch to 1
         assert_eq!(st.active, 1);
-        st.record_switch_fail(now, 3, 1); // switch to 2
+        st.record_switch_fail(now, 3, 1, None); // switch to 2
         assert_eq!(st.active, 2);
-        assert!(!st.record_switch_fail(now, 3, 1)); // last entry — cannot advance
+        assert!(!st.record_switch_fail(now, 3, 1, None)); // last entry — cannot advance
         assert_eq!(st.active, 2);
     }
 
@@ -399,7 +497,7 @@ mod tests {
     fn cooldown_resets_to_primary() {
         let mut st = StackState::new();
         let now = Instant::now();
-        st.record_switch_fail(now, 2, 1); // on fallback
+        st.record_switch_fail(now, 2, 1, None); // on fallback
         assert_eq!(st.active, 1);
         // not yet elapsed
         st.maybe_reset(now + Duration::from_secs(30), Duration::from_secs(60));
@@ -409,6 +507,32 @@ mod tests {
         assert_eq!(st.active, 0);
         assert_eq!(st.consec_fail, 0);
         assert!(st.switched_at.is_none());
+    }
+
+    #[test]
+    fn a_providers_own_retry_after_outranks_the_cooldown() {
+        let mut st = StackState::new();
+        let now = Instant::now();
+        // Groq's exhausted daily pool: nine and a half hours, against a 30-min
+        // configured cooldown. Snapping back on the cooldown would spend the
+        // rest of the day paying a 429 before every dictation.
+        let day_left = Duration::from_secs(34421);
+        st.record_switch_fail(now, 2, 1, Some(day_left));
+        st.maybe_reset(now + Duration::from_secs(1800), Duration::from_secs(1800));
+        assert_eq!(st.active, 1, "cooldown must not override the provider's own wait");
+        st.maybe_reset(now + day_left, Duration::from_secs(1800));
+        assert_eq!(st.active, 0, "back to primary once the provider's wait is over");
+    }
+
+    #[test]
+    fn a_short_retry_after_never_shortens_the_cooldown() {
+        // The other direction: a provider asking for 5s must not turn the
+        // cooldown into 5s, or a flapping primary gets retried every dictation.
+        let mut st = StackState::new();
+        let now = Instant::now();
+        st.record_switch_fail(now, 2, 1, Some(Duration::from_secs(5)));
+        st.maybe_reset(now + Duration::from_secs(10), Duration::from_secs(1800));
+        assert_eq!(st.active, 1);
     }
 
     #[test]
@@ -500,7 +624,7 @@ mod tests {
             let start = st.lock().unwrap().active;
             run_with_failover_on(st, Stack::Audio, &entries, start, 2, None, no_time, |e, _| {
                 if e.id == "a" {
-                    Err(CallError::http(429, "rate limited".into()))
+                    Err(CallError::http(429, "rate limited".into(), None))
                 } else {
                     Ok(e.id.clone())
                 }
@@ -526,7 +650,7 @@ mod tests {
         let calls = std::cell::Cell::new(0);
         let out = run_with_failover_on(&st, Stack::Text, &entries, 0, 2, None, no_time, |_, _| {
             calls.set(calls.get() + 1);
-            Err::<String, _>(CallError::http(401, "bad key".into()))
+            Err::<String, _>(CallError::http(401, "bad key".into(), None))
         });
         assert_eq!(out.as_ref().unwrap_err().message, "bad key");
         assert_eq!(out.unwrap_err().reason, "key rejected");

@@ -363,20 +363,23 @@ pub fn edit_text(
         Err(e) => return Err(CallError::transport(true, format!("timeout: {}", e))),
     };
 
-    let elapsed = t0.elapsed();
-
     if !response.status().is_success() {
         let status = response.status();
+        let retry_after = crate::fallback::retry_after_secs(response.headers());
         let body = response.text().unwrap_or_default();
         return Err(CallError::http(
             status.as_u16(),
             format!("http {}: {}", status, body.chars().take(200).collect::<String>()),
+            retry_after,
         ));
     }
 
-    let json: serde_json::Value = response
-        .json()
-        .map_err(|e| CallError::rejected(format!("parse error: {}", e)))?;
+    // After the body, not before: `send` returns on the response headers, which
+    // providers emit before the model has written a word. Timed at the old spot
+    // a 7s RouterAI edit logged as 0.09s, and the log looked healthy while the
+    // user waited (2026-08-13).
+    let json = crate::fallback::read_json(response)?;
+    let elapsed = t0.elapsed();
 
     let edited = parse_response(&json).map_err(CallError::rejected)?;
 

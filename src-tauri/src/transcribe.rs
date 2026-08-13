@@ -212,16 +212,16 @@ pub fn transcribe_audio_blocking(
 
     if !response.status().is_success() {
         let status = response.status();
+        let retry_after = crate::fallback::retry_after_secs(response.headers());
         let body = response.text().unwrap_or_default();
         return Err(CallError::http(
             status.as_u16(),
             format!("API error {}: {}", status, body.chars().take(200).collect::<String>()),
+            retry_after,
         ));
     }
 
-    let result: serde_json::Value = response
-        .json()
-        .map_err(|e| CallError::rejected(format!("Failed to parse response: {}", e)))?;
+    let result = crate::fallback::read_json(response)?;
 
     Ok(result["text"].as_str().unwrap_or("").to_string())
 }

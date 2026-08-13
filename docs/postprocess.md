@@ -37,6 +37,12 @@ failures (default 2). It stays on the fallback for a cooldown window (default
 whole chain. A **hard** client error (400/401/403/404 — bad key/url/model) never
 switches: it's a config bug to surface, not a reason to mask behind a backup.
 
+When the refusal carries a `Retry-After`, that wins over the cooldown while it
+is longer — Groq answers an exhausted *daily* token pool with the seconds left
+until the pool resets (nine-plus hours), and snapping back every 30 min would
+buy a 429 before every dictation for the rest of the day. A shorter
+`Retry-After` never shortens the cooldown.
+
 The switch state (active entry, fail tally, switch time) is in-memory and
 per-stack, so a restart starts fresh from the primary. Order is the priority and
 is reordered in the UI. Knobs live in the **auto-fallback** row. Implementation:
@@ -74,7 +80,8 @@ stored per entry in the daily jsonl as `llm_error`, so it survives a restart.
 An entry taken while the editor was off reads "the editor was off".
 
 The fallback is no longer *silent*: the last failure reason is shown in
-**Settings** under the edit stack (`⚠ last LLM edit failed: …`) and cleared on
+**Settings** under the edit stack in the same plain words as the history row —
+`⚠ last LLM edit failed: api.groq.com: rate limit / free tier` — and cleared on
 the next success, so a provider quietly dropping a model can't rot the feature
 unnoticed. An active auto-fallback also shows an amber status line above the
 stack. Full diagnostics land in **Settings → debug log** as

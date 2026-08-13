@@ -12,6 +12,38 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- A slow provider no longer costs you the edit: an answer cut off mid-delivery
+  now moves to the next provider instead of pasting raw text.
+    - `response.json()` collapsed two opposite failures into one verdict. A body
+      that arrives whole but isn't JSON is the provider answering wrong (hard —
+      don't switch); a body that dies mid-read is the timeout firing while the
+      model is still generating (transient — switch). Both landed on
+      `CallError::rejected`, so the stack refused to walk and dropped straight
+      to strict vocab. Split into `fallback::read_json`, used by both pipelines
+      — audio had the same bug, where a lost dictation is unrecoverable. The
+      regression test serves a truncated body off a real socket, because a
+      hand-built `CallError` would keep passing after a re-merge.
+- After a rate limit, Ribbit now waits as long as the provider says instead of
+  guessing.
+    - Groq answers an exhausted daily token pool with `Retry-After` — the
+      seconds left until it resets, nine-plus hours. The 30-min cooldown snapped
+      back long before that, spending two 429s and a slow-backup switch on every
+      dictation for the rest of the day. `CallError` carries `retry_after`, and
+      the sticky switch holds for `max(cooldown, retry_after)`; a shorter header
+      never shortens the cooldown, so a flapping primary isn't retried per
+      dictation.
+- Settings names the failure in plain words — `api.groq.com: rate limit / free
+  tier` — instead of showing the raw client error.
+    - It was printing `CallError::message`, i.e. whatever the provider's body or
+      reqwest happened to say ("parse error: error decoding response body"),
+      which tells the user nothing actionable. It now shows the same `reason`
+      phrase the history row uses, prefixed with the host that failed; the raw
+      message stays in the debug log.
+- The debug log stops under-reporting how long an edit took.
+    - Elapsed was measured at `send()`, which returns on the response headers —
+      emitted before the model has written a word. A 7s edit logged as 0.09s, so
+      the log looked healthy while the user waited. Timed after the body now.
+
 ## v0.7.109 — 2026-08-12
 
 - Dictation now comes out written, not spoken: the editor deletes «ну», «вот»,
