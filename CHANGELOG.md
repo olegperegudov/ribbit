@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.111 — 2026-08-13
+
 - Editing a dictation is now near-instant: Cerebras joins the provider list and
   takes over as the first one tried.
     - Measured 2026-08-13 on real dictations, same prompt and payload as the
