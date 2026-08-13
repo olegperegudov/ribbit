@@ -663,11 +663,14 @@ fn write_env_var(name: &str, value: &str) -> Result<(), String> {
 async fn set_api_key(key: String, provider: Option<String>) -> Result<(), String> {
     // Detect provider from key prefix or explicit parameter
     let prov = provider.unwrap_or_else(|| {
-        if key.starts_with("gsk_") { "groq".into() } else { "openai".into() }
+        if key.starts_with("gsk_") { "groq".into() }
+        else if key.starts_with("csk-") { "cerebras".into() }
+        else { "openai".into() }
     });
 
     let var_name = match prov.as_str() {
         "groq" => "GROQ_API_KEY",
+        "cerebras" => "CEREBRAS_API_KEY",
         "router_ai" | "routerai" => "ROUTERAI_API_KEY",
         "openrouter" => "OPENROUTER_API_KEY",
         _ => "OPENAI_API_KEY",
@@ -1252,7 +1255,35 @@ fn migrate_stacks(config: &mut serde_json::Value) -> bool {
     let groq = std::env::var("GROQ_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
     let openai = std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
     let routerai = std::env::var("ROUTERAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
-    migrate_stacks_inner(config, groq, openai, routerai)
+    let cerebras = std::env::var("CEREBRAS_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+    let mut changed = migrate_stacks_inner(config, groq, openai, routerai);
+    changed |= seed_cerebras_primary(config, cerebras);
+    changed
+}
+
+/// Put cerebras at the head of the text stack the first time a key for it
+/// exists. Installs made before it joined the catalog carry a stack whose
+/// primary is whatever was fastest then, and the edit only feels instant if
+/// the fastest provider is tried first — an existing user would otherwise keep
+/// waiting on the old primary until they rebuilt the stack by hand.
+///
+/// One-time, like `text_backup_seeded`: reordering or deleting the entry in
+/// Settings is a legitimate choice and the next launch must not undo it.
+fn seed_cerebras_primary(config: &mut serde_json::Value, cerebras: bool) -> bool {
+    if config["cerebras_seeded"].as_bool().unwrap_or(false) {
+        return false;
+    }
+    config["cerebras_seeded"] = serde_json::json!(true);
+    if !cerebras {
+        // Nothing to seed, but the flag is still burned: a key added later
+        // arrives through Settings, where the user picks their own order.
+        return true;
+    }
+
+    let id = next_provider_id(config);
+    let Some(entries) = config["text_providers"].as_array_mut() else { return true };
+    entries.insert(0, text_entry_json(&id, "cerebras"));
+    true
 }
 
 /// Pure core of the migration — the bools are "is that key present".
@@ -1466,6 +1497,35 @@ mod stack_tests {
         assert!(migrate_stacks_inner(&mut cfg, true, true, false));
         // Second pass over an already-migrated config changes nothing.
         assert!(!migrate_stacks_inner(&mut cfg, true, true, false));
+    }
+
+    #[test]
+    fn cerebras_takes_over_an_existing_stack_once() {
+        let mut cfg = serde_json::json!({
+            "text_providers": [{"id": "p1", "label": "routerai", "url": "u",
+                                "model": "m", "key_env": "ROUTERAI_API_KEY"}],
+        });
+        assert!(seed_cerebras_primary(&mut cfg, true));
+        let text = fallback::read_stack(&cfg, fallback::Stack::Text);
+        assert_eq!(text[0].key_env, "CEREBRAS_API_KEY", "the fastest provider is tried first");
+        assert_eq!(text[1].key_env, "ROUTERAI_API_KEY", "the old primary becomes the backup");
+
+        // The user demotes or deletes it in Settings; a later launch respects that.
+        cfg["text_providers"] = serde_json::json!([{"id": "p1", "label": "routerai", "url": "u",
+                                                    "model": "m", "key_env": "ROUTERAI_API_KEY"}]);
+        assert!(!seed_cerebras_primary(&mut cfg, true));
+        assert_eq!(fallback::read_stack(&cfg, fallback::Stack::Text).len(), 1);
+    }
+
+    #[test]
+    fn no_cerebras_entry_without_its_key() {
+        let mut cfg = serde_json::json!({
+            "text_providers": [{"id": "p1", "label": "routerai", "url": "u",
+                                "model": "m", "key_env": "ROUTERAI_API_KEY"}],
+        });
+        seed_cerebras_primary(&mut cfg, false);
+        let text = fallback::read_stack(&cfg, fallback::Stack::Text);
+        assert_eq!(text.len(), 1, "an entry with no key would just burn the budget");
     }
 
     #[test]

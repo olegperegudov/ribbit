@@ -12,6 +12,20 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- Editing a dictation is now near-instant: Cerebras joins the provider list and
+  takes over as the first one tried.
+    - Measured 2026-08-13 on real dictations, same prompt and payload as the
+      app sends: routerai/gemma 2.2s median with a 7.1s tail on one of ten,
+      cerebras/gemma-4-31b 0.9s median / 1.4s worst across short, medium and
+      long inputs, edits indistinguishable from the router's. Groq is faster
+      still (0.5-0.8s) but its free tier answered 429 to seven of nine
+      consecutive edits — it stays in the stack as the free backup rather than
+      the primary. Cerebras runs on prepaid credits, so there is no daily wall.
+    - Existing installs are reordered once by `seed_cerebras_primary`, gated on
+      the key being present: a stack whose primary predates the new provider
+      would otherwise keep waiting on the old one until rebuilt by hand. The
+      one-time flag means demoting or deleting the entry in Settings sticks.
+
 ## v0.7.110 — 2026-08-13
 
 - A slow provider no longer costs you the edit: an answer cut off mid-delivery

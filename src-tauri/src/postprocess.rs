@@ -24,6 +24,20 @@ pub struct ProviderConfig {
 
 /// All providers Ribbit currently knows about. Order matches the UI dropdown.
 pub const PROVIDERS: &[ProviderConfig] = &[
+    // Cerebras runs the same gemma family the router does, but on wafer-scale
+    // silicon: measured 2026-08-13 on real dictations, 0.9s median against
+    // 2.2s median / 7.1s tail through routerai, with edits indistinguishable
+    // from the router's on the same inputs. It is the fastest text provider
+    // that also survives a whole day of dictating — groq's free tier is quicker
+    // still but refuses once its daily pool is out (see the stack seeding in
+    // lib.rs), and cerebras runs on prepaid credits with no daily wall.
+    ProviderConfig {
+        name: "cerebras",
+        env_var: "CEREBRAS_API_KEY",
+        label: "cerebras",
+        base_url: "https://api.cerebras.ai/v1/chat/completions",
+        default_model: "gemma-4-31b",
+    },
     // Groq reuses the same key as speech-to-text (GROQ_API_KEY) and runs on
     // LPUs, so this trivial fix-the-punctuation edit comes back in ~0.5-1s and
     // almost never times out — unlike a 26B model on a congested router that
