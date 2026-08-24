@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.112 — 2026-08-24
+
 - The nightly provider check is green again after a week of failure mail.
     - Groq retired every llama model (2026-08); the canary manifest still named
       `llama-3.3-70b-versatile` and got 404 on the LLM leg since 08-18. Now
