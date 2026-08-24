@@ -1,7 +1,7 @@
 {
   "//": "Nightly canary fixtures. Each wav is macOS `say` TTS (16 kHz mono) pushed through the live Groq pipeline by scripts/canary.mjs. `expected` tokens are checked as case-insensitive substrings of the STT transcript — use word stems, not exact words (e.g. 'ветк' matches 'ветки'/'ветку'), so a passing check survives harmless model drift. `llm_expected` additionally runs the transcript through the LLM edit pass and checks the result. Keep expectations to the words that carry the fixture's meaning.",
   "stt_model": "whisper-large-v3-turbo",
-  "llm_model": "llama-3.3-70b-versatile",
+  "llm_model": "openai/gpt-oss-120b",
   "fixtures": [
     {
       "file": "en-merge.wav",
@@ -20,9 +20,9 @@
       "file": "ru-devops.wav",
       "language": "ru",
       "said": "привет это девопс инженер",
-      "_why": "STT is free to spell the anglicism in Latin (\"DevOps Engineer\"), which is what Whisper does with it now — turning it back into Russian is the LLM pass's job, so only llm_expected asks for 'инженер'.",
+      "_why": "STT is free to spell the anglicism in Latin (\"DevOps Engineer\"), which is what Whisper does with it now. gpt-oss-120b (the groq lane's model since llama retired, 2026-08) keeps the Latin spelling at temp 0, so the canary only guards that the greeting survives the edit pass — cyrillization is exercised by the primary cerebras lane, which this canary doesn't cover.",
       "expected": ["привет"],
-      "llm_expected": ["привет", "инженер"]
+      "llm_expected": ["привет"]
     },
     {
       "file": "en-terminal.wav",

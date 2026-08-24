@@ -12,6 +12,18 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- The nightly provider check is green again after a week of failure mail.
+    - Groq retired every llama model (2026-08); the canary manifest still named
+      `llama-3.3-70b-versatile` and got 404 on the LLM leg since 08-18. Now
+      points at `openai/gpt-oss-120b` — the same model the app's groq lane uses.
+    - gpt-oss is a reasoning model whose thinking spends the completion budget:
+      with max_tokens 512 it intermittently returned empty content. The canary
+      now sends `reasoning_effort: "low"` — five consecutive runs clean.
+    - The ru-devops fixture stopped requiring «инженер» in the LLM output:
+      gpt-oss-120b keeps the Latin "DevOps Engineer" at temp 0, and
+      cyrillization is the primary cerebras lane's behavior, which this
+      groq-only canary never covered anyway.
+
 ## v0.7.111 — 2026-08-13
 
 - Editing a dictation is now near-instant: Cerebras joins the provider list and

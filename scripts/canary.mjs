@@ -101,6 +101,9 @@ async function llmEdit(text, model, key) {
       ],
       temperature: 0.0,
       max_tokens: Math.min(4096, Math.max(512, [...text].length + 100)),
+      // gpt-oss reasoning counts against max_tokens; without this the model
+      // occasionally spends the whole budget thinking and returns empty content
+      reasoning_effort: "low",
     }),
   });
   const latency = (performance.now() - t0) / 1000;
