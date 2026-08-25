@@ -97,23 +97,38 @@ pub struct CallError {
     /// Written where the error is born, so nothing downstream has to re-read
     /// `message` — which is a provider's raw body and changes shape per vendor.
     pub reason: &'static str,
+    /// Switch-or-not for this failure, decided where the failure is born. Most
+    /// errors get it from `classify`; the ones that can't be read off status
+    /// alone (a 200 whose body carried no usable answer) set it themselves.
+    pub kind: FailKind,
 }
 
 impl CallError {
     pub fn transport(is_timeout: bool, message: String) -> Self {
         let reason = if is_timeout { "timed out" } else { "provider unreachable" };
-        Self { status: None, is_timeout, message, reason, retry_after: None }
+        Self { status: None, is_timeout, message, reason, retry_after: None, kind: classify(None, is_timeout) }
     }
     pub fn http(status: u16, message: String, retry_after: Option<Duration>) -> Self {
-        Self { status: Some(status), is_timeout: false, message, reason: http_reason(status), retry_after }
+        let kind = classify(Some(status), false);
+        Self { status: Some(status), is_timeout: false, message, reason: http_reason(status), retry_after, kind }
     }
-    /// HTTP succeeded but the body was unusable — never a switch trigger.
+    /// HTTP succeeded and the answer itself is the problem — the guards refused
+    /// it (a runaway rewrite, a model arguing with the prompt). Another provider
+    /// would be asked the same thing about the same text, so this one is final.
     pub fn rejected(message: String) -> Self {
-        Self { status: Some(200), is_timeout: false, message, reason: "reply unusable", retry_after: None }
+        Self { status: Some(200), is_timeout: false, message, reason: "reply unusable", retry_after: None, kind: FailKind::Hard }
+    }
+    /// HTTP succeeded but there was no answer in it to judge: the completion hit
+    /// the token cap (a reasoning model can spend the whole budget thinking), the
+    /// content came back empty, or the body wasn't the shape the API promises.
+    /// That is this provider failing, not the text being bad — the next rung
+    /// answers the same prompt fine, so it gets its turn.
+    pub fn no_answer(message: String) -> Self {
+        Self { status: Some(200), is_timeout: false, message, reason: "reply incomplete", retry_after: None, kind: FailKind::Switch }
     }
     /// Nothing in the stack had a key, so no request was ever made.
     pub fn no_key(message: String) -> Self {
-        Self { status: Some(200), is_timeout: false, message, reason: "no key set", retry_after: None }
+        Self { status: Some(200), is_timeout: false, message, reason: "no key set", retry_after: None, kind: FailKind::Hard }
     }
 }
 
@@ -348,7 +363,7 @@ fn run_with_failover_on<T>(
                 }
                 return Ok((v, i));
             }
-            Err(e) => match classify(e.status, e.is_timeout) {
+            Err(e) => match e.kind {
                 FailKind::Switch => {
                     if i == start {
                         st.lock().unwrap().record_switch_fail(
@@ -706,6 +721,66 @@ mod tests {
         assert_eq!(err.message, "timeout");
         assert_eq!(err.reason, "timed out");
         assert_eq!(calls.get(), 2, "third entry starts past the budget and must be skipped");
+    }
+
+    #[test]
+    fn shipped_budget_lets_an_unreachable_stack_reach_its_last_rung() {
+        // The 2026-08-25 outage: the two foreign providers wouldn't connect at
+        // all while the domestic one answered fine. Connect failures cost the
+        // 2s handshake cap, not the 5s answer cap, so the shipped budget has to
+        // leave room for the third rung — that one is the endpoint that works.
+        set_key("FO_T9_A");
+        let st = Mutex::new(StackState::new());
+        let entries = [entry("a", "FO_T9_A"), entry("b", "FO_T9_A"), entry("c", "FO_T9_A")];
+        let calls = std::cell::Cell::new(0);
+        let out = run_with_failover_on(
+            &st, Stack::Text, &entries, 0, 5,
+            Some(Duration::from_secs(crate::postprocess::STACK_BUDGET_SECS)),
+            ticking(Duration::from_secs(crate::postprocess::CONNECT_TIMEOUT_SECS)),
+            |e, _| {
+                calls.set(calls.get() + 1);
+                if e.id == "c" { Ok(e.id.clone()) } else { Err(CallError::transport(false, "connect".into())) }
+            },
+        );
+        assert_eq!(out.unwrap(), ("c".to_string(), 2));
+        assert_eq!(calls.get(), 3, "the last rung must still get its turn on a stack that fails to connect");
+    }
+
+    #[test]
+    fn an_answerless_reply_hands_the_turn_to_the_next_provider() {
+        // A 200 with nothing usable in it (completion truncated by the token
+        // cap, empty content, body the wrong shape) is this provider failing,
+        // not the text being bad — the walk must go on. Regression: groq's
+        // reasoning model returned a truncated edit, that surfaced as a hard
+        // fail, and the router sitting one rung below was never asked.
+        set_key("FO_T10_A");
+        let st = Mutex::new(StackState::new());
+        let entries = [entry("a", "FO_T10_A"), entry("b", "FO_T10_A")];
+        let out = run_with_failover_on(&st, Stack::Text, &entries, 0, 2, None, no_time, |e, _| {
+            if e.id == "a" {
+                Err(CallError::no_answer("output truncated (finish_reason=length)".into()))
+            } else {
+                Ok(e.id.clone())
+            }
+        });
+        assert_eq!(out.unwrap(), ("b".to_string(), 1));
+    }
+
+    #[test]
+    fn a_refused_answer_is_final_and_does_not_walk_on() {
+        // The other half of the pair: the guards refused the answer itself (a
+        // runaway rewrite). Every provider gets asked the same thing about the
+        // same text, so re-asking is just another wait.
+        set_key("FO_T11_A");
+        let st = Mutex::new(StackState::new());
+        let entries = [entry("a", "FO_T11_A"), entry("b", "FO_T11_A")];
+        let calls = std::cell::Cell::new(0);
+        let out = run_with_failover_on(&st, Stack::Text, &entries, 0, 2, None, no_time, |_, _| {
+            calls.set(calls.get() + 1);
+            Err::<String, _>(CallError::rejected("answer 4x the input".into()))
+        });
+        assert_eq!(out.unwrap_err().reason, "reply unusable");
+        assert_eq!(calls.get(), 1, "a refused answer must not cost the user a second provider");
     }
 
     #[test]

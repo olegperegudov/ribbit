@@ -39,17 +39,18 @@ pub const PROVIDERS: &[ProviderConfig] = &[
         default_model: "gemma-4-31b",
     },
     // Groq reuses the same key as speech-to-text (GROQ_API_KEY) and runs on
-    // LPUs, so this trivial fix-the-punctuation edit comes back in ~0.5-1s and
-    // almost never times out — unlike a 26B model on a congested router that
-    // would burn the 5s budget (+retry) on roughly a third of dictations. It's
-    // the default for exactly that reason. The model id is user-editable in
-    // Settings, so a retired one can be swapped without an app release.
+    // LPUs, so this trivial fix-the-punctuation edit comes back in ~0.5-1s —
+    // which is why it sits second, ahead of the router. It trades that speed for
+    // a daily free-tier wall, so it can't hold the primary slot. The model id is
+    // user-editable in Settings, so a retired one can be swapped without an app
+    // release — but the seeded default has to be a live model too: groq retired
+    // every llama in 2026-08 and the nightly canary 404'd on it for a week.
     ProviderConfig {
         name: "groq",
         env_var: "GROQ_API_KEY",
         label: "groq",
         base_url: "https://api.groq.com/openai/v1/chat/completions",
-        default_model: "llama-3.3-70b-versatile",
+        default_model: "openai/gpt-oss-120b",
     },
     ProviderConfig {
         name: "routerai",
@@ -76,26 +77,34 @@ pub const PROVIDERS: &[ProviderConfig] = &[
 
 pub const DEFAULT_PROVIDER: &str = "groq";
 
-// Measured on the primary (gemma via routerai) over real dictations: median
-// 1.1s, tail 4.3s on a long one. 5s clipped that tail — the edit was thrown
-// away right when the sentence was long enough to need it.
-const TIMEOUT_SECS: u64 = 7;
+// Ceiling on one provider's answer. Measured over real dictations: 0.9s median
+// on cerebras, 1.1s median / 4.3s tail through routerai. 7s was sized to save
+// the long-sentence tail, but the tail is not what the user feels — three rungs
+// of it is. A provider that hasn't answered in 5s has lost its turn: the raw
+// transcript is already safe, and the next rung usually answers in under a
+// second.
+const TIMEOUT_SECS: u64 = 5;
 
-// A hung TCP handshake used to sit inside the 5s budget and eat it whole. On a
-// flaky link the connect either lands fast or not at all, so cap it well short
-// of the response deadline and leave the rest of the budget for the model.
-const CONNECT_TIMEOUT_SECS: u64 = 3;
+// A hung TCP handshake used to eat the whole budget. Unreachable — not slow —
+// is the common bad case: 2026-08-25, cerebras and groq both failed to connect
+// for minutes on end while routerai.ru answered normally. On a link that broken
+// the handshake either lands in well under a second or never, so cap it short
+// and leave the rest of the wait for the model.
+pub const CONNECT_TIMEOUT_SECS: u64 = 2;
 
 /// Ceiling on the whole text-stack walk (see `fallback::run_with_failover`).
-/// Per-entry timeouts alone don't bound the wait: three providers × (timeout +
-/// retry) turned a network blip into a 26s edit, while the raw transcript was
-/// ready in half a second. The edit is a nice-to-have — `vocab::apply` is right
-/// there as a fallback — so it gets a fixed slice of the user's patience: two
-/// rungs' worth of timeout, then we paste what we have.
+/// Per-entry timeouts alone don't bound the wait: marching the full stack
+/// multiplies one provider's timeout by the number of rungs (a measured 13s
+/// edit on 2026-08-25, on a transcript that was ready in half a second). The
+/// edit is a nice-to-have — `vocab::apply` is right there as a fallback — so it
+/// gets a fixed slice of the user's patience, then we paste what we have.
 ///
-/// Sized for the normal bad case: the primary times out (7s) and groq — which
-/// answers in half a second, or refuses in a tenth — still gets its turn.
-pub const STACK_BUDGET_SECS: u64 = 10;
+/// Sized so both shapes of failure land right. Unreachable providers fail in
+/// ~2s each, so all three rungs still get a turn (~9s worst case, and the third
+/// one is the domestic endpoint that stays up when the foreign two don't).
+/// Providers that are merely slow burn 5s each, and the walk stops after the
+/// second rather than spending a third of a minute on a cosmetic edit.
+pub const STACK_BUDGET_SECS: u64 = 8;
 
 pub fn find_provider(name: &str) -> Option<&'static ProviderConfig> {
     PROVIDERS.iter().find(|p| p.name == name)
@@ -159,7 +168,7 @@ pub fn system_prompt() -> String {
 /// still rejects anything that hits the cap.
 pub fn build_payload(text: &str, model: &str) -> serde_json::Value {
     let max_tokens = (text.chars().count() as u64 + 100).clamp(512, 4096);
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt()},
@@ -167,7 +176,17 @@ pub fn build_payload(text: &str, model: &str) -> serde_json::Value {
         ],
         "temperature": 0.0,
         "max_tokens": max_tokens,
-    })
+    });
+    // A reasoning model's thinking counts against `max_tokens`, so on a plain
+    // punctuation edit it can spend the whole budget deliberating and return an
+    // empty or truncated completion (seen on the nightly canary, fixed there the
+    // same way). Only gpt-oss among the seeded models does this, and the param
+    // is not universal — a provider that doesn't know it answers 400 — so it
+    // rides along only for the models that need it.
+    if model.contains("gpt-oss") {
+        payload["reasoning_effort"] = serde_json::json!("low");
+    }
+    payload
 }
 
 /// Extract message content from an OpenAI-style chat-completion response,
@@ -177,8 +196,9 @@ pub fn parse_response(json: &serde_json::Value) -> Result<String, String> {
 
     // A completion cut off by the token cap means the tail of the dictation is
     // gone — worse than no edit at all, and invisible to the runaway-length
-    // check (a truncated edit is *shorter* than the input). Reject it so the
-    // caller falls back to strict vocab and the user keeps their full words.
+    // check (a truncated edit is *shorter* than the input). Refuse it: the
+    // caller turns every parse failure here into a `no_answer`, so the next
+    // provider gets the same text, and strict vocab catches the whole stack.
     if choice
         .and_then(|c| c.get("finish_reason"))
         .and_then(|f| f.as_str())
@@ -329,7 +349,8 @@ fn client() -> &'static reqwest::blocking::Client {
 
 /// Call one resolved chat-completions endpoint with the text + vocab. Returns
 /// the cleaned content on success, or a structured `CallError` the caller uses
-/// to drive fallback (429/5xx/timeout → switch; 4xx / rejected content → not).
+/// to drive fallback: 429/5xx/timeout and a 200 that carried no usable answer
+/// switch to the next provider; 4xx and an answer the guards refused do not.
 pub fn edit_text(
     text: &str,
     url: &str,
@@ -395,7 +416,7 @@ pub fn edit_text(
     let json = crate::fallback::read_json(response)?;
     let elapsed = t0.elapsed();
 
-    let edited = parse_response(&json).map_err(CallError::rejected)?;
+    let edited = parse_response(&json).map_err(CallError::no_answer)?;
 
     // Despite the prompt, the model occasionally answers a dictated question
     // instead of editing it, returning a wall of text. Reject it so the caller
@@ -591,6 +612,41 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
         // And the ceiling holds for absurd inputs.
         let huge = "а".repeat(100_000);
         assert_eq!(build_payload(&huge, "x")["max_tokens"], 4096);
+    }
+
+    /// The wiring, not the constructor: a real 200 whose completion was cut off
+    /// by the token cap has to come back as a switchable failure, or the next
+    /// provider never gets asked. Asserting on a hand-built `CallError` would
+    /// keep passing after a regression put truncation back on the hard branch.
+    #[test]
+    fn a_truncated_completion_from_a_live_endpoint_switches_providers() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let _ = sock.read(&mut [0u8; 4096]);
+            let body = r#"{"choices":[{"finish_reason":"length","message":{"content":"Привет"}}]}"#;
+            let _ = sock.write_all(
+                format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(), body).as_bytes(),
+            );
+        });
+
+        let err = edit_text("привет мир", &format!("http://{}/v1/chat/completions", addr), "k", "m").unwrap_err();
+        assert_eq!(err.kind, crate::fallback::FailKind::Switch, "{}", err.message);
+        assert!(err.message.contains("truncated"), "{}", err.message);
+    }
+
+    #[test]
+    fn a_reasoning_model_gets_its_thinking_capped_and_others_are_left_alone() {
+        // gpt-oss counts its hidden reasoning against max_tokens and comes back
+        // empty on a punctuation edit without this; providers that never heard
+        // of the param answer 400, so it must not ride along everywhere.
+        let p = build_payload("привет", "openai/gpt-oss-120b");
+        assert_eq!(p["reasoning_effort"], "low");
+        let p = build_payload("привет", "gemma-4-31b");
+        assert!(p.get("reasoning_effort").is_none(), "{}", p);
     }
 
     #[test]

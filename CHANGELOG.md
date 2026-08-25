@@ -12,6 +12,37 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- A dictation no longer waits half a minute on a sick text provider: each one
+  gets five seconds to answer, then the next one is asked, and after eight
+  seconds the transcript is pasted as it came.
+    - 2026-08-25: cerebras and groq could not be reached at all for several
+      minutes (foreign hosts down behind the VPN) while routerai.ru answered
+      normally. The walk behaved as designed and still cost 13s of the 24s the
+      user waited: 7s answer cap and 3s connect cap per rung. Now 5s and 2s,
+      with the stack budget at 8s. Two shapes of failure, both bounded: rungs
+      that cannot connect cost ~2s each, so the third one — the domestic
+      endpoint that stays up — still gets its turn; rungs that are merely slow
+      cost 5s each and the walk stops after the second.
+- A reply that was cut off mid-sentence no longer costs the edit — the next
+  provider is asked the same text.
+    - A 200 with no usable answer in it (completion truncated by the token cap,
+      empty content, body the wrong shape) was classified as a hard failure, so
+      the walk stopped and the provider one rung below was never asked. Seen on
+      2026-08-25: groq's reasoning model returned a truncated edit while the
+      router sat right there. `CallError` now carries the switch-or-not decision
+      it was born with, and `no_answer` is a switch; an answer the guards refused
+      (a runaway rewrite) stays final, because every provider would be asked the
+      same thing about the same text.
+- Groq is seeded with a model that still exists, and its thinking no longer eats
+  the reply.
+    - Groq retired every llama in 2026-08; the seeded default still named
+      `llama-3.3-70b-versatile`, which answers 404 — a fresh install's second
+      rung was dead on arrival. Now `openai/gpt-oss-120b`, and because a
+      reasoning model counts its thinking against `max_tokens`, the payload
+      carries `reasoning_effort: low` for gpt-oss models only (a provider that
+      does not know the parameter answers 400). Same fix the nightly canary
+      needed on 08-24.
+
 ## v0.7.112 — 2026-08-24
 
 - The nightly provider check is green again after a week of failure mail.
