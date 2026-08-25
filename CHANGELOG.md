@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.113 — 2026-08-25
+
 - A dictation no longer waits half a minute on a sick text provider: each one
   gets five seconds to answer, then the next one is asked, and after eight
   seconds the transcript is pasted as it came.
