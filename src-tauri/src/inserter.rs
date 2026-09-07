@@ -7,14 +7,21 @@
 //! (Maccy/Paste/Alfred). Direct typing leaves the clipboard untouched.
 //!
 //! macOS drops these keystrokes silently, and that is what the checks below are
-//! for. Two independent gates can swallow them: the TCC grant for synthetic
-//! events (Accessibility / kTCCServicePostEvent), and secure event input, which
-//! any password field switches on for the whole system. In both cases the events
-//! die at the event tap while CGEventPost — and therefore enigo — still reports
-//! success, so a dictation that went nowhere reads exactly like one that landed:
-//! same "inserted N chars" line, same insert_secs in the daily log. Asking the
-//! system about both gates before typing is the only way the logs can tell the
-//! two apart afterwards.
+//! for. Two things can swallow them: the TCC grant for synthetic events
+//! (Accessibility / kTCCServicePostEvent), and secure event input, which any
+//! password field switches on for the whole system. Either way the events die
+//! at the event tap while CGEventPost — and therefore enigo — still reports
+//! success, so a dictation that went nowhere reads exactly like one that
+//! landed. Asking the system about both before typing is the only way the logs
+//! can tell the two apart afterwards.
+//!
+//! The two are not treated alike. A missing grant is a certainty, so it
+//! refuses before typing. Secure input is not: keystrokes were measured
+//! landing while it was held (2026-09-07), and apps hold it for hours after
+//! the password field is long gone — Chrome and Ghostty both did on Oleg's
+//! machine. Refusing on it turned a maybe into a dictation lost for sure, so
+//! Ribbit types anyway and says who is holding it, leaving the transcript in
+//! the log to click if the words never appeared.
 
 use enigo::{Enigo, Keyboard, Settings};
 
@@ -168,12 +175,12 @@ fn gate_error(trusted: bool, secure_input: bool, holder: Option<&str>) -> Option
     if secure_input {
         return Some(match holder {
             Some(app) => format!(
-                "macOS secure input is on — {} is holding it and blocking keystrokes \
-                 system-wide. Close its password field (or quit it), then dictate again.",
-                app
+                "Typed while {} holds macOS secure input — if nothing appeared, quit {} \
+                 and click this line to copy.",
+                app, app
             ),
-            None => "macOS secure input is on — a password field somewhere is blocking \
-                     keystrokes system-wide. Close or leave that field, then dictate again."
+            None => "Typed while some app holds macOS secure input — if nothing appeared, \
+                     close whatever password field is open and click this line to copy."
                 .into(),
         });
     }
@@ -181,19 +188,29 @@ fn gate_error(trusted: bool, secure_input: bool, holder: Option<&str>) -> Option
 }
 
 pub fn insert_text(text: &str) -> Result<(), String> {
-    let secure_input = secure_input_active();
-    // The holder lookup shells out to ioreg, so it only runs on the blocked path.
-    let holder = if secure_input { secure_input_holder() } else { None };
-    if let Some(reason) = gate_error(accessibility_trusted(), secure_input, holder.as_deref()) {
-        if let Some(app) = &holder {
-            debug_log::log(&format!("secure input held by {}", app));
-        }
-        return Err(reason);
+    // A missing Accessibility grant is a certainty — CGEventPost has nowhere to
+    // go — so that one still refuses before typing. Secure input is not: it was
+    // measured on 2026-09-07 that keystrokes can still land while it is held,
+    // and refusing outright turned a maybe into a guaranteed lost dictation.
+    // So we type anyway and warn afterwards, keeping the transcript clickable.
+    if !accessibility_trusted() {
+        return Err(gate_error(false, false, None).expect("untrusted is a gate"));
     }
+    let secure_input = secure_input_active();
+    // The holder lookup shells out to ioreg, so it only runs on the warned path.
+    let holder = if secure_input { secure_input_holder() } else { None };
+    if let Some(app) = &holder {
+        debug_log::log(&format!("secure input held by {}", app));
+    }
+
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
     enigo.text(text).map_err(|e| format!("text input failed: {}", e))?;
     debug_log::log(&format!("inserted {} chars at cursor", text.chars().count()));
-    Ok(())
+
+    match gate_error(true, secure_input, holder.as_deref()) {
+        Some(warning) => Err(warning),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -213,8 +230,18 @@ mod tests {
 
     #[test]
     fn secure_input_is_named_even_when_the_grant_is_fine() {
-        let msg = gate_error(true, true, None).expect("blocked");
+        let msg = gate_error(true, true, None).expect("warned");
         assert!(msg.contains("secure input"), "{}", msg);
+    }
+
+    #[test]
+    fn the_secure_input_note_says_the_text_was_typed_not_refused() {
+        // The old wording ("blocking keystrokes, dictate again") described a
+        // refusal. Ribbit now types first, so the note must not send the user
+        // off to re-dictate what may already be in the field.
+        let msg = gate_error(true, true, Some("Ghostty")).expect("warned");
+        assert!(msg.starts_with("Typed while"), "{}", msg);
+        assert!(!msg.contains("dictate again"), "{}", msg);
     }
 
     #[test]
