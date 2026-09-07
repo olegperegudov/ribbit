@@ -12,6 +12,9 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- When macOS blocks dictation with secure input, Ribbit now names the app that is holding it, instead of saying a password field is open somewhere.
+    - The holder PID comes from `kCGSSessionSecureInputPID` in `ioreg` and is resolved to a localized app name; parsing is pinned by tests, and the lookup only runs on the blocked path.
+
 ## v0.7.113 — 2026-08-25
 
 - A dictation no longer waits half a minute on a sick text provider: each one
