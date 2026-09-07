@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.116 — 2026-09-07
+
 - Dictation is no longer refused when another app holds macOS secure input: Ribbit types the text anyway and, if it may not have landed, says which app is holding it.
     - Chrome and Ghostty were both caught holding secure input for hours after their password prompt was gone, and keystrokes were measured landing through it — so the pre-emptive refusal cost a dictation on a maybe. The Accessibility check still refuses up front; that one is a certainty.
 
