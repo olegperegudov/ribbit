@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.117 — 2026-09-09
+
 - Fixed the LLM edit not running at all: Cerebras quietly retired the model Ribbit was asking for, so every dictation was pasted raw instead of cleaned up.
     - Cerebras pulled `gemma-4-31b` from serving without pulling it from `/v1/models` — every completions call 404'd `model_not_found` while the catalog still listed it as available. That 404 is deliberately final (never fails over, to surface real config bugs loudly), so cerebras being primary meant groq/routerai never got a turn either. Reseeded on `gpt-oss-120b`, which Cerebras still serves; a one-time migration (`retire_dead_cerebras_model`) fixes already-installed configs stuck on the dead default without touching a model the user picked themselves.
 
