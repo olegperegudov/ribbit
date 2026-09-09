@@ -24,19 +24,23 @@ pub struct ProviderConfig {
 
 /// All providers Ribbit currently knows about. Order matches the UI dropdown.
 pub const PROVIDERS: &[ProviderConfig] = &[
-    // Cerebras runs the same gemma family the router does, but on wafer-scale
-    // silicon: measured 2026-08-13 on real dictations, 0.9s median against
-    // 2.2s median / 7.1s tail through routerai, with edits indistinguishable
-    // from the router's on the same inputs. It is the fastest text provider
-    // that also survives a whole day of dictating — groq's free tier is quicker
-    // still but refuses once its daily pool is out (see the stack seeding in
-    // lib.rs), and cerebras runs on prepaid credits with no daily wall.
+    // Cerebras is the fastest text provider that also survives a whole day of
+    // dictating — groq's free tier is quicker still but refuses once its daily
+    // pool is out (see the stack seeding in lib.rs), and cerebras runs on
+    // prepaid credits with no daily wall. It was seeded on the gemma family
+    // (measured 2026-08-13, 0.9s median), but Cerebras pulled gemma-4-31b from
+    // serving without pulling it from `/v1/models` — every call 404'd
+    // "model_not_found" while the catalog still listed it, and because a hard
+    // 404 is deliberately final (never switch — see `classify` below), every
+    // dictation skipped the LLM edit entirely instead of falling through to
+    // groq/routerai. Reseeded 2026-09-09 on gpt-oss-120b, which Cerebras does
+    // still serve and which already carries the reasoning-budget fix below.
     ProviderConfig {
         name: "cerebras",
         env_var: "CEREBRAS_API_KEY",
         label: "cerebras",
         base_url: "https://api.cerebras.ai/v1/chat/completions",
-        default_model: "gemma-4-31b",
+        default_model: "gpt-oss-120b",
     },
     // Groq reuses the same key as speech-to-text (GROQ_API_KEY) and runs on
     // LPUs, so this trivial fix-the-punctuation edit comes back in ~0.5-1s —
@@ -645,7 +649,7 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
         // of the param answer 400, so it must not ride along everywhere.
         let p = build_payload("привет", "openai/gpt-oss-120b");
         assert_eq!(p["reasoning_effort"], "low");
-        let p = build_payload("привет", "gemma-4-31b");
+        let p = build_payload("привет", "google/gemma-4-26b-a4b-it");
         assert!(p.get("reasoning_effort").is_none(), "{}", p);
     }
 

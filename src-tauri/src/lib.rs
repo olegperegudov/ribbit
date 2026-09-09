@@ -1258,6 +1258,7 @@ fn migrate_stacks(config: &mut serde_json::Value) -> bool {
     let cerebras = std::env::var("CEREBRAS_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
     let mut changed = migrate_stacks_inner(config, groq, openai, routerai);
     changed |= seed_cerebras_primary(config, cerebras);
+    changed |= retire_dead_cerebras_model(config);
     changed
 }
 
@@ -1283,6 +1284,32 @@ fn seed_cerebras_primary(config: &mut serde_json::Value, cerebras: bool) -> bool
     let id = next_provider_id(config);
     let Some(entries) = config["text_providers"].as_array_mut() else { return true };
     entries.insert(0, text_entry_json(&id, "cerebras"));
+    true
+}
+
+/// Cerebras pulled `gemma-4-31b` from serving on 2026-09 without pulling it
+/// from `/v1/models`: the catalog still lists it, but every completions call
+/// 404s "model_not_found". A hard 404 is deliberately final (see `classify` in
+/// `fallback.rs`, never switch), so an install seeded on the dead default lost
+/// the LLM edit entirely — it fell straight to raw vocab on every dictation,
+/// silently, since the same error also shows up whenever a user genuinely
+/// mistypes a model.
+///
+/// One-time, like `seed_cerebras_primary`: only rewrites an entry that still
+/// carries the exact dead id, so a user's own later choice of model is never
+/// touched.
+fn retire_dead_cerebras_model(config: &mut serde_json::Value) -> bool {
+    if config["cerebras_gemma_retired"].as_bool().unwrap_or(false) {
+        return false;
+    }
+    config["cerebras_gemma_retired"] = serde_json::json!(true);
+    let Some(entries) = config["text_providers"].as_array_mut() else { return true };
+    let new_default = postprocess::find_provider("cerebras").expect("known text provider").default_model;
+    for entry in entries {
+        if entry["key_env"].as_str() == Some("CEREBRAS_API_KEY") && entry["model"].as_str() == Some("gemma-4-31b") {
+            entry["model"] = serde_json::json!(new_default);
+        }
+    }
     true
 }
 
@@ -1515,6 +1542,27 @@ mod stack_tests {
                                                     "model": "m", "key_env": "ROUTERAI_API_KEY"}]);
         assert!(!seed_cerebras_primary(&mut cfg, true));
         assert_eq!(fallback::read_stack(&cfg, fallback::Stack::Text).len(), 1);
+    }
+
+    #[test]
+    fn retires_the_dead_gemma_default_once() {
+        let mut cfg = serde_json::json!({
+            "text_providers": [
+                {"id": "p3", "label": "cerebras", "url": "u",
+                 "model": "gemma-4-31b", "key_env": "CEREBRAS_API_KEY"},
+                {"id": "p2", "label": "routerai", "url": "u",
+                 "model": "m", "key_env": "ROUTERAI_API_KEY"},
+            ],
+        });
+        assert!(retire_dead_cerebras_model(&mut cfg));
+        let text = fallback::read_stack(&cfg, fallback::Stack::Text);
+        assert_eq!(text[0].model, postprocess::find_provider("cerebras").unwrap().default_model);
+        assert_ne!(text[0].model, "gemma-4-31b");
+
+        // A model the user picked themselves afterwards is never touched again.
+        cfg["text_providers"][0]["model"] = serde_json::json!("qwen-3.8-27b");
+        assert!(!retire_dead_cerebras_model(&mut cfg));
+        assert_eq!(cfg["text_providers"][0]["model"], "qwen-3.8-27b");
     }
 
     #[test]
