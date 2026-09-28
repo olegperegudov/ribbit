@@ -113,6 +113,19 @@ jobs:
         working-directory: .github/scripts
         run: python3 test_cut_release_notes.py
 
+      # core (speech pipeline) and server have no Tauri/GTK deps, so they are
+      # tested here on Linux — the same OS ribbit-server runs on.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+
+      - name: Core unit tests
+        working-directory: core
+        run: "$HOME/.cargo/bin/cargo test"
+
+      - name: Server unit tests
+        working-directory: server
+        run: "$HOME/.cargo/bin/cargo test --locked"
+
   build-windows:
     needs: [version, test]
     if: needs.version.outputs.skipped != 'true'

@@ -1,0 +1,29 @@
+# Runs in /opt/ribbit-server on the host. Layout there:
+#   .env                     RIBBIT_LISTEN=<tailnet-ip>:8790, TAG=<commit>
+#   config/ribbit/           config.json, vocab.json, .env (provider keys) — uid 10001, 0600
+#   secrets/token.sha256     sha256 hex of the client token — uid 10001, 0600
+services:
+  ribbit-server:
+    image: ribbit-server:${TAG}
+    container_name: ribbit-server
+    restart: unless-stopped
+    # Host network so the process itself binds the tailnet address: if the
+    # tailnet isn't up yet after a reboot the bind fails, the process exits and
+    # the restart policy retries — a published port would just fail once.
+    network_mode: host
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    pids_limit: 128
+    environment:
+      RIBBIT_LISTEN: ${RIBBIT_LISTEN}
+      RIBBIT_TOKEN_SHA256_FILE: /run/secrets/token.sha256
+      XDG_CONFIG_HOME: /config
+    volumes:
+      - ./config:/config:ro
+      - ./secrets/token.sha256:/run/secrets/token.sha256:ro
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }

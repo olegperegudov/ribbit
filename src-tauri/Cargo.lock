@@ -3904,7 +3904,7 @@ dependencies = [
 
 [[package]]
 name = "ribbit"
-version = "0.7.115"
+version = "0.7.117"
 dependencies = [
  "block",
  "chrono",
@@ -3914,6 +3914,7 @@ dependencies = [
  "enigo",
  "objc",
  "reqwest 0.12.28",
+ "ribbit-core",
  "rodio",
  "serde",
  "serde_json",
@@ -3924,6 +3925,17 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-updater",
  "tokio",
+]
+
+[[package]]
+name = "ribbit-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

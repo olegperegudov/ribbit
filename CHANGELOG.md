@@ -12,6 +12,10 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- No change in how Ribbit works; its speech-to-text part can now also run on a server, for devices that can't run Ribbit itself.
+    - The post-recording pipeline (STT stack with failover → hallucination strip → LLM edit → vocab) moved out of `lib.rs` into a Tauri-free crate `core/` (`pipeline::run`), together with the modules it uses; the app calls it and keeps recording, events, logging and typing. Tests moved with their modules and now run in CI's Linux job.
+    - New `server/` (`ribbit-server`): `POST /v1/transcribe` takes a WAV and returns the text through the same `pipeline::run`, configured from Ribbit's own `config.json`/`.env`/`vocab.json`. Tailnet-only, bearer token checked by hash, size/duration/rate caps, nothing stored. First client: the Steam Deck dictating into WoW chat. Setup and deploy — `server/README.md`.
+
 ## v0.7.117 — 2026-09-09
 
 - Fixed the LLM edit not running at all: Cerebras quietly retired the model Ribbit was asking for, so every dictation was pasted raw instead of cleaned up.

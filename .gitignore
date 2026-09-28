@@ -37,6 +37,12 @@ CLAUDE.md
 *.p12
 .env
 
+# Rust build output of the shared core and the server (src-tauri has its own).
+# core is a library: its builds are pinned by the app's and server's lockfiles.
+core/target/
+core/Cargo.lock
+server/target/
+
 # Python bytecode from the release-notes script
 __pycache__/
 

@@ -1,0 +1,15 @@
+[package]
+name = "ribbit-server"
+version = "0.1.0"
+description = "Ribbit's speech pipeline over HTTP: a WAV in, the finished text out"
+edition = "2021"
+
+[dependencies]
+ribbit-core = { path = "../core" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+hound = "3"
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+hex = "0.4"
