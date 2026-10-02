@@ -8,13 +8,17 @@ cleanup, LLM editor and vocabulary as the desktop app (`../core`, shared code).
 ## API
 
 `POST /v1/transcribe` — body: WAV (any rate/channels, int or float PCM, ≤ 60 s,
-≤ 4 MB), header `Authorization: Bearer <token>`.
+≤ 4 MB), header `Authorization: Bearer <token>`. Optional query parameters,
+each ≤ 1000 chars: `context` — words the speech model should expect (appended
+to its prompt; a transcript that only repeats the prompt is dropped), and
+`rules` — extra instructions for the editor, ranked above its general ones.
+The Steam Deck sends its WoW glossary and the one-language-per-line rule here.
 
 | Status | Body | Meaning |
 |---|---|---|
 | 200 | `{"text", "edited", "audio_secs"}` | `text` is `""` for silence or < 0.3 s |
 | 401 | `{"error"}` | missing or wrong token |
-| 422 | `{"error"}` | not a WAV / longer than 60 s |
+| 422 | `{"error"}` | not a WAV / longer than 60 s / `context` or `rules` too long |
 | 429 | `{"error"}` | more than 30 requests in a minute |
 | 502 / 504 | `{"error"}` | every STT provider failed / over 45 s |
 

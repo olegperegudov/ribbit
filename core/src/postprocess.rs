@@ -170,12 +170,24 @@ pub fn system_prompt() -> String {
 /// count for Cyrillic/Latin speech; the floor keeps short inputs cheap to
 /// reason about, the ceiling bounds a runaway response. `parse_response`
 /// still rejects anything that hits the cap.
-pub fn build_payload(text: &str, model: &str) -> serde_json::Value {
+///
+/// `rules` are the caller's extra instructions for this dictation (the WoW
+/// chat's "one language per line"), appended after the general ones and
+/// ranked above them; `None` leaves the editor exactly as the app uses it.
+pub fn build_payload(text: &str, model: &str, rules: Option<&str>) -> serde_json::Value {
     let max_tokens = (text.chars().count() as u64 + 100).clamp(512, 4096);
+    let system = match rules {
+        Some(r) => format!(
+            "{}\n\nОсобые правила для этого текста — они важнее общих правил выше:\n{}",
+            system_prompt(),
+            r.trim()
+        ),
+        None => system_prompt(),
+    };
     let mut payload = serde_json::json!({
         "model": model,
         "messages": [
-            {"role": "system", "content": system_prompt()},
+            {"role": "system", "content": system},
             {"role": "user", "content": text}
         ],
         "temperature": 0.0,
@@ -294,21 +306,35 @@ fn words(s: &str) -> Vec<String> {
 /// counting it would punish the edit for obeying. "ну короче как бы да" is four
 /// words, three of them filler — with them in the denominator the correct edit
 /// scores 0.25 and gets thrown away, and the user gets the raw line back.
+///
+/// A word the edit moved to the other alphabet ("pull" → «пулл» in a Russian
+/// line) can't be matched by spelling either. When the edit is written in one
+/// alphabet and the dictation already had words in it, the dictated words of
+/// the other alphabet that didn't survive as spelled are left out the same way
+/// — that is the language cleanup the editor may be asked for. The speech
+/// model writes Russian slang in Latin often enough that a Russian line can
+/// arrive mostly Latin, so the edit's alphabet is the one that counts. A line
+/// with no word in the edit's alphabet was translated, not cleaned, and its
+/// words still go missing.
 fn word_recall(input: &str, edited: &str) -> f32 {
     let src: Vec<String> = words(input).into_iter().filter(|w| !is_filler(w)).collect();
-    if src.is_empty() {
+    let out = words(edited);
+    let kept = |w: &String| {
+        let n = w.chars().count().min(4);
+        let stem: String = w.chars().take(n).collect();
+        out.iter().any(|o| o.starts_with(&stem))
+    };
+    let latin = |w: &String| w.chars().any(|c| c.is_ascii_alphabetic());
+    let edit_latin = out.iter().filter(|w| latin(w)).count() * 2 > out.len();
+    let cleanup = src.iter().any(|w| latin(w) == edit_latin);
+    let counted: Vec<&String> = src
+        .iter()
+        .filter(|w| !cleanup || latin(w) == edit_latin || kept(w))
+        .collect();
+    if counted.is_empty() {
         return 1.0;
     }
-    let out = words(edited);
-    let kept = src
-        .iter()
-        .filter(|w| {
-            let n = w.chars().count().min(4);
-            let stem: String = w.chars().take(n).collect();
-            out.iter().any(|o| o.starts_with(&stem))
-        })
-        .count();
-    kept as f32 / src.len() as f32
+    counted.iter().filter(|w| kept(w)).count() as f32 / counted.len() as f32
 }
 
 /// True when the "edit" dropped most of what was dictated — the model answered
@@ -360,6 +386,7 @@ pub fn edit_text(
     url: &str,
     api_key: &str,
     model: &str,
+    rules: Option<&str>,
 ) -> Result<String, crate::fallback::CallError> {
     use crate::fallback::CallError;
     if text.trim().is_empty() {
@@ -371,7 +398,7 @@ pub fn edit_text(
     }
 
     let t0 = std::time::Instant::now();
-    let payload = build_payload(text, model);
+    let payload = build_payload(text, model, rules);
 
     // Single retry on a *non-timeout* transport error: pooled TLS connections
     // occasionally go stale between dictations and reqwest reports a generic
@@ -542,6 +569,27 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
     }
 
     #[test]
+    fn one_language_cleanup_is_not_a_dropped_dictation() {
+        // The WoW rule: a Russian line takes its English slang into Cyrillic.
+        assert!(!drops_the_dictation("Tank, pull, следующий pack", "Танк, пулл следующий пак."));
+        assert!(!drops_the_dictation("эй rogue иди сюда помоги", "Эй, рога, иди сюда, помоги."));
+        // A whole English line turned Russian is a translation, not a cleanup.
+        assert!(drops_the_dictation("rogue come help me", "Рога, иди помоги мне."));
+        // A Russian line answered in English still fails.
+        assert!(drops_the_dictation("а какая столица франции", "Paris."));
+    }
+
+    #[test]
+    fn rules_ride_after_the_general_prompt() {
+        let p = build_payload("привет", "m", Some(" одно правило "));
+        let sys = p["messages"][0]["content"].as_str().unwrap();
+        assert!(sys.starts_with(&system_prompt()));
+        assert!(sys.ends_with("важнее общих правил выше:\nодно правило"));
+        let plain = build_payload("привет", "m", None);
+        assert_eq!(plain["messages"][0]["content"], system_prompt());
+    }
+
+    #[test]
     fn word_recall_is_a_ratio() {
         assert_eq!(word_recall("один два", "Один, два."), 1.0);
         assert_eq!(word_recall("один два", "Один."), 0.5);
@@ -597,7 +645,7 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
 
     #[test]
     fn build_payload_has_required_fields() {
-        let p = build_payload("привет", "google/gemma-4-26b-a4b-it");
+        let p = build_payload("привет", "google/gemma-4-26b-a4b-it", None);
         assert_eq!(p["model"], "google/gemma-4-26b-a4b-it");
         assert_eq!(p["temperature"], 0.0);
         assert_eq!(p["max_tokens"], 512);
@@ -611,11 +659,11 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
         // A ~2000-char dictation must not be squeezed into the 512 floor —
         // that's the silent-truncation bug.
         let long = "а".repeat(2000);
-        let p = build_payload(&long, "x");
+        let p = build_payload(&long, "x", None);
         assert_eq!(p["max_tokens"], 2100);
         // And the ceiling holds for absurd inputs.
         let huge = "а".repeat(100_000);
-        assert_eq!(build_payload(&huge, "x")["max_tokens"], 4096);
+        assert_eq!(build_payload(&huge, "x", None)["max_tokens"], 4096);
     }
 
     /// The wiring, not the constructor: a real 200 whose completion was cut off
@@ -637,7 +685,7 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
             );
         });
 
-        let err = edit_text("привет мир", &format!("http://{}/v1/chat/completions", addr), "k", "m").unwrap_err();
+        let err = edit_text("привет мир", &format!("http://{}/v1/chat/completions", addr), "k", "m", None).unwrap_err();
         assert_eq!(err.kind, crate::fallback::FailKind::Switch, "{}", err.message);
         assert!(err.message.contains("truncated"), "{}", err.message);
     }
@@ -647,9 +695,9 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
         // gpt-oss counts its hidden reasoning against max_tokens and comes back
         // empty on a punctuation edit without this; providers that never heard
         // of the param answer 400, so it must not ride along everywhere.
-        let p = build_payload("привет", "openai/gpt-oss-120b");
+        let p = build_payload("привет", "openai/gpt-oss-120b", None);
         assert_eq!(p["reasoning_effort"], "low");
-        let p = build_payload("привет", "google/gemma-4-26b-a4b-it");
+        let p = build_payload("привет", "google/gemma-4-26b-a4b-it", None);
         assert!(p.get("reasoning_effort").is_none(), "{}", p);
     }
 
@@ -726,14 +774,14 @@ Allrosa, Allros, AllRoss, алроса, алросе.";
     #[test]
     fn edit_text_returns_input_for_empty() {
         let p = find_provider("routerai").unwrap();
-        assert_eq!(edit_text("", p.base_url, "fake_key", p.default_model).unwrap(), "");
-        assert_eq!(edit_text("   ", p.base_url, "fake_key", p.default_model).unwrap(), "   ");
+        assert_eq!(edit_text("", p.base_url, "fake_key", p.default_model, None).unwrap(), "");
+        assert_eq!(edit_text("   ", p.base_url, "fake_key", p.default_model, None).unwrap(), "   ");
     }
 
     #[test]
     fn edit_text_errors_without_key() {
         let p = find_provider("routerai").unwrap();
-        assert!(edit_text("hello", p.base_url, "", p.default_model).is_err());
+        assert!(edit_text("hello", p.base_url, "", p.default_model, None).is_err());
     }
 }
 

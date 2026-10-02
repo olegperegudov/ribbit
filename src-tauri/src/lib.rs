@@ -809,7 +809,7 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
         // Config read once for the whole pipeline (audio stack + text stack).
         let cfg = read_config();
 
-        match pipeline::run(&audio_data, sample_rate, &languages, &cfg) {
+        match pipeline::run(&audio_data, sample_rate, &languages, None, None, &cfg) {
             Ok(pipeline::Transcript {
                 text, raw_text, edited, llm_attempted, stt_secs, stt_model,
                 llm_secs, llm_model, llm_host, llm_error,

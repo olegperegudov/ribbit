@@ -116,6 +116,23 @@ fn lang_name(code: &str) -> &'static str {
     }
 }
 
+/// Prompt for the speech model: the language hint when several languages are
+/// on, then the caller's context (a game's vocabulary, the names of the people
+/// being talked to). Whisper reads the prompt as the text spoken just before
+/// the recording, so its words are what it reaches for when the audio is
+/// ambiguous — "rogue" instead of "rog". `None` when there is nothing to say.
+pub fn stt_prompt(languages: &[String], context: Option<&str>) -> Option<String> {
+    let mut parts = Vec::new();
+    if languages.len() > 1 {
+        let names: Vec<&str> = languages.iter().map(|c| lang_name(c)).collect();
+        parts.push(format!("Dictation in {}.", names.join(" and ")));
+    }
+    if let Some(c) = context.map(str::trim).filter(|c| !c.is_empty()) {
+        parts.push(c.to_string());
+    }
+    (!parts.is_empty()).then(|| parts.join(" "))
+}
+
 /// Downsample mono PCM to 16 kHz — Whisper's native rate. The MacBook mic can't
 /// capture 16 kHz directly and falls back to 48 kHz, which triples the upload for
 /// no quality gain (the model resamples to 16 kHz server-side anyway). Averaging
@@ -146,6 +163,7 @@ pub fn transcribe_audio_blocking(
     audio_data: &[f32],
     sample_rate: u32,
     languages: &[String],
+    prompt: Option<&str>,
     url: &str,
     api_key: &str,
     model: &str,
@@ -167,7 +185,7 @@ pub fn transcribe_audio_blocking(
 
     // Multipart forms are consumed by send(), so each attempt builds a fresh
     // request. Language: first code as `language` (strongest Whisper signal),
-    // additional ones as a prompt hint.
+    // additional ones travel in the prompt (see `stt_prompt`).
     let build_request = || -> Result<reqwest::blocking::RequestBuilder, CallError> {
         let file_part = reqwest::blocking::multipart::Part::bytes(wav_bytes.clone())
             .file_name("audio.wav")
@@ -178,10 +196,9 @@ pub fn transcribe_audio_blocking(
             .text("model", model.to_string());
         if !languages.is_empty() {
             form = form.text("language", languages[0].clone());
-            if languages.len() > 1 {
-                let names: Vec<&str> = languages.iter().map(|c| lang_name(c)).collect();
-                form = form.text("prompt", format!("Dictation in {}.", names.join(" and ")));
-            }
+        }
+        if let Some(p) = prompt {
+            form = form.text("prompt", p.to_string());
         }
         Ok(client()
             .post(url)
@@ -244,6 +261,19 @@ mod tests {
         let input = vec![0.1f32, -0.2, 0.3];
         assert_eq!(resample_to_16k(&input, 16000), input);
         assert_eq!(resample_to_16k(&input, 8000), input);
+    }
+
+    #[test]
+    fn prompt_joins_language_hint_and_context() {
+        let ru_en = vec!["ru".to_string(), "en".to_string()];
+        assert_eq!(stt_prompt(&ru_en, None).as_deref(), Some("Dictation in Russian and English."));
+        assert_eq!(
+            stt_prompt(&ru_en, Some(" WoW chat: rogue, mage. ")).as_deref(),
+            Some("Dictation in Russian and English. WoW chat: rogue, mage.")
+        );
+        // One language needs no hint: the `language` field already says it.
+        assert_eq!(stt_prompt(&["ru".to_string()], Some("rogue")).as_deref(), Some("rogue"));
+        assert_eq!(stt_prompt(&["ru".to_string()], Some("  ")), None);
     }
 
     #[test]

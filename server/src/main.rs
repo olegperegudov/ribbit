@@ -12,14 +12,14 @@
 //! (`RIBBIT_TOKEN_SHA256_FILE`). Audio and text are never stored or logged —
 //! log lines carry sizes and timings only, as the app's session log does.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -42,6 +42,9 @@ const RATE_PER_MIN: usize = 30;
 /// Whole-request ceiling. The pipeline has per-provider timeouts; this stops
 /// a stack walk from holding the client past the point the text is useful.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
+/// Ceiling on each of `context` and `rules`. Whisper reads at most 224 prompt
+/// tokens; a glossary plus a party's names fits in a fraction of this.
+const MAX_EXTRA_CHARS: usize = 1000;
 
 struct AppState {
     token_sha256: [u8; 32],
@@ -147,10 +150,23 @@ fn fail(status: StatusCode, msg: &str) -> Response {
     (status, Json(serde_json::json!({ "error": msg }))).into_response()
 }
 
-async fn transcribe(State(st): State<Arc<AppState>>, headers: HeaderMap, body: Bytes) -> Response {
+/// `?context=` (words the speech model should expect) and `?rules=` (extra
+/// instructions for the editor) let the client say where the text is going —
+/// the WoW chat sends its glossary and "one language per line". Both optional.
+async fn transcribe(
+    State(st): State<Arc<AppState>>,
+    Query(extra): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     if !authorized(&headers, &st.token_sha256) {
         return fail(StatusCode::UNAUTHORIZED, "unauthorized");
     }
+    if extra.values().any(|v| v.chars().count() > MAX_EXTRA_CHARS) {
+        return fail(StatusCode::UNPROCESSABLE_ENTITY, "context or rules too long");
+    }
+    let context = extra.get("context").cloned();
+    let rules = extra.get("rules").cloned();
     if !admit(&st.recent, Instant::now()) {
         return fail(StatusCode::TOO_MANY_REQUESTS, "rate limit");
     }
@@ -171,7 +187,9 @@ async fn transcribe(State(st): State<Arc<AppState>>, headers: HeaderMap, body: B
 
     let t0 = Instant::now();
     let st2 = st.clone();
-    let job = tokio::task::spawn_blocking(move || pipeline::run(&samples, rate, &st2.languages, &st2.cfg));
+    let job = tokio::task::spawn_blocking(move || {
+        pipeline::run(&samples, rate, &st2.languages, context.as_deref(), rules.as_deref(), &st2.cfg)
+    });
     match tokio::time::timeout(REQUEST_TIMEOUT, job).await {
         Ok(Ok(Ok(t))) => {
             eprintln!(

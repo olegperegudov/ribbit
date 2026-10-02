@@ -57,9 +57,34 @@ pub fn strip(text: &str) -> String {
     text.to_string()
 }
 
+/// On silence Whisper may hand back a stretch of its own prompt as the
+/// transcript — with a game glossary in the prompt that is "rogue, mage,
+/// warlock". Three words or more, so a one-word call like "tank", which also
+/// sits in the glossary, still goes through.
+pub fn echoes_prompt(text: &str, prompt: &str) -> bool {
+    let words = |s: &str| -> Vec<String> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let said = words(text);
+    said.len() >= 3 && words(prompt).windows(said.len()).any(|w| w == said.as_slice())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prompt_echo_is_caught_but_short_calls_pass() {
+        let p = "Dictation in Russian and English. WoW group chat: rogue, mage, warlock, priest.";
+        assert!(echoes_prompt("Rogue, mage, warlock.", p));
+        assert!(echoes_prompt("WoW group chat", p));
+        assert!(!echoes_prompt("Tank!", p));
+        assert!(!echoes_prompt("rogue mage", p));
+        assert!(!echoes_prompt("rogue, come help me", p));
+    }
 
     #[test]
     fn whole_text_is_phantom() {

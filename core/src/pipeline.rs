@@ -58,14 +58,21 @@ pub fn entry_label(e: &fallback::ProviderEntry) -> String {
     format!("{}/{}", prov, e.model)
 }
 
-/// Transcribe, clean and (if enabled) edit one recording. `Err` carries the
-/// user-facing STT failure — nothing was recognised, there is no text to keep.
+/// Transcribe, clean and (if enabled) edit one recording. The desktop app
+/// passes `None` for both extras; a client that knows where the text goes
+/// (the WoW chat on the Steam Deck) passes `context` — words the speech model
+/// should expect, a game's glossary — and `rules` for the editor. `Err`
+/// carries the user-facing STT failure — nothing was recognised, there is no
+/// text to keep.
 pub fn run(
     audio_data: &[f32],
     sample_rate: u32,
     languages: &[String],
+    context: Option<&str>,
+    rules: Option<&str>,
     cfg: &serde_json::Value,
 ) -> Result<Transcript, String> {
+    let prompt = transcribe::stt_prompt(languages, context);
     // STT with in-request failover: walk the audio stack from the sticky
     // active entry, so a transient failure (429/5xx/timeout) tries the
     // next provider for THIS dictation — speech is never lost just because
@@ -82,7 +89,7 @@ pub fn run(
         // audio stack is allowed to wait the network out.
         fallback::Stack::Audio, &entries, start, fallback::threshold(cfg), None,
         |e, key| transcribe::transcribe_audio_blocking(
-            audio_data, sample_rate, languages, &e.url, key, &e.model,
+            audio_data, sample_rate, languages, prompt.as_deref(), &e.url, key, &e.model,
         ),
     )
     .map_err(|e| e.message)?;
@@ -99,7 +106,12 @@ pub fn run(
                 "hallucination stripped: {:?} → {:?}", raw_text, stripped
             ));
         }
-        stripped
+        if prompt.as_deref().is_some_and(|p| hallucinations::echoes_prompt(&stripped, p)) {
+            debug_log::log(&format!("prompt echo dropped: {:?}", stripped));
+            String::new()
+        } else {
+            stripped
+        }
     };
     // Pipeline: if LLM post-processing is enabled we send raw text +
     // vocab to the model (it handles both punctuation and vocab
@@ -142,7 +154,7 @@ pub fn run(
                 // The transcript is already in hand; the edit is worth
                 // a bounded wait, never an open-ended one.
                 Some(Duration::from_secs(postprocess::STACK_BUDGET_SECS)),
-                |e, key| postprocess::edit_text(&raw_text, &e.url, key, &e.model),
+                |e, key| postprocess::edit_text(&raw_text, &e.url, key, &e.model, rules),
             );
             llm_secs = Some(t_llm.elapsed().as_secs_f32());
             match outcome {
