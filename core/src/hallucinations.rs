@@ -15,14 +15,31 @@ const PHANTOMS: &[&str] = &[
     "продолжение следует",
 ];
 
+/// Phantoms only when they are the entire transcript: said at the end of a
+/// real sentence they are ordinary speech. Whisper's English silence captions,
+/// and the language hint it echoes back on silence (`transcribe` sends
+/// "Dictation in Russian and English." as the prompt). Seen on the Steam Deck,
+/// whose mic lets more near-silence through than the Mac's.
+const WHOLE_ONLY: &[&str] = &[
+    "thank you",
+    "thanks for watching",
+    "thank you for watching",
+    "you",
+    "dictation in russian and english",
+    "dictation in english and russian",
+];
+
 /// Trailing separators a phantom drags along (ellipsis, dots, whitespace).
-const TAIL: &[char] = &['.', '…', ' ', '\t', '\n', '\r'];
+const TAIL: &[char] = &['.', '…', '!', ' ', '\t', '\n', '\r'];
 
 /// Remove a trailing phantom phrase, or return "" if the text is nothing but
 /// one. Returns the text unchanged when no phantom is present.
 pub fn strip(text: &str) -> String {
     let cleaned = text.trim_end_matches(TAIL);
-    let probe = cleaned.to_lowercase();
+    let probe = cleaned.trim_start().to_lowercase();
+    if WHOLE_ONLY.contains(&probe.as_str()) {
+        return String::new();
+    }
     for p in PHANTOMS {
         if probe == *p {
             return String::new();
@@ -61,6 +78,17 @@ mod tests {
             strip("глянь что там с ribbit Продолжение следует..."),
             "глянь что там с ribbit"
         );
+    }
+
+    #[test]
+    fn whole_only_phantoms() {
+        assert_eq!(strip("Thank you."), "");
+        assert_eq!(strip(" Thanks for watching!"), "");
+        assert_eq!(strip("you"), "");
+        assert_eq!(strip("Dictation in Russian and English."), "");
+        // as part of a real message they stay
+        assert_eq!(strip("Great run, thank you."), "Great run, thank you.");
+        assert_eq!(strip("Thank you for the carry"), "Thank you for the carry");
     }
 
     #[test]
