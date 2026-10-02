@@ -47,7 +47,10 @@ const TAIL: &[char] = &['.', '…', '!', ' ', '\t', '\n', '\r'];
 pub fn strip(text: &str) -> String {
     let cleaned = text.trim_end_matches(TAIL);
     let probe = cleaned.trim_start().to_lowercase();
-    if WHOLE_ONLY.contains(&probe.as_str()) || CREDIT_OPENINGS.iter().any(|c| probe.starts_with(c)) {
+    // A lone "." or "…" is what's left of silence once there is no phrase to
+    // invent: nothing was said, and a dot is not worth pasting.
+    let no_words = !probe.chars().any(char::is_alphanumeric);
+    if no_words || WHOLE_ONLY.contains(&probe.as_str()) || CREDIT_OPENINGS.iter().any(|c| probe.starts_with(c)) {
         return String::new();
     }
     for p in PHANTOMS {
@@ -124,6 +127,14 @@ mod tests {
         // as part of a real message they stay
         assert_eq!(strip("Great run, thank you."), "Great run, thank you.");
         assert_eq!(strip("Thank you for the carry"), "Thank you for the carry");
+    }
+
+    #[test]
+    fn punctuation_alone_is_nothing() {
+        assert_eq!(strip("."), "");
+        assert_eq!(strip(" … "), "");
+        assert_eq!(strip("?!"), "");
+        assert_eq!(strip("ok."), "ok.");
     }
 
     #[test]
