@@ -11,14 +11,16 @@ cleanup, LLM editor and vocabulary as the desktop app (`../core`, shared code).
 ≤ 4 MB), header `Authorization: Bearer <token>`. Optional query parameters,
 each ≤ 1000 chars: `context` — words the speech model should expect (appended
 to its prompt; a transcript that only repeats the prompt is dropped), and
-`rules` — extra instructions for the editor, ranked above its general ones.
-The Steam Deck sends its WoW glossary and the one-language-per-line rule here.
+`rules` — extra instructions for the editor, ranked above its general ones,
+and `languages` — comma-separated codes in place of the configured ones (empty:
+the model detects the language). The Steam Deck sends an English WoW glossary
+and empty `languages`, so English speech isn't forced into Russian.
 
 | Status | Body | Meaning |
 |---|---|---|
 | 200 | `{"text", "edited", "audio_secs"}` | `text` is `""` for silence or < 0.3 s |
 | 401 | `{"error"}` | missing or wrong token |
-| 422 | `{"error"}` | not a WAV / longer than 60 s / `context` or `rules` too long |
+| 422 | `{"error"}` | not a WAV / longer than 60 s / a query parameter too long |
 | 429 | `{"error"}` | more than 30 requests in a minute |
 | 502 / 504 | `{"error"}` | every STT provider failed / over 45 s |
 

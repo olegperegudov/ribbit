@@ -16,7 +16,7 @@ numbers increase quickly — each entry below maps to a published
 
 - A word the editor rewrites in the other alphabet ("девопс" for "DevOps") no longer makes the edit look like lost words and get thrown away.
   - `word_recall` leaves out unmatched words of the other alphabet when the dictation already had words in the edit's alphabet; a fully translated line still fails.
-  - ribbit-server: optional `context` (STT prompt words) and `rules` (editor instructions) per request, for the Steam Deck's WoW chat; a transcript that only echoes the prompt is dropped.
+  - ribbit-server: optional `context` (STT prompt words), `rules` (editor instructions) and `languages` (override; empty = auto-detect) per request, for the Steam Deck's WoW chat; a transcript that only echoes the prompt is dropped.
 
 - On silence, "Thank you.", "you", "Thanks for watching!" and the echoed language hint ("Dictation in Russian and English.") no longer come back as a transcript; inside a real sentence they stay.
 

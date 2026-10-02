@@ -42,7 +42,7 @@ const RATE_PER_MIN: usize = 30;
 /// Whole-request ceiling. The pipeline has per-provider timeouts; this stops
 /// a stack walk from holding the client past the point the text is useful.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
-/// Ceiling on each of `context` and `rules`. Whisper reads at most 224 prompt
+/// Ceiling on each query parameter (`context`, `rules`, `languages`). Whisper reads at most 224 prompt
 /// tokens; a glossary plus a party's names fits in a fraction of this.
 const MAX_EXTRA_CHARS: usize = 1000;
 
@@ -150,9 +150,11 @@ fn fail(status: StatusCode, msg: &str) -> Response {
     (status, Json(serde_json::json!({ "error": msg }))).into_response()
 }
 
-/// `?context=` (words the speech model should expect) and `?rules=` (extra
-/// instructions for the editor) let the client say where the text is going —
-/// the WoW chat sends its glossary and "one language per line". Both optional.
+/// `?context=` (words the speech model should expect), `?rules=` (extra
+/// instructions for the editor) and `?languages=` (comma-separated codes in
+/// place of the configured ones; empty lets the model detect the language)
+/// let the client say where the text is going — the WoW chat sends an English
+/// glossary and no language, so English is heard as English. All optional.
 async fn transcribe(
     State(st): State<Arc<AppState>>,
     Query(extra): Query<HashMap<String, String>>,
@@ -163,10 +165,14 @@ async fn transcribe(
         return fail(StatusCode::UNAUTHORIZED, "unauthorized");
     }
     if extra.values().any(|v| v.chars().count() > MAX_EXTRA_CHARS) {
-        return fail(StatusCode::UNPROCESSABLE_ENTITY, "context or rules too long");
+        return fail(StatusCode::UNPROCESSABLE_ENTITY, "query parameter too long");
     }
     let context = extra.get("context").cloned();
     let rules = extra.get("rules").cloned();
+    let languages: Vec<String> = match extra.get("languages") {
+        Some(l) => l.split(',').map(str::trim).filter(|c| !c.is_empty()).map(String::from).collect(),
+        None => st.languages.clone(),
+    };
     if !admit(&st.recent, Instant::now()) {
         return fail(StatusCode::TOO_MANY_REQUESTS, "rate limit");
     }
@@ -188,7 +194,7 @@ async fn transcribe(
     let t0 = Instant::now();
     let st2 = st.clone();
     let job = tokio::task::spawn_blocking(move || {
-        pipeline::run(&samples, rate, &st2.languages, context.as_deref(), rules.as_deref(), &st2.cfg)
+        pipeline::run(&samples, rate, &languages, context.as_deref(), rules.as_deref(), &st2.cfg)
     });
     match tokio::time::timeout(REQUEST_TIMEOUT, job).await {
         Ok(Ok(Ok(t))) => {
