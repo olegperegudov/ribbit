@@ -29,6 +29,16 @@ const WHOLE_ONLY: &[&str] = &[
     "dictation in english and russian",
 ];
 
+/// Openings of the subtitle credits Whisper recites on silence, whatever name
+/// follows — "Субтитры создавал DimaTorzok", and with a glossary in the prompt
+/// "Субтитры создавал DPS". Only a transcript that starts with one is dropped.
+const CREDIT_OPENINGS: &[&str] = &[
+    "субтитры создавал",
+    "субтитры сделал",
+    "субтитры подготовил",
+    "редактор субтитров",
+];
+
 /// Trailing separators a phantom drags along (ellipsis, dots, whitespace).
 const TAIL: &[char] = &['.', '…', '!', ' ', '\t', '\n', '\r'];
 
@@ -37,7 +47,7 @@ const TAIL: &[char] = &['.', '…', '!', ' ', '\t', '\n', '\r'];
 pub fn strip(text: &str) -> String {
     let cleaned = text.trim_end_matches(TAIL);
     let probe = cleaned.trim_start().to_lowercase();
-    if WHOLE_ONLY.contains(&probe.as_str()) {
+    if WHOLE_ONLY.contains(&probe.as_str()) || CREDIT_OPENINGS.iter().any(|c| probe.starts_with(c)) {
         return String::new();
     }
     for p in PHANTOMS {
@@ -114,6 +124,15 @@ mod tests {
         // as part of a real message they stay
         assert_eq!(strip("Great run, thank you."), "Great run, thank you.");
         assert_eq!(strip("Thank you for the carry"), "Thank you for the carry");
+    }
+
+    #[test]
+    fn subtitle_credits_are_phantoms() {
+        assert_eq!(strip("Субтитры создавал DPS."), "");
+        assert_eq!(strip("Субтитры создавал DimaTorzok"), "");
+        assert_eq!(strip("Редактор субтитров А.Синецкая Корректор А.Егорова"), "");
+        // Talking about subtitles is still speech.
+        assert_eq!(strip("Включи субтитры, создавал же"), "Включи субтитры, создавал же");
     }
 
     #[test]

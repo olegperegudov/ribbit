@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- On silence, Whisper's made-up subtitle credits ("Субтитры создавал …", "Редактор субтитров …") no longer come back as a transcript.
+
 - A word the editor rewrites in the other alphabet ("девопс" for "DevOps") no longer makes the edit look like lost words and get thrown away.
   - `word_recall` leaves out unmatched words of the other alphabet when the dictation already had words in the edit's alphabet; a fully translated line still fails.
   - ribbit-server: optional `context` (STT prompt words) and `rules` (editor instructions) per request, for the Steam Deck's WoW chat; a transcript that only echoes the prompt is dropped.
