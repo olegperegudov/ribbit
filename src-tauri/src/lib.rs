@@ -849,14 +849,44 @@ fn stop_recording_and_transcribe(state: &Arc<Mutex<RecordingState>>, app: &AppHa
             } else {
                 let start = fallback::active_index(fallback::Stack::Audio, fallback::cooldown(&cfg))
                     .min(entries.len() - 1);
-                match fallback::run_with_failover(
-                    // No budget: a dropped dictation can't be recovered, so the
-                    // audio stack is allowed to wait the network out.
-                    fallback::Stack::Audio, &entries, start, fallback::threshold(&cfg), None,
-                    |e, key| transcribe::transcribe_audio_blocking(
-                        &audio_data, sample_rate, &languages, &e.url, key, &e.model,
-                    ),
-                ) {
+                let threshold = fallback::threshold(&cfg);
+                // The two racers run on their own threads and may outlive this
+                // one (the loser finishes in the background), so they own
+                // shared copies of everything they read.
+                let audio = std::sync::Arc::new(audio_data);
+                let languages = std::sync::Arc::new(languages);
+                let entries = std::sync::Arc::new(entries);
+                let walk = {
+                    let (audio, languages, entries) = (audio.clone(), languages.clone(), entries.clone());
+                    move || fallback::run_with_failover(
+                        // No budget: a dropped dictation can't be recovered, so the
+                        // audio stack is allowed to wait the network out.
+                        fallback::Stack::Audio, &entries, start, threshold, None,
+                        |e, key| transcribe::transcribe_audio_blocking(
+                            &audio, sample_rate, &languages, &e.url, key, &e.model,
+                        ),
+                    )
+                };
+                // A slow-but-alive primary never errors, so the walk alone waits
+                // it out; race the next keyed entry once it has dragged on.
+                let backup = entries.iter().enumerate().skip(start + 1).find_map(|(i, e)| {
+                    std::env::var(&e.key_env).ok().filter(|k| !k.is_empty()).map(|key| (i, key))
+                });
+                let outcome = match (fallback::hedge_delay(&cfg), backup) {
+                    (Some(delay), Some((i, key))) => {
+                        let (audio, languages, e) = (audio.clone(), languages.clone(), entries[i].clone());
+                        let (result, backup_won) = fallback::hedge(delay, &entry_label(&e), walk, move || {
+                            transcribe::transcribe_audio_blocking(&audio, sample_rate, &languages, &e.url, &key, &e.model)
+                                .map(|text| (text, i))
+                        });
+                        if backup_won {
+                            debug_log::log(&format!("hedge: '{}' answered first", entry_label(&entries[i])));
+                        }
+                        result
+                    }
+                    _ => walk(),
+                };
+                match outcome {
                     Ok((text, used)) => (Ok(text), entry_label(&entries[used])),
                     Err(e) => (Err(e.message), entry_label(&entries[start])),
                 }

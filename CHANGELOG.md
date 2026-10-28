@@ -12,6 +12,9 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- Dictation no longer hangs for 20-30 seconds when Groq stalls: after 3 seconds without an answer Ribbit sends the same recording to the backup provider too and pastes whichever answers first.
+    - Two weeks of the daily log: 30 of 433 dictations spent over 5s in STT (17 over 10s, worst 34s), every one a single request that came back `200 OK` — no error, so the in-request failover never fired, and the 120s timeout is deliberate (a dropped dictation is unrecoverable). Stalls come in runs a minute long, so retrying groq doesn't help; the next keyed entry in the audio stack (routerai, 3-5s measured) does. `fallback::hedge` races the two; a failing side never fails the race while the other is still running, and with both out the primary walk's error surfaces. `stt_hedge_secs` in config (default 3, 0 = off); healthy STT is 0.3-1.6s even for a minute of speech.
+
 ## v0.7.117 — 2026-09-09
 
 - Fixed the LLM edit not running at all: Cerebras quietly retired the model Ribbit was asking for, so every dictation was pasted raw instead of cleaned up.

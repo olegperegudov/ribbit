@@ -20,8 +20,12 @@
 //! `run_with_failover` additionally walks the stack *within one request*: a
 //! transient failure tries the next entry immediately, so the current
 //! dictation is rescued by a backup instead of only the next one.
+//!
+//! `hedge` covers the failure the walk can't see: a provider that answers 200,
+//! just 20-30s late. Nothing errors, so nothing fails over — the request has
+//! to be raced instead.
 
-use std::sync::Mutex;
+use std::sync::{mpsc, Mutex};
 use std::time::{Duration, Instant};
 
 /// One provider in a stack. `key_env` names the `.env` variable holding this
@@ -394,6 +398,56 @@ fn run_with_failover_on<T>(
     ))
 }
 
+/// Race `primary` against `backup`, starting the backup only once the primary
+/// has gone `delay` without an answer — a hedged request ("The Tail at Scale",
+/// Dean & Barroso). Groq's STT answers ~1s almost always and then, for a minute
+/// at a time, 20-34s while still returning 200: the walk above never fails
+/// over because nothing failed, and the long timeout is deliberate (a dropped
+/// dictation is unrecoverable). Racing the next provider caps that tail at
+/// `delay` plus the backup's own time, and loses nothing — whichever answer
+/// lands first wins, the other is dropped when its thread finishes.
+///
+/// One side failing doesn't fail the race while the other is still running:
+/// the user gets text if either provider produces it. Only when both are out
+/// does the primary's error surface — its walk is the one that knows the
+/// whole stack. A primary that errors *before* `delay` returns straight away;
+/// that walk has already tried the backup itself.
+///
+/// Returns the result plus whether the backup produced it.
+pub fn hedge<T: Send + 'static>(
+    delay: Duration,
+    backup_name: &str,
+    primary: impl FnOnce() -> Result<T, CallError> + Send + 'static,
+    backup: impl FnOnce() -> Result<T, CallError> + Send + 'static,
+) -> (Result<T, CallError>, bool) {
+    let (tx, rx) = mpsc::channel();
+    let tx_primary = tx.clone();
+    std::thread::spawn(move || {
+        let _ = tx_primary.send((false, primary()));
+    });
+    if let Ok(answer) = rx.recv_timeout(delay) {
+        return (answer.1, answer.0);
+    }
+    crate::debug_log::log(&format!(
+        "hedge: no answer after {:.1}s, racing '{}'", delay.as_secs_f32(), backup_name
+    ));
+    std::thread::spawn(move || {
+        let _ = tx.send((true, backup()));
+    });
+    // Both senders live in the worker threads; a recv error means both died
+    // without answering (a panic), which reads to the user as a lost request.
+    let lost = || (false, Err(CallError::transport(false, "request worker died".into())));
+    let (first_is_backup, first) = rx.recv().unwrap_or_else(|_| lost());
+    if first.is_ok() {
+        return (first, first_is_backup);
+    }
+    match rx.recv() {
+        Ok((second_is_backup, second)) if second.is_ok() => (second, second_is_backup),
+        Ok((false, primary_err)) => (primary_err, false),
+        _ => (first, first_is_backup),
+    }
+}
+
 // --- config readers -------------------------------------------------------
 
 pub fn read_stack(cfg: &serde_json::Value, stack: Stack) -> Vec<ProviderEntry> {
@@ -411,6 +465,15 @@ pub fn read_stack(cfg: &serde_json::Value, stack: Stack) -> Vec<ProviderEntry> {
 /// so a stray config value can't disable or runaway the feature.
 pub fn threshold(cfg: &serde_json::Value) -> u32 {
     cfg["fallback_threshold"].as_u64().unwrap_or(2).clamp(1, 100) as u32
+}
+
+/// How long STT waits on the active provider before racing the next one (see
+/// `hedge`). Ribbit's own logs: a healthy answer takes 0.3-1.6s even for a
+/// minute of speech, so 3s fires on the stalls and almost never on a normal
+/// dictation. Zero turns hedging off.
+pub fn hedge_delay(cfg: &serde_json::Value) -> Option<Duration> {
+    let secs = cfg["stt_hedge_secs"].as_f64().unwrap_or(3.0).clamp(0.0, 60.0);
+    (secs > 0.0).then(|| Duration::from_secs_f64(secs))
 }
 
 /// How long to stay on a fallback before snapping back to the primary.
@@ -814,5 +877,69 @@ mod tests {
         assert_eq!(out.unwrap_err().message, "timeout");
         // Both entries failed, but only the starting one counts.
         assert_eq!(st.lock().unwrap().consec_fail, 1);
+    }
+
+    // --- hedge ---------------------------------------------------------------
+    // Ordering is driven by channels, not sleeps: a "slow" primary blocks on a
+    // gate the test controls, so no assertion depends on machine speed.
+
+    #[test]
+    fn a_fast_primary_never_starts_the_backup() {
+        let backup_ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = backup_ran.clone();
+        let (out, backup_won) = hedge(
+            Duration::from_secs(60), "b",
+            || Ok::<_, CallError>("primary"),
+            move || { flag.store(true, std::sync::atomic::Ordering::SeqCst); Ok("backup") },
+        );
+        assert_eq!((out.unwrap(), backup_won), ("primary", false));
+        assert!(!backup_ran.load(std::sync::atomic::Ordering::SeqCst), "a healthy dictation must not pay for a second request");
+    }
+
+    #[test]
+    fn a_stalled_primary_loses_to_the_backup() {
+        // The live case: groq answers 200, just 20-30s late. The user gets the
+        // backup's text instead of waiting the stall out.
+        let (_gate, stall) = mpsc::channel::<()>();
+        let (out, backup_won) = hedge(
+            Duration::ZERO, "b",
+            move || { let _ = stall.recv(); Ok::<_, CallError>("primary") },
+            || Ok("backup"),
+        );
+        assert_eq!((out.unwrap(), backup_won), ("backup", true));
+    }
+
+    #[test]
+    fn a_failing_backup_still_waits_for_the_primary() {
+        // Starting the race must never make things worse than not racing: the
+        // backup erroring is no reason to drop the primary that is still on
+        // its way with the user's speech.
+        let (release, stall) = mpsc::channel::<()>();
+        let (out, backup_won) = hedge(
+            Duration::ZERO, "b",
+            move || { let _ = stall.recv(); Ok::<_, CallError>("primary") },
+            move || { let _ = release.send(()); Err(CallError::http(503, "down".into(), None)) },
+        );
+        assert_eq!((out.unwrap(), backup_won), ("primary", false));
+    }
+
+    #[test]
+    fn both_failing_surfaces_the_primary_error() {
+        // The primary's error comes from the walk over the whole stack — it is
+        // the one that says what is actually wrong.
+        let (release, stall) = mpsc::channel::<()>();
+        let (out, _) = hedge(
+            Duration::ZERO, "b",
+            move || { let _ = stall.recv(); Err::<&str, _>(CallError::http(401, "bad key".into(), None)) },
+            move || { let _ = release.send(()); Err(CallError::http(503, "down".into(), None)) },
+        );
+        assert_eq!(out.unwrap_err().message, "bad key");
+    }
+
+    #[test]
+    fn hedge_delay_reads_config_and_zero_disables() {
+        assert_eq!(hedge_delay(&serde_json::json!({})), Some(Duration::from_secs(3)));
+        assert_eq!(hedge_delay(&serde_json::json!({"stt_hedge_secs": 1.5})), Some(Duration::from_millis(1500)));
+        assert_eq!(hedge_delay(&serde_json::json!({"stt_hedge_secs": 0})), None);
     }
 }
