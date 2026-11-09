@@ -14,7 +14,7 @@ Providers are a stack, not a setting: entry #1 is primary, the rest are fallback
 ## Run it locally
 
 ```bash
-npm install
+npm ci
 npm run tauri dev
 ```
 

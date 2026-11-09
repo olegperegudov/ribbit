@@ -8,7 +8,7 @@ on:
 jobs:
   # Auto-bump patch version, commit, and tag
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     outputs:
@@ -17,7 +17,7 @@ jobs:
       skipped: ${{ steps.bump.outputs.skipped }}
       notes: ${{ steps.bump.outputs.notes }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 2
 
@@ -61,6 +61,9 @@ jobs:
           "
 
           sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" src-tauri/Cargo.toml
+          # Cargo.lock carries the crate's own version too; keep it in step so
+          # `--locked` builds accept the bumped manifest.
+          sed -i "/^name = \"ribbit\"$/{n;s/^version = \".*\"/version = \"$NEW\"/}" src-tauri/Cargo.lock
 
           # Close the changelog's Unreleased section under this version and carry
           # its bullets into the release the tray's version item opens. Runs
@@ -92,19 +95,19 @@ jobs:
   test:
     needs: version
     if: needs.version.outputs.skipped != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.version.outputs.tag }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 22.23.4
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
       - name: JS unit tests (vitest)
         run: npm test
@@ -116,36 +119,38 @@ jobs:
   build-windows:
     needs: [version, test]
     if: needs.version.outputs.skipped != 'true'
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.version.outputs.tag }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 22.23.4
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch (2026-06-30); Rust itself is pinned by `toolchain:`
+        with:
+          toolchain: 1.99.1
 
       - name: Rust cache
-        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: src-tauri
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
       - name: Rust unit tests
         working-directory: src-tauri
         # Use absolute path — macos-latest has a `cargo` shim earlier in PATH
         # that ignores rustup syntax; dtolnay installs the real cargo here.
         shell: bash
-        run: "$HOME/.cargo/bin/cargo test --lib"
+        run: "$HOME/.cargo/bin/cargo test --lib --locked"
 
       # tauri-action builds the app AND uploads it to the GitHub release in
       # one step. The build is reliable; the upload occasionally fails on a
@@ -155,13 +160,13 @@ jobs:
       - name: Build Tauri app
         id: build
         continue-on-error: true
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target x86_64-pc-windows-msvc --bundles nsis
+          args: --target x86_64-pc-windows-msvc --bundles nsis -- --locked
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
@@ -170,13 +175,13 @@ jobs:
 
       - name: Build Tauri app (retry)
         if: steps.build.outcome == 'failure'
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target x86_64-pc-windows-msvc --bundles nsis
+          args: --target x86_64-pc-windows-msvc --bundles nsis -- --locked
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
@@ -272,38 +277,39 @@ jobs:
     # ordering left to pin is windows-before-macos.
     needs: [version, test, build-windows]
     if: needs.version.outputs.skipped != 'true'
-    runs-on: macos-latest
+    runs-on: macos-26
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.version.outputs.tag }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 22.23.4
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch (2026-06-30); Rust itself is pinned by `toolchain:`
         with:
+          toolchain: 1.99.1
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Rust cache
-        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: src-tauri
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
       - name: Rust unit tests
         working-directory: src-tauri
         # Use absolute path — macos-latest has a `cargo` shim earlier in PATH
         # that ignores rustup syntax; dtolnay installs the real cargo here.
         shell: bash
-        run: "$HOME/.cargo/bin/cargo test --lib"
+        run: "$HOME/.cargo/bin/cargo test --lib --locked"
 
       # A self-signed cert only counts as a *valid* codesigning identity once its
       # root is trusted. Until then `security find-identity -v -p codesigning`
@@ -360,7 +366,7 @@ jobs:
       - name: Build Tauri app (Apple Silicon)
         id: build_arm
         continue-on-error: true
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -371,7 +377,7 @@ jobs:
           # — first launch still needs right-click→Open.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
-          args: --target aarch64-apple-darwin --bundles app,dmg
+          args: --target aarch64-apple-darwin --bundles app,dmg -- --locked
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
@@ -380,7 +386,7 @@ jobs:
 
       - name: Build Tauri app (Apple Silicon, retry)
         if: steps.build_arm.outcome == 'failure'
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -391,7 +397,7 @@ jobs:
           # — first launch still needs right-click→Open.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
-          args: --target aarch64-apple-darwin --bundles app,dmg
+          args: --target aarch64-apple-darwin --bundles app,dmg -- --locked
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
@@ -401,7 +407,7 @@ jobs:
       - name: Build Tauri app (Intel)
         id: build_intel
         continue-on-error: true
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -412,7 +418,7 @@ jobs:
           # — first launch still needs right-click→Open.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
-          args: --target x86_64-apple-darwin --bundles app,dmg
+          args: --target x86_64-apple-darwin --bundles app,dmg -- --locked
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
@@ -421,7 +427,7 @@ jobs:
 
       - name: Build Tauri app (Intel, retry)
         if: steps.build_intel.outcome == 'failure'
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -432,7 +438,7 @@ jobs:
           # — first launch still needs right-click→Open.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
-          args: --target x86_64-apple-darwin --bundles app,dmg
+          args: --target x86_64-apple-darwin --bundles app,dmg -- --locked
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: Ribbit ${{ needs.version.outputs.tag }}
           releaseBody: ${{ needs.version.outputs.notes || 'See the assets below to download and install.' }}
@@ -546,16 +552,16 @@ jobs:
   release-canary:
     needs: [version, build-windows, build-macos]
     if: needs.version.outputs.skipped != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.version.outputs.tag }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 22.23.4
 
       - name: Run live canary
         env:
@@ -571,7 +577,7 @@ jobs:
   promote:
     needs: [version, test, build-windows, build-macos, release-canary]
     if: needs.version.outputs.skipped != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:

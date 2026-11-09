@@ -1,0 +1,4 @@
+# Exact Rust version for every build, local and CI. Change it by hand, on purpose.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"

@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+- Under the hood only: every part the app is built from is now locked to an exact, checked version, so a build can never pick up a newer one on its own.
+
 ## v0.7.118 — 2026-10-28
 
 - Dictation no longer hangs for 20-30 seconds when Groq stalls: after 3 seconds without an answer Ribbit sends the same recording to the backup provider too and pastes whichever answers first.

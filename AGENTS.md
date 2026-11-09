@@ -14,7 +14,7 @@ gates and how to roll one back).
 
 Quick facts:
 
-- Run it: `npm install && npm run tauri dev`
+- Run it: `npm ci && npm run tauri dev`
 - Tests: `npm test` (vitest) and `cargo test --lib` in `src-tauri/`. Provider
   responses are replayed from recorded fixtures; the live checks against a real
   provider are the canaries in `.github/workflows/canary.yml` and at release
