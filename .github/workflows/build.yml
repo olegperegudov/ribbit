@@ -309,7 +309,9 @@ jobs:
         # Use absolute path — macos-latest has a `cargo` shim earlier in PATH
         # that ignores rustup syntax; dtolnay installs the real cargo here.
         shell: bash
-        run: "$HOME/.cargo/bin/cargo test --lib --locked"
+        # macos-26 ships rustup from Homebrew, so ~/.cargo/bin is empty; ask rustup
+        # for the cargo of the toolchain rust-toolchain.toml pins.
+        run: '"$(rustup which cargo)" test --lib --locked'
 
       # A self-signed cert only counts as a *valid* codesigning identity once its
       # root is trusted. Until then `security find-identity -v -p codesigning`
