@@ -12,6 +12,8 @@ numbers increase quickly — each entry below maps to a published
 
 ## Unreleased
 
+## v0.7.119 — 2026-11-13
+
 - Under the hood only: every part the app is built from is now locked to an exact, checked version, so a build can never pick up a newer one on its own.
 
 ## v0.7.118 — 2026-10-28
