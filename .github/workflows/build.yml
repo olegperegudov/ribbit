@@ -296,6 +296,13 @@ jobs:
           toolchain: 1.99.1
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      # macos-26 ships rustup from Homebrew. Its rustc/cargo proxies lazily
+      # install components, and parallel build scripts race on the download and
+      # fail. Put the pinned toolchain's own binaries first so no proxy runs.
+      - name: Use the pinned Rust binaries directly
+        shell: bash
+        run: echo "$(dirname "$(rustup which cargo)")" >> "$GITHUB_PATH"
+
       - name: Rust cache
         uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
